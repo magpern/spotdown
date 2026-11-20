@@ -5,10 +5,11 @@ terms of service) was **accepted by the owner on 2026-11-20**, so SD-P6 is unblo
 decisions classbeat#1297 to #1299 and spotdown#1 are still the owner's. No deploy, no live-account test and no real provider call
 (YouTube, Spotify, SwedeBeat, MOWL) by any agent or CI job; those stay the owner's.
 
-**Merged state (2026-11-20).** P0 to P3 and P2+: governance and the v2 contract (#2, #3), service mode,
-v2 API, caches and scoped lookups (#4, #5), the YouTube matcher and source, faked in tests (#10), the
-alignment layer (#11), section labels (#7), 8 and 16 bar phrases (#8), downbeats with meter (#9), and
-the external-corpus runner (#28). #6 stays open only for the real-music runs (classbeat#1298); its
+**Merged state (2026-11-20).** P0, P1, P3 and P2+ are merged, and P2 is merged except #6's real-music
+runs. Issues #2 to #5, #7 to #11 and #20 are closed: governance and the v2 contract (#2, #3), service
+mode, v2 API, caches and scoped lookups (#4, #5), the YouTube matcher and source, faked in tests (#10),
+the alignment layer (#11), section labels (#7), 8 and 16 bar phrases (#8), downbeats with meter (#9),
+the external-corpus runner (#20, PR #28) and hardening (PR #23). #6 stays open only for the real-music runs (classbeat#1298); its
 harness is merged. Open spotdown work: #29 hostile-input hardening and #30 global cache retention
 purge (90 days unused or a version change, with an operator takedown; classbeat ADR 0040, amendment
 "#1296 accepted"). classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
@@ -68,12 +69,13 @@ by default in code (`ALLOW_YTDLP_SOURCING`); switching it on is the owner's depl
 | P1 | #4 service mode, service key, upload and url sources, sandboxed analysis | merged | #2, #3 |
 | P1 | #5 cache layers, both lookups, provenance, scope deletion | merged | #4 |
 | P2 | #6 quality harness and baseline gates (bounded) | open only for the real-music runs | #4, #5; the real-music runs need classbeat#1298 |
-| P2 | #28 external-corpus runner and baseline gates | merged | #6 |
+| P2 | #20 external-corpus runner and baseline gates (PR #28) | merged | #6 |
 | P2+ | #7 labels, #8 phrases, #9 downbeats and meter (**never blocking**) | merged | #6 |
 | P3 | #10 YouTube matcher and source | merged | #4, #5 |
 | P3 | #11 alignment layer | merged | #3, #5 |
+| hardening | PR #23 deferred review findings of #16 to #21 | merged | – |
 | hardening | #29 hostile-input hardening | open | – |
-| hardening | #30 global cache retention purge | open | #5 |
+| hardening | #30 global cache retention purge | open | – (builds on #5, merged) |
 
 The classbeat issues SD-P4 to SD-P7 (classbeat#1301 to #1306) depend on #3, #4, #5, #6, #10 and #11;
 all but the real-music runs of #6 are merged, and classbeat#1296 is accepted, so SD-P6 is unblocked.

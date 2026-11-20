@@ -17,7 +17,7 @@ differ, the classbeat plan wins. The owner authorized the phases of the plan on 
 | Architect / Orchestrator | Opus | The milestone, its PR split and acceptance criteria, dependencies, scheduling, merge order, ADRs | Normally write production code |
 | Developer | Sonnet; Opus for security-critical PRs (below) | One PR in its own branch and worktree: code, tests, CI fixes, **all** reviewer findings | Change architecture or acceptance criteria without the Architect |
 | Explorer | Haiku | Bounded work: searches, evidence, fixtures, docs, extra tests | Own security, auth, isolation, crypto or billing decisions |
-| Reviewer | **Opus for every code PR** (owner decision for this programme, plan §9; stricter than classbeat's Sonnet review of non-security PRs); a **docs-only** PR may be reviewed by Sonnet (owner, 2026-11-20, below). A fresh context for a PR's first review, **resumed** (same agent) for later rounds; shares no context with the Architect or Developer | The diff, the acceptance criteria, tests, CI output, plan compliance: `PASS` or `FAIL` with findings | Fix its own findings; review an ADR it wrote |
+| Reviewer | **Opus for every PR except a docs-only one** (owner decision for this programme, plan §9; stricter than classbeat's Sonnet review of non-security PRs); a docs-only PR, as defined in the review gate item 2, may be reviewed by Sonnet (owner, 2026-11-20). A fresh context for a PR's first review, **resumed** (same agent) for later rounds; shares no context with the Architect or Developer | The diff, the acceptance criteria, tests, CI output, plan compliance: `PASS` or `FAIL` with findings | Fix its own findings; review an ADR it wrote |
 
 Model *classes*, not versions: use the current generation of each tier. A model substitution
 never widens a role's authority. Agent definitions live in `.claude/agents/`.
@@ -60,12 +60,19 @@ without routine human input; it escalates only genuine blockers (see "Escalation
    that starts `Agent review (opus): PASS <exact head SHA>` followed by the non-blocking findings.
    A `FAIL` is recorded the same way: `Agent review (opus): FAIL <exact head SHA>`. For a
    **docs-only** PR (item 2) the comment may instead start `Agent review (sonnet): PASS <exact head
-   SHA>` (or `FAIL`); the merge gate accepts it only for such a PR.
-2. The Reviewer is **Opus for every PR**, and a fresh context for the PR's first review. Never the
-   Developer's context, never the Architect's. *(Owner, 2026-11-20, classbeat roadmap Amendment 32:
-   a **docs-only** PR, one that changes no code, test, CI or script file, may be reviewed by Sonnet.
-   Code PRs, security-critical PRs and any ADR that introduces a new security design stay Opus. When
-   in doubt, Opus.)*
+   SHA>` (or `FAIL`) with `docs-only: yes`; the merge gate accepts it only for such a PR.
+2. The Reviewer is **Opus for every PR except a docs-only one**, and a fresh context for the PR's
+   first review. Never the Developer's context, never the Architect's. *(Owner, 2026-11-20, classbeat
+   roadmap Amendment 32: a docs-only PR may be reviewed by Sonnet.)* **Docs-only is an allowlist:** a
+   PR is docs-only only when **every** file in its **whole diff against `main` at the reviewed head**
+   (not the latest delta) is a `*.md` prose file outside `.claude/` and `.github/`. Any other file
+   (for example `quality/quality_gates.json`, `Dockerfile`, `requirements*`, `commitlint.config.cjs`,
+   `.env.example`, `.gitattributes`, anything under `.claude/` or `.github/`) makes it a code PR, which
+   gets Opus. The Sonnet reviewer writes `docs-only: yes` in its comment, and the merge gate rejects a
+   Sonnet PASS if the head's diff has any other file. A PR that changes the review gate, the merge
+   rules, the safety envelope or the security rules in `AGENTS.md` or `CLAUDE.md` stays Opus even if it
+   is Markdown only, as do security-critical PRs and any ADR that introduces a new security design.
+   When in doubt, Opus.
 3. **A new head SHA needs a new review**:
    - *Merge-only update:* the only change since the reviewed head is a merge of `main` with no
      hand-resolved conflict (`git diff <reviewed>..<head>` equals `main`'s own change) and CI is
@@ -100,7 +107,7 @@ gh pr merge <n> --squash --match-head-commit <reviewed-sha>
 
 and only when the PR's **current head** has green required checks (`ci` and `pr-title`), the `PASS`
 is for that SHA (`Agent review (opus): PASS <sha>`, or `Agent review (sonnet): PASS <sha>` on a
-docs-only PR) and no blocking comment is open. `--match-head-commit` makes GitHub refuse the
+docs-only PR as item 2 defines it, judged on the head's whole diff) and no blocking comment is open. `--match-head-commit` makes GitHub refuse the
 merge if the head moved after the review. The squash commit's title is the PR title (with
 ` (#<n>)`), so there is no `--subject`, and the PR title must be the Conventional Commits subject.
 **Never `--auto`, never `--admin`, never an approving review, never a change to the ruleset** to get

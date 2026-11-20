@@ -3,9 +3,10 @@
 ## Before any `gh pr merge` (read this first)
 
 - No `Agent review (opus): PASS <sha>` comment for the PR's **current head commit** -> **do not
-  merge.** The only other accepted PASS is `Agent review (sonnet): PASS <sha>`, and only on a
-  **docs-only** PR (owner, 2026-11-20). Run the review: spawn a fresh `reviewer` agent
-  (`.claude/agents/reviewer.md`, **Opus for every PR** here, Sonnet allowed for docs-only ones) for the PR's first review, and **resume that same agent** (SendMessage to its agent
+  merge.** The only other accepted PASS is `Agent review (sonnet): PASS <sha>` with `docs-only: yes`, and
+  only on a **docs-only** PR as AGENTS.md review gate item 2 defines it (an allowlist: every file of
+  the head's whole diff is a `*.md` file outside `.claude/` and `.github/`; owner, 2026-11-20). Run the review: spawn a fresh `reviewer` agent
+  (`.claude/agents/reviewer.md`, Opus for every PR except a docs-only one) for the PR's first review, and **resume that same agent** (SendMessage to its agent
   id, with the new head) for every later round on the PR. A fresh one only after a second `FAIL`
   or when it cannot be resumed (the comment says so). Never review in this session.
   Running the review is the default; don't ask whether to skip it.

@@ -5,7 +5,7 @@ talks to: an async **"resolve metadata → source audio → transcode → serve 
 
 > spotdown is also classbeat's music-analysis service. See the frozen
 > [integration plan](docs/integration-plan.md) (authorized 2026-11-20 except the owner decisions
-> classbeat#1296 to #1299 and spotdown#1; no deploy or real provider call).
+> classbeat#1297 to #1299 and spotdown#1 (classbeat#1296 was accepted 2026-11-20); no deploy or real provider call).
 
 It exposes the same API shape the app expects:
 
