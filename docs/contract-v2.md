@@ -1,7 +1,7 @@
 # spotdown API contract v2 (service mode)
 
-**Status: DRAFT. Authorized by the owner on 2026-11-20** (except classbeat#1296 to #1299 and
-spotdown#1; no deploy or real provider call). Parts are built, see [integration-plan.md](integration-plan.md). It is written together with classbeat ADR 0040; where they differ, the classbeat plan
+**Status: DRAFT. Authorized by the owner on 2026-11-20** (except classbeat#1297 to #1299 and
+spotdown#1; classbeat#1296 was accepted on 2026-11-20; no deploy or real provider call). Parts are built, see [integration-plan.md](integration-plan.md). It is written together with classbeat ADR 0040; where they differ, the classbeat plan
 ([docs/plans/spotdown-integration.md](https://github.com/magpern/classbeat/blob/main/docs/plans/spotdown-integration.md),
 §3 to §6) wins and this file is corrected. Summary of the plan: [integration-plan.md](integration-plan.md).
 
