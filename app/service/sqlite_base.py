@@ -1,4 +1,5 @@
-"""One SQLite file, one short-lived connection per call."""
+"""One SQLite file, one short-lived connection per call, and the lifetime of its global
+reference rows (``GLOBAL_REFERENCE_TTL_S``, ADR 0040 §7)."""
 
 from __future__ import annotations
 
@@ -7,10 +8,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+from .cache_policy import GLOBAL_REFERENCE_TTL_S
+
 
 class SqliteBase:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, global_ttl_s: float = GLOBAL_REFERENCE_TTL_S) -> None:
         self.path = path
+        self.global_ttl_s = float(global_ttl_s)
         path.parent.mkdir(parents=True, exist_ok=True)
 
     @contextmanager

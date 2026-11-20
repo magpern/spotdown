@@ -2,7 +2,8 @@
 
 A job always ends ``done`` or ``failed`` and never raises into the worker, so one bad file never
 takes the worker down. Its temporary audio (the upload, the fetched file, the sandbox's work
-directory) is deleted at the end of every job, whether it succeeds or fails.
+directory) is deleted at the end of every job, whether it succeeds or fails. Before each job the
+worker sweeps what a killed worker left behind (``sweep``).
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import logging
 import shutil
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -19,7 +20,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 from ..config import Settings, get_settings
 from ..youtube import match_calc
 from ..youtube.ytdlp_client import YtDlpClient
-from . import analysis_doc, cache_policy, media_policy, sandbox, url_fetch, url_policy
+from . import analysis_doc, cache_policy, media_policy, sandbox, sweep, url_fetch, url_policy
 from .alignment_store import Aligning, aligning_for
 from .failure_policy import JobFailure, Reason, outcome_for
 from .store import Store
@@ -27,10 +28,7 @@ from .uploads import upload_path
 from .youtube_source import fetch_youtube
 
 log = logging.getLogger("spotdown.service.worker")
-# httpx logs every request line at INFO, with its query string; a url source's query can be a
-# signature. Pinned here so no worker configuration can turn that on (spotdown#16 review).
-for _noisy in ("httpx", "httpcore"):
-    logging.getLogger(_noisy).setLevel(logging.WARNING)
+# httpx's request-line logging (with the query) is pinned off in ``url_fetch``.
 
 Fetcher = Callable[..., url_fetch.Fetched]
 Analyser = Callable[[Path, str, Path, sandbox.Limits], Dict[str, Any]]
@@ -117,6 +115,21 @@ def _check_decoded(sourced: Sourced, core: Dict[str, Any]) -> None:
     sourced.source["decoded_duration_check"] = check
 
 
+def _check_reused(sourced: Sourced, doc: Dict[str, Any]) -> None:
+    """The same check for a reused analysis of equal bytes (another video id may expect another
+    duration), on the reused analysis' measured ``signal``. Nothing is recorded: the reused
+    analysis is not changed."""
+    if sourced.expected is None:
+        return
+    signal = doc["signal"]
+    core = {
+        "duration_s": signal["duration_s"],
+        "content_start_s": signal["content_start_s"],
+        "content_end_s": signal["content_end_s"],
+    }
+    _check_decoded(replace(sourced, source={}), core)
+
+
 def _aligning(
     job: Dict[str, Any], base: Dict[str, Any], scope: Optional[str]
 ) -> Optional[Aligning]:
@@ -134,6 +147,10 @@ def execute_job(
     analyser: Analyser = sandbox.run_analysis,
     youtube: Optional[YtDlpClient] = None,
 ) -> None:
+    try:
+        sweep.sweep(settings, store)
+    except Exception as exc:  # noqa: BLE001 - recovery never blocks the job itself
+        log.error("sweep failed: %s", type(exc).__name__)
     job = store.get_job(job_id)
     if job is None or not store.start_job(job_id):
         return
@@ -150,12 +167,11 @@ def execute_job(
         else:
             known = store.find_by_sha(scope, sourced.sha256, version) if scope else None
         if known is not None:  # the same bytes were analysed already: reuse, don't analyse
-            aligning = None
-            if job["reference"]:
-                base = store.get_analysis(known.analysis_id)
-                if base is None:  # deleted with its scope meanwhile, and this job with it
-                    raise JobFailure(Reason.SOURCE_MISSING)
-                aligning = _aligning(job, base, scope)
+            base = store.get_analysis(known.analysis_id)
+            if base is None:  # deleted with its scope meanwhile, and this job with it
+                raise JobFailure(Reason.SOURCE_MISSING)
+            _check_reused(sourced, base)
+            aligning = _aligning(job, base, scope)
             store.finish_job_reused(
                 job_id, known.analysis_id, scope, kind, sourced.source.get("ref"), aligning
             )
@@ -200,4 +216,4 @@ def execute_job(
 def run_job(job_id: str) -> None:
     """The RQ entry point (``app.service.worker.run_job``)."""
     settings = get_settings()
-    execute_job(job_id, settings, Store(settings.service_db_path))
+    execute_job(job_id, settings, Store(settings.service_db_path, settings.global_reference_ttl_s))

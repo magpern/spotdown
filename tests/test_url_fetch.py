@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import socket
+import threading
+import time
 from pathlib import Path
-from typing import Callable, Dict, List
+from typing import Any, Callable, Dict, Iterator, List
 
 import httpx
 import pytest
 
-from app.service import url_fetch
+from app.service import url_fetch, url_policy
 from app.service.failure_policy import JobFailure, Reason
 
 ALLOW = frozenset({"media.example.com"})
@@ -46,7 +50,8 @@ def test_fetches_from_the_checked_address_with_the_host_name_for_tls(tmp_path: P
     got = fetch(tmp_path, handler)
     assert got.bytes == 16 and got.sha256 == hashlib.sha256(b"RIFF....WAVEdata").hexdigest()
     assert got.path.read_bytes() == b"RIFF....WAVEdata"
-    assert got.ref == "https://media.example.com/audio/a.wav"
+    assert got.ref == url_policy.url_ref("media.example.com", "/audio/a.wav?sig=s3cr3t")
+    assert "s3cr3t" not in got.ref
     (req,) = seen
     assert req.url.host == PUBLIC and req.url.raw_path == b"/audio/a.wav?sig=s3cr3t"
     assert req.headers["host"] == "media.example.com"
@@ -169,7 +174,7 @@ def test_same_host_redirect_then_success(tmp_path: Path) -> None:
         return httpx.Response(200, stream=httpx.ByteStream(b"abc"))
 
     got = fetch(tmp_path, handler)
-    assert got.ref == "https://media.example.com/audio/b.wav" and got.bytes == 3
+    assert got.ref == url_policy.url_ref("media.example.com", "/audio/b.wav") and got.bytes == 3
 
 
 def test_too_many_redirects(tmp_path: Path) -> None:
@@ -323,3 +328,94 @@ def test_each_hop_gets_only_the_time_left(tmp_path: Path, monkeypatch) -> None:
         fetch(tmp_path, handler, deadline_s=12)
     assert caught.value.reason is Reason.DEADLINE
     assert timeouts == [7.0, 4.0]  # 12 - 5, then 12 - 8; the third hop had no time left
+
+
+def test_the_resolver_keeps_its_own_order_without_duplicates(monkeypatch) -> None:
+    """getaddrinfo's (RFC 6724) order is kept within each family; IPv4 is still tried first."""
+    answer = ["2a04:4e42::1", "93.184.216.40", "93.184.216.34", "2a04:4e42::1", "93.184.216.40"]
+
+    def getaddrinfo(host: str, port: int, *args: Any, **kwargs: Any) -> List[Any]:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (a, port)) for a in answer]
+
+    monkeypatch.setattr(url_fetch.socket, "getaddrinfo", getaddrinfo)
+    found = url_fetch.resolve_host("media.example.com")
+    assert found == ["2a04:4e42::1", "93.184.216.40", "93.184.216.34"]
+    assert url_fetch._ordered(found) == ["93.184.216.40", "93.184.216.34", "2a04:4e42::1"]
+
+
+def test_no_query_bearing_url_is_logged(tmp_path: Path, caplog) -> None:
+    caplog.set_level(logging.DEBUG)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=httpx.ByteStream(b"RIFF"))
+
+    fetch(tmp_path, handler)
+    assert "s3cr3t" not in caplog.text and "sig=" not in caplog.text
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+
+
+class _NetworkStream:
+    def __init__(self, sock: socket.socket) -> None:
+        self.sock = sock
+
+    def get_extra_info(self, name: str) -> Any:
+        return self.sock if name == "socket" else None
+
+
+class _Stalling(httpx.SyncByteStream):
+    """One chunk, then a read that blocks on the socket until it is shut down."""
+
+    def __init__(self, sock: socket.socket, then_raise: bool) -> None:
+        self.sock, self.then_raise = sock, then_raise
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield b"RIFF"
+        self.sock.settimeout(10.0)
+        self.sock.recv(1)  # returns b"" once the watchdog shuts the socket down
+        if self.then_raise:
+            raise httpx.ReadError("peer closed")
+
+
+@pytest.mark.parametrize("then_raise", [True, False])
+def test_the_deadline_ends_a_read_that_blocks(tmp_path: Path, then_raise: bool) -> None:
+    near, far = socket.socketpair()
+    try:
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                stream=_Stalling(near, then_raise),
+                extensions={"network_stream": _NetworkStream(near)},
+            )
+
+        started = time.monotonic()
+        with pytest.raises(JobFailure) as caught:
+            fetch(tmp_path, handler, deadline_s=0.3)
+        assert caught.value.reason is Reason.DEADLINE
+        assert time.monotonic() - started < 5.0  # not the 10 s read timeout
+        assert not (tmp_path / "source").exists()
+    finally:
+        near.close()
+        far.close()
+
+
+def test_the_watchdog_is_cancelled_after_a_complete_body(tmp_path: Path) -> None:
+    near, far = socket.socketpair()
+    try:
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                stream=httpx.ByteStream(b"RIFF"),
+                extensions={"network_stream": _NetworkStream(near)},
+            )
+
+        before = threading.active_count()
+        assert fetch(tmp_path, handler, deadline_s=30.0).bytes == 4
+        time.sleep(0.05)
+        assert threading.active_count() <= before
+        far.sendall(b"x")
+        assert near.recv(1) == b"x"  # the socket was not shut down
+    finally:
+        near.close()
+        far.close()

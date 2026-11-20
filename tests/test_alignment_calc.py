@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import math
+
 import pytest
 
 from app import alignment_calc as calc
@@ -84,3 +87,10 @@ def test_equal_offsets_never_compete() -> None:
 def test_the_standalone_hypotheses_are_unchanged() -> None:
     assert calc.offset_hypotheses(200.0, 1.5, 197.5, 197.5) == (True, 1.5, 0.0)
     assert calc.offset_hypotheses(200.0, 1.5, 197.5, None) == (None, 1.5, None)
+
+
+def test_a_zero_trimmed_offset_is_never_negative_zero() -> None:
+    result = calc.align(200.0, 0.0, 199.0, 199.0)
+    trimmed = result.hypotheses[1]
+    assert trimmed.offset_s == 0.0 and math.copysign(1.0, trimmed.offset_s) == 1.0
+    assert '"offset_s": -0.0' not in json.dumps([h.__dict__ for h in result.hypotheses])

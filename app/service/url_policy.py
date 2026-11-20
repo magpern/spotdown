@@ -2,11 +2,15 @@
 
 https only, port 443, no userinfo, a DNS name (never an IP literal) on the operator's exact-match
 allowlist, and every address it resolves to must be public. Redirects may only stay on the same
-host. The provenance ref keeps host and path only (no userinfo, query or fragment).
+host. The provenance ref (and the source-link key) is ``sha256:<hex>`` of the normalised URL:
+host, path and query, never userinfo or fragment. A digest, because a signature can sit in the
+query or in the path (some CDNs), and because two URLs that differ only in their query may be
+different audio.
 """
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import re
 from dataclasses import dataclass
@@ -16,6 +20,8 @@ from urllib.parse import urljoin, urlsplit
 MAX_URL_LENGTH = 2048
 _LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _FORBIDDEN_CHARS = re.compile(r"[\x00-\x20\x7f\\]")
+# A final label that inet_aton could read as a number ("127.0.0.0x1", "10.1"): never a TLD.
+_NUMERIC_LABEL = re.compile(r"[0-9]+|0x[0-9a-f]*")
 
 
 class UrlRefused(ValueError):
@@ -30,15 +36,18 @@ class UrlRefused(ValueError):
 class CheckedUrl:
     host: str  # lower case DNS name, no trailing dot
     target: str  # path plus query, what is requested ("/" when empty)
-    ref: str  # provenance: https://host/path, no userinfo, query or fragment
+    ref: str  # provenance and link key: sha256:<hex> of https://host + target
 
 
 def is_dns_name(host: str) -> bool:
-    """A multi-label lower-case ASCII DNS name that is not an IP literal."""
+    """A multi-label lower-case ASCII DNS name that is not an IP literal and whose last label
+    is not numeric (a resolver may read ``127.0.0.0x1`` as an address)."""
     if not host or len(host) > 253 or host.endswith(".") or _is_ip_literal(host):
         return False
     labels = host.split(".")
-    return len(labels) >= 2 and all(_LABEL.fullmatch(label) for label in labels)
+    if len(labels) < 2 or _NUMERIC_LABEL.fullmatch(labels[-1]):
+        return False
+    return all(_LABEL.fullmatch(label) for label in labels)
 
 
 def _is_ip_literal(host: str) -> bool:
@@ -88,8 +97,13 @@ def check_url(url: str, allowed_hosts: FrozenSet[str]) -> CheckedUrl:
     if not path.startswith("/"):
         raise UrlRefused("invalid_url")
     target = path + ("?" + parts.query if parts.query else "")
-    ref = "https://" + host + (parts.path if parts.path not in ("", "/") else "")
-    return CheckedUrl(host=host, target=target, ref=ref)
+    return CheckedUrl(host=host, target=target, ref=url_ref(host, target))
+
+
+def url_ref(host: str, target: str) -> str:
+    """The stored reference of a checked URL: a digest, so neither a signature (in the query or
+    the path) nor the path itself is kept, and URLs that differ only in their query differ."""
+    return "sha256:" + hashlib.sha256(f"https://{host}{target}".encode("ascii")).hexdigest()
 
 
 def check_redirect(current_url: str, location: str, allowed_hosts: FrozenSet[str]) -> str:

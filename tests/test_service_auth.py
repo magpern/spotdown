@@ -3,6 +3,7 @@ never logged, printed or echoed."""
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from pathlib import Path
@@ -164,3 +165,54 @@ def test_the_key_is_never_logged_or_echoed(settings, tmp_path: Path, caplog) -> 
         assert all(TEST_KEY not in v for v in res.headers.values())
     assert TEST_KEY not in caplog.text
     assert TEST_KEY not in repr(settings.model_dump())
+
+
+def test_unknown_routes_and_methods_use_the_error_envelope(settings) -> None:
+    client = client_for(settings)
+    missing = client.get("/v2/no-such-route", headers=AUTH)
+    assert missing.status_code == 404
+    assert missing.json() == {"error": {"code": "not_found", "message": "not found"}}
+    wrong = client.delete("/v2/uploads", headers=AUTH)
+    assert wrong.status_code == 405
+    assert wrong.json() == {
+        "error": {"code": "method_not_allowed", "message": "method not allowed"}
+    }
+    assert "PUT" in wrong.headers["allow"]
+
+
+def test_an_unknown_field_name_is_not_echoed(settings) -> None:
+    body = {"cache_scope": SCOPE, "upload_id": "up_1", "SECRETFIELD": 1}
+    res = client_for(settings).post("/v2/analyses", headers=AUTH, json=body)
+    assert res.status_code == 422
+    assert res.json()["error"] == {"code": "invalid_request", "message": "invalid fields: body"}
+    assert "SECRETFIELD" not in res.text
+
+
+def test_the_middleware_guards_v2_behind_a_root_path() -> None:
+    """With ``--root-path /prefix`` the router sees ``/v2/...``; so does the key check."""
+    reached = []
+
+    async def inner(scope, receive, send) -> None:
+        reached.append(scope["path"])
+
+    sent = []
+
+    async def send(message) -> None:
+        sent.append(message)
+
+    async def receive():
+        return {"type": "http.request", "body": b""}
+
+    middleware = service_key.ServiceKeyMiddleware(inner, ServiceKey(TEST_KEY))
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/prefix/v2/jobs/job_1",
+        "root_path": "/prefix",
+        "headers": [],
+    }
+    asyncio.run(middleware(scope, receive, send))
+    assert reached == []
+    assert sent[0]["status"] == 401
+    asyncio.run(middleware({**scope, "path": "/prefix/healthz"}, receive, send))
+    assert reached == ["/prefix/healthz"]

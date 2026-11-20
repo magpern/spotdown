@@ -98,6 +98,20 @@ def test_the_same_audio_under_another_id_reuses_the_global_analysis(stack: Youtu
     assert stack.lookup(None, source="youtube:otherid0001").json()["analysis_id"] == first
 
 
+def test_a_reused_analysis_is_checked_against_the_other_ids_duration(stack: YoutubeStack) -> None:
+    """Equal bytes under another video id reuse the global analysis only when its measured
+    duration fits what that id was expected to be (here its metadata says 200 s, not 12 s)."""
+    first = stack.done_analysis_id(analyse(stack))
+    stack.world.infos["otherid0001"] = {"id": "otherid0001", "duration": 200.0}
+    job = stack.job(analyse(stack, ref="youtube:otherid0001"))
+    assert job["status"] == "failed" and job["outcome"] == "uncertain"
+    assert "analysis_id" not in job and len(stack.analysed) == 1
+    assert stack.lookup(None, source="youtube:otherid0001").status_code == 404
+    assert stack.lookup(None, source=SOURCE).json()["analysis_id"] == first
+    stack.world.infos["otherid0002"] = {"id": "otherid0002", "duration": 13.0}
+    assert stack.done_analysis_id(analyse(stack, ref="youtube:otherid0002")) == first
+
+
 def test_a_scope_deletion_leaves_the_global_analysis(stack: YoutubeStack) -> None:
     analysis_id = stack.done_analysis_id(analyse(stack, SCOPE), SCOPE)
     assert stack.client.delete(f"/v2/scopes/{SCOPE}", headers=AUTH).status_code == 204
@@ -148,6 +162,7 @@ def test_a_decoded_duration_far_from_the_match_is_uncertain_and_kept_nowhere(sta
         ("ERROR: [youtube] x: Sign in to confirm your age", "source_unavailable"),
         ("ERROR: [youtube] x: Sign in to confirm you're not a bot", "provider_error"),
         ("ERROR: HTTP Error 502: Bad Gateway", "provider_error"),
+        ("ERROR: [youtube] x: Requested format is not available", "provider_error"),
         ("ERROR: HTTP Error 429: Too Many Requests", "rate_limited"),
     ],
 )

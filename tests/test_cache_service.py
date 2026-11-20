@@ -100,14 +100,29 @@ def test_the_same_url_in_the_same_scope_is_a_hit_through_the_source_link(stack: 
     first = stack.post({"cache_scope": SCOPE, "url": URL + "?sig=secret"})
     assert first.status_code == 202
     analysis_id = stack.analysis_id(first)
-    found = stack.lookup(source=f"url:{URL}")
+    found = stack.lookup(source=f"url:{URL}?sig=secret#frag")
     assert found.status_code == 200 and found.json()["analysis_id"] == analysis_id
-    assert stack.lookup(source=f"url:{URL}?other=1").json()["analysis_id"] == analysis_id
-    again = stack.post({"cache_scope": SCOPE, "url": URL + "?sig=another"})
+    again = stack.post({"cache_scope": SCOPE, "url": URL + "?sig=secret"})
     assert again.status_code == 200 and again.json()["analysis_id"] == analysis_id
     assert len(stack.analysed) == 1 and len(stack.dispatch.job_ids) == 1
-    assert stack.lookup("scope_b", source=f"url:{URL}").status_code == 404
+    assert stack.lookup("scope_b", source=f"url:{URL}?sig=secret").status_code == 404
     assert stack.post({"cache_scope": "scope_b", "url": URL}).status_code == 202
+
+
+def test_urls_that_differ_only_in_their_query_are_different_sources(stack: Stack) -> None:
+    """``?id=1`` and ``?id=2`` may be different audio: no source hit across them. The same
+    bytes behind another query are still reused through their sha256, without a second run."""
+    stack.fetch_bytes = stack.audio("u.wav")
+    analysis_id = stack.analysis_id(stack.post({"cache_scope": SCOPE, "url": URL + "?id=1"}))
+    for other in (URL, URL + "?id=2"):
+        assert stack.lookup(source=f"url:{other}").status_code == 404
+    second = stack.post({"cache_scope": SCOPE, "url": URL + "?id=2"})
+    assert second.status_code == 202  # not answered from the first URL's link
+    assert stack.analysis_id(second) == analysis_id  # equal bytes: reused, not re-analysed
+    assert len(stack.analysed) == 1
+    stack.fetch_bytes = stack.audio("v.wav", seconds=3.0)  # other audio behind ?id=3
+    third = stack.analysis_id(stack.post({"cache_scope": SCOPE, "url": URL + "?id=3"}))
+    assert third != analysis_id and len(stack.analysed) == 2
 
 
 def test_a_fetched_file_already_analysed_in_the_scope_is_reused(stack: Stack) -> None:
@@ -224,26 +239,3 @@ def test_every_stored_analysis_validates_and_has_full_provenance(stack: Stack) -
         if d["provenance"]["source"]["kind"] == "upload"
     )
     assert {i for i in ids} == {d["analysis_id"] for d in stored}
-
-
-def test_alignment_cache_is_keyed_by_scope_audio_reference_and_version(stack: Stack) -> None:
-    from app.service import cache_policy as p
-
-    key = p.alignment_key(
-        sha256="s" * 64,
-        reference_kind="k",
-        reference_id="i",
-        reference_duration_s=9.0,
-        alignment_version="1",
-    )
-    other = p.alignment_key(
-        sha256="s" * 64,
-        reference_kind="k",
-        reference_id="i",
-        reference_duration_s=9.0,
-        alignment_version="2",
-    )
-    stack.store.put_alignment("scope_a", key, {"offset_s": 1.5})
-    assert stack.store.get_alignment("scope_a", key) == {"offset_s": 1.5}
-    assert stack.store.get_alignment("scope_b", key) is None
-    assert stack.store.get_alignment("scope_a", other) is None

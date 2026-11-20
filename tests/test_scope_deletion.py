@@ -37,7 +37,11 @@ def fill(stack: Stack, scope: str) -> bytes:
     stack.analysis_id(stack.analyse_bytes(data, scope), scope)
     stack.analysis_id(stack.post({"cache_scope": scope, "url": URL}), scope)
     stack.upload(stack.audio("c.wav", 4.0), scope)  # an unused upload, still pending
-    stack.store.put_alignment(scope, "k", {"offset_s": 1.0})
+    with stack.store._conn() as conn:
+        conn.execute(
+            "INSERT INTO alignments (cache_scope, align_key, doc, created_at) VALUES (?, ?, ?, ?)",
+            (scope, "k", '{"offset_s": 1.0}', 1.0),
+        )
     return data
 
 
@@ -54,6 +58,12 @@ def test_scope_deletion_leaves_nothing_of_that_scope(stack: Stack) -> None:
     doc["provenance"]["source"] = {"kind": "youtube", "ref": "dQw4w9WgXcQ"}
     with stack.store._conn() as conn:
         insert_analysis(conn, "an_global", None, doc, 1.0)
+        # A link under another scope key to one of scope_a's analyses (none is made today):
+        # the deletion removes it with the analysis, so no link outlives what it points to.
+        conn.execute(
+            "INSERT INTO source_links VALUES ('url', 'sha256:cross', '', ?, 1.0)",
+            (stack.lookup("scope_a", sha256=sha(data)).json()["analysis_id"],),
+        )
 
     res = stack.client.delete("/v2/scopes/scope_a", headers=AUTH)
     assert res.status_code == 204 and res.content == b""

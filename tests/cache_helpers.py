@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.service import url_fetch
+from app.service import url_fetch, url_policy
 from app.service.store import Store
 from app.service.worker import execute_job
 
@@ -53,7 +53,8 @@ class Stack:
         assert self.fetch_bytes is not None
         dest.write_bytes(self.fetch_bytes)
         sha = hashlib.sha256(self.fetch_bytes).hexdigest()
-        return url_fetch.Fetched(dest, sha, len(self.fetch_bytes), URL)
+        ref = url_policy.check_url(url, frozenset({"media.example.com"})).ref
+        return url_fetch.Fetched(dest, sha, len(self.fetch_bytes), ref)
 
     def _run(self, job_id: str) -> None:
         execute_job(

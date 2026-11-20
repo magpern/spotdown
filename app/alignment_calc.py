@@ -72,7 +72,7 @@ class Alignment:
 
 
 def _r(x: float) -> float:
-    return round(float(x), 3)
+    return round(float(x), 3) + 0.0  # + 0.0 turns -0.0 into 0.0
 
 
 def hypotheses(

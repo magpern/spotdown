@@ -64,7 +64,7 @@ def create_service_app(
     )
     app.state.settings = settings
     app.state.service_key = key
-    app.state.store = Store(settings.service_db_path)
+    app.state.store = Store(settings.service_db_path, settings.global_reference_ttl_s)
     app.state.dispatch = dispatch or rq_dispatcher(settings)
     app.state.youtube = YtDlpClient()  # used only when ALLOW_YTDLP_SOURCING=true
     errors.install_handlers(app)

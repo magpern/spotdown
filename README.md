@@ -56,7 +56,10 @@ read from the file in `SERVICE_KEY_FILE` (the service refuses to start without i
 - `POST /v2/analyses` with `upload_id` or `url` (https, hosts in `URL_ALLOWED_HOSTS` only, every
   resolved address public, no redirect to another host, size cap and deadline); `GET /v2/jobs/{id}`.
 - The analysis runs in a subprocess with rlimits (`ANALYSIS_MAX_*`); a file over a limit ends as
-  `processing_failed` and the worker carries on. Temporary audio is deleted after every job.
+  `processing_failed` and the worker carries on. Temporary audio is deleted after every job; a job
+  whose worker was killed is failed (`timeout`) once past its lease and its audio swept.
+- Global rows holding a catalogue-derived reference (a chosen video's match record, a YouTube
+  alignment) expire after `GLOBAL_REFERENCE_TTL_S` (default 3 days).
 - **YouTube (off by default).** With `ALLOW_YTDLP_SOURCING=true`, `POST /v2/match` turns
   `{title, artists, duration_s, isrc?}` into ranked YouTube candidates (recording-match confidence,
   band, duration check, up to 2 alternates; no download), and `POST /v2/analyses` accepts

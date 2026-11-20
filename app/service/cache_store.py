@@ -1,6 +1,6 @@
-"""Storage side of the caches: lookups, source links, alignments, idempotency records and scope
-deletion. The rules (keys, hit decision, windows) live in the pure ``cache_policy`` and
-``idempotency_policy``; this module only reads and writes rows.
+"""Storage side of the caches: lookups, source links, idempotency records and scope deletion
+(the alignment cache is ``alignment_store``). The rules (keys, hit decision, windows) live in
+the pure ``cache_policy`` and ``idempotency_policy``; this module only reads and writes rows.
 
 Every query a caller can reach carries the caller's scope. Global entries (``cache_scope`` NULL,
 scope key ``""``) are read by every scope and removed by none.
@@ -123,22 +123,6 @@ class CacheStore(SqliteBase):
             return None
         return json.loads(row["doc"])
 
-    # ---- alignment cache ----
-    def get_alignment(self, scope: str, key: str) -> Optional[Dict[str, Any]]:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT doc FROM alignments WHERE cache_scope = ? AND align_key = ?", (scope, key)
-            ).fetchone()
-        return json.loads(row["doc"]) if row else None
-
-    def put_alignment(self, scope: str, key: str, doc: Dict[str, Any]) -> None:
-        with self._conn() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO alignments (cache_scope, align_key, doc, created_at)"
-                " VALUES (?, ?, ?, ?)",
-                (scope, key, json.dumps(doc, separators=(",", ":")), time.time()),
-            )
-
     # ---- idempotency ----
     def idem_get(self, scope: str, key: str) -> Optional[idem.Recorded]:
         now = time.time()
@@ -192,6 +176,8 @@ class CacheStore(SqliteBase):
                 )
             ]
             conn.execute("DELETE FROM source_links WHERE scope_key = ?", (key,))
+            # Defence in depth: no link of another scope key points to a scoped analysis today
+            # (a global link always points to a global analysis), but none may outlive it.
             conn.execute(
                 "DELETE FROM source_links WHERE analysis_id IN"
                 " (SELECT analysis_id FROM analyses WHERE cache_scope = ?)",

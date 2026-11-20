@@ -6,6 +6,8 @@ from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .service.cache_policy import GLOBAL_REFERENCE_TTL_S
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -49,6 +51,10 @@ class Settings(BaseSettings):
     analysis_max_cpu_s: int = 600
     analysis_wall_timeout_s: int = 900
     analysis_max_decoded_s: float = 1200.0
+    # Lifetime of the global rows that hold Spotify-catalogue-derived references: the match
+    # record of a chosen video and the reference of a global (youtube) alignment (ADR 0040 §7).
+    # Expired rows are never served and are purged.
+    global_reference_ttl_s: float = GLOBAL_REFERENCE_TTL_S
 
     @property
     def files_dir(self) -> Path:
