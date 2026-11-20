@@ -14,7 +14,7 @@ import librosa
 import numpy as np
 
 # Bump when thresholds/features change so the cache (keyed on this) refreshes.
-ANALYZER_VERSION = 2
+ANALYZER_VERSION = 3
 
 # Spotify trims edge silence; if the music content matches within this many
 # seconds we treat the timeline as alignable by a simple offset.
@@ -207,13 +207,20 @@ def analyze_track(file_path: Path, track_id: str,
         if di - s >= 3:
             build_ups.append({"start": round(float(grid[max(s, 0)]), 3), "end": round(float(d), 3)})
 
+    segments = _segments(y, sr, beat_frames, beat_times, duration, grid, e_full, e_struct)
+
     # Alignment: compare CONTENT duration (not file duration) to Spotify, and treat
     # content_start as the offset from the file clock to the Spotify clock.
     residual = (content_duration - spotify_duration_s) if spotify_duration_s else None
     matches = (abs(residual) <= ALIGN_TOLERANCE_S) if residual is not None else None
-    # Spotify-clock cue points — only meaningful when the content aligns.
+
+    # Spotify-clock cue points / segment edges — only meaningful when the content aligns.
     drops_spotify = ([round(max(d - content_start, 0.0), 3) for d in drops]
                      if matches else None)
+    if matches:
+        for s in segments:
+            s["start_spotify"] = round(max(s["start"] - content_start, 0.0), 3)
+            s["end_spotify"] = round(max(s["end"] - content_start, 0.0), 3)
 
     return {
         "track_id": track_id,
@@ -234,6 +241,7 @@ def analyze_track(file_path: Path, track_id: str,
         "timeline_residual_s": round(residual, 3) if residual is not None else None,
         "timeline_matches_spotify": matches,
         "drops_spotify": drops_spotify,
+        "segments_aligned_to_spotify": bool(matches),
         "bpm": round(bpm, 1),
         "bpm_candidates": _tempo_candidates(bpm),
         "downbeat_phase": phase,
@@ -243,5 +251,5 @@ def analyze_track(file_path: Path, track_id: str,
         "drops": drops,
         "build_ups": build_ups,
         "energy_curve": energy_curve,
-        "segments": _segments(y, sr, beat_frames, beat_times, duration, grid, e_full, e_struct),
+        "segments": segments,
     }

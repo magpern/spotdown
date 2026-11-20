@@ -268,11 +268,15 @@ function renderAnalysis(d) {
   const legend = `<div class="legend">` +
     legendLabels.map(l => `<span><i style="background:${segColor(l)}"></i>${l}</span>`).join("") +
     `<span><i style="background:#fff"></i>drop</span></div>`;
-  const segs = (d.segments||[]).map(s =>
-    `<div class="seg"><span class="dot" style="background:${segColor(s.label)}"></span>` +
-    `<span class="st">${fmtDur(Math.round(s.start))}–${fmtDur(Math.round(s.end))}</span>` +
-    `<span class="slab">${s.label}<span class="dim"> · grp ${s.group}</span></span>` +
-    `<span class="se">${Math.round(s.energy_struct*100)}%</span></div>`).join("");
+  const segs = (d.segments||[]).map(s => {
+    const st = s.start_spotify != null ? s.start_spotify : s.start;
+    const en = s.end_spotify != null ? s.end_spotify : s.end;
+    return `<div class="seg"><span class="dot" style="background:${segColor(s.label)}"></span>` +
+      `<span class="st">${fmtDur(Math.round(st))}–${fmtDur(Math.round(en))}</span>` +
+      `<span class="slab">${s.label}<span class="dim"> · grp ${s.group}</span></span>` +
+      `<span class="se">${Math.round(s.energy_struct*100)}%</span></div>`;
+  }).join("");
+  const segClock = d.segments_aligned_to_spotify ? " · Spotify clock" : " · file clock";
   analysisCard.innerHTML =
     `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
        <div style="font-weight:600">Audio analysis</div>${align}</div>
@@ -284,7 +288,7 @@ function renderAnalysis(d) {
      ${stats}
      <div class="viz-label">Structure &amp; drops</div>${segmentBar(d)}${legend}
      <div class="viz-label">Energy — percussive (orange) vs full (blue), drops dashed</div>${energyCurve(d)}
-     <div class="viz-label">Segments</div>${segs}`;
+     <div class="viz-label">Segments${segClock}</div>${segs}`;
 }
 
 $("lookup").addEventListener("click", lookup);
