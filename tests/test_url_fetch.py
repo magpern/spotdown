@@ -273,3 +273,53 @@ def test_the_real_resolver_is_blocked_by_the_netguard() -> None:
     with pytest.raises(Exception) as caught:
         url_fetch.resolve_host("media.example.com")
     assert "blocked" in str(caught.value)
+
+
+def test_each_checked_address_is_tried_ipv4_first(tmp_path: Path) -> None:
+    seen: List[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if request.url.host != "93.184.216.35":
+            raise httpx.ConnectError("unreachable", request=request)
+        return httpx.Response(200, stream=httpx.ByteStream(b"ok"))
+
+    table = {"media.example.com": ["2606:2800:220:1::1", PUBLIC, "93.184.216.35"]}
+    got = fetch(tmp_path, handler, table=table)
+    assert got.bytes == 2
+    assert seen == [PUBLIC, "93.184.216.35"]  # IPv4 first; the IPv6 one was not needed
+
+
+def test_when_no_address_connects_it_is_a_provider_error(tmp_path: Path) -> None:
+    seen: List[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        raise httpx.ConnectError("unreachable", request=request)
+
+    table = {"media.example.com": ["2606:2800:220:1::1", PUBLIC]}
+    with pytest.raises(JobFailure) as caught:
+        fetch(tmp_path, handler, table=table)
+    assert caught.value.reason is Reason.PROVIDER_ERROR
+    assert seen == [PUBLIC, "2606:2800:220:1::1"]
+
+
+def test_a_mixed_answer_with_a_private_address_sends_nothing(tmp_path: Path) -> None:
+    with pytest.raises(JobFailure) as caught:
+        fetch(tmp_path, _never, table={"media.example.com": [PUBLIC, "10.0.0.1"]})
+    assert caught.value.reason is Reason.SOURCE_REFUSED
+
+
+def test_each_hop_gets_only_the_time_left(tmp_path: Path, monkeypatch) -> None:
+    clock = iter([0.0, 5.0, 8.0, 20.0, 20.0, 20.0])
+    monkeypatch.setattr(url_fetch.time, "monotonic", lambda: next(clock))
+    timeouts: List[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        timeouts.append(request.extensions["timeout"]["connect"])
+        return httpx.Response(302, headers={"location": "/next"})
+
+    with pytest.raises(JobFailure) as caught:
+        fetch(tmp_path, handler, deadline_s=12)
+    assert caught.value.reason is Reason.DEADLINE
+    assert timeouts == [7.0, 4.0]  # 12 - 5, then 12 - 8; the third hop had no time left

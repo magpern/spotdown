@@ -67,6 +67,41 @@ def _check_status(status: int, headers: httpx.Headers) -> None:
         raise JobFailure(Reason.PROVIDER_ERROR)
 
 
+def _ordered(addresses: List[str]) -> List[str]:
+    """IPv4 first (many containers have no IPv6 route), each family in resolver order."""
+    return sorted(addresses, key=lambda a: ipaddress.ip_address(a.split("%", 1)[0]).version)
+
+
+def _connect(
+    client: httpx.Client, addresses: List[str], checked: url_policy.CheckedUrl, end: float
+) -> httpx.Response:
+    """Sends the request to each checked address in turn until one connects. Each hop gets the
+    time left of the job's deadline, at most 30 s per network wait."""
+    failure = Reason.PROVIDER_ERROR
+    for address in addresses:
+        left = end - time.monotonic()
+        if left <= 0:
+            raise JobFailure(Reason.DEADLINE)
+        request = client.build_request(
+            "GET",
+            _address_url(address, checked.target),
+            headers={"Host": checked.host, "Accept-Encoding": "identity"},
+            extensions={"sni_hostname": checked.host},
+            timeout=httpx.Timeout(min(30.0, left)),
+        )
+        try:
+            return client.send(request, stream=True)
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            # Nothing was sent to this address: the next one may still answer.
+            failure = Reason.DEADLINE if isinstance(exc, httpx.ConnectTimeout) else failure
+            continue
+        except httpx.TimeoutException:
+            raise JobFailure(Reason.DEADLINE) from None
+        except httpx.HTTPError:
+            raise JobFailure(Reason.PROVIDER_ERROR) from None
+    raise JobFailure(failure)
+
+
 def fetch_url(
     url: str,
     dest: Path,
@@ -84,26 +119,12 @@ def fetch_url(
     except url_policy.UrlRefused:
         raise JobFailure(Reason.SOURCE_REFUSED) from None
     current = url
-    timeout = httpx.Timeout(min(30.0, deadline_s))
-    with httpx.Client(
-        transport=transport, trust_env=False, follow_redirects=False, timeout=timeout
-    ) as client:
+    with httpx.Client(transport=transport, trust_env=False, follow_redirects=False) as client:
         for _ in range(MAX_REDIRECTS + 1):
             addresses = resolver(checked.host)
             if not url_policy.all_public(addresses):
                 raise JobFailure(Reason.SOURCE_REFUSED)
-            request = client.build_request(
-                "GET",
-                _address_url(addresses[0], checked.target),
-                headers={"Host": checked.host, "Accept-Encoding": "identity"},
-                extensions={"sni_hostname": checked.host},
-            )
-            try:
-                response = client.send(request, stream=True)
-            except httpx.TimeoutException:
-                raise JobFailure(Reason.DEADLINE) from None
-            except httpx.HTTPError:
-                raise JobFailure(Reason.PROVIDER_ERROR) from None
+            response = _connect(client, _ordered(addresses), checked, end)
             try:
                 if response.has_redirect_location:
                     location = response.headers.get("location", "")

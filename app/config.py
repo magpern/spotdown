@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     # Sourcing
     allow_ytdlp_sourcing: bool = False
     source_search_results: int = 5
+    # POST /v2/match: how many tracks of one batch are searched at the same time.
+    match_concurrency: int = 4
 
     # Service mode (classbeat plan §3, §8; docs/contract-v2.md). On: only /v2 (behind the service
     # key) and /healthz are served; no UI, /files, /api/v1, Spotify resolution or CORS.

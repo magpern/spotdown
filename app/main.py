@@ -50,10 +50,11 @@ def create_service_app(
 ) -> FastAPI:
     """Service mode: ``/v2`` behind the service key, and ``/healthz``. No UI, no ``/files``,
     no ``/api/v1``, no Spotify resolution, no CORS and no API docs."""
-    from .service import cache_routes, errors, routes, url_policy
+    from .service import cache_routes, errors, match_routes, routes, url_policy
     from .service.dispatch import rq_dispatcher
     from .service.service_key import ServiceKeyMiddleware, load_service_key
     from .service.store import Store
+    from .youtube.ytdlp_client import YtDlpClient
 
     key = load_service_key(settings.service_key_file)  # fails closed without a key
     url_policy.parse_allowlist(settings.url_allowed_hosts)  # fails on a bad entry
@@ -65,10 +66,12 @@ def create_service_app(
     app.state.service_key = key
     app.state.store = Store(settings.service_db_path)
     app.state.dispatch = dispatch or rq_dispatcher(settings)
+    app.state.youtube = YtDlpClient()  # used only when ALLOW_YTDLP_SOURCING=true
     errors.install_handlers(app)
     app.get("/healthz")(_healthz)
     app.include_router(routes.router)
     app.include_router(cache_routes.router)
+    app.include_router(match_routes.router)
     app.add_middleware(ServiceKeyMiddleware, key=key)
     return app
 

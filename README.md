@@ -57,6 +57,19 @@ read from the file in `SERVICE_KEY_FILE` (the service refuses to start without i
   resolved address public, no redirect to another host, size cap and deadline); `GET /v2/jobs/{id}`.
 - The analysis runs in a subprocess with rlimits (`ANALYSIS_MAX_*`); a file over a limit ends as
   `processing_failed` and the worker carries on. Temporary audio is deleted after every job.
+- **YouTube (off by default).** With `ALLOW_YTDLP_SOURCING=true`, `POST /v2/match` turns
+  `{title, artists, duration_s, isrc?}` into ranked YouTube candidates (recording-match confidence,
+  band, duration check, up to 2 alternates; no download), and `POST /v2/analyses` accepts
+  `source_ref: "youtube:<11-character video id>"`. With the setting off both are
+  `422 source_disabled`. A YouTube analysis is global: one per video, shared by every scope, and not
+  removed by a scope deletion. Every YouTube match is **timing-approximate** for the caller;
+  spotdown reports the evidence only and never claims identical audio.
+
+  **Terms-of-service risk, the operator's to accept:** downloading from YouTube breaks YouTube's
+  terms, and using it for Spotify-catalogue tracks touches Spotify's Developer Policy. Returning
+  only metadata, or running noncommercially, does **not** remove that risk. Enabling it is a
+  deliberate per-deployment decision (for classbeat: the owner's, classbeat#1296). Tests and CI never
+  call YouTube: yt-dlp is faked in every test.
 
 ## Backend-only (no web UI)
 
@@ -153,11 +166,13 @@ play the downloaded file itself.
 
 ## Things to harden before anything real
 
-- **Matching accuracy** (`app/sources.py`): match on duration (and ideally ISRC), not just
-  title+artist, or you get wrong/live/sped-up versions.
+- **Matching accuracy** (`app/sources.py`, standalone): match on duration (and ideally ISRC), not
+  just title+artist, or you get wrong/live/sped-up versions. Service mode has a scored matcher
+  (`app/youtube/match_calc.py`) with version-marker, channel, ISRC and duration signals.
 - **Caching**: already keyed by `track_id`; convert once, serve many.
-- **yt-dlp upkeep** (`app/sources.py`): the real operational burden. YouTube actively fights
-  downloaders, so expect to update `yt-dlp` constantly. Two failures you *will* hit:
+- **yt-dlp upkeep** (`app/sources.py`, `app/youtube/ytdlp_client.py`): the real operational
+  burden. YouTube actively fights downloaders, so expect to update `yt-dlp` constantly. Two
+  failures you *will* hit:
   - **"Requested format is not available"** → yt-dlp too old to decode YouTube's current
     signatures. Fix: `pip install -U yt-dlp` (and bump the pin in `requirements.txt`).
   - **"The page needs to be reloaded" / "Sign in to confirm you're not a bot"** → YouTube's
@@ -184,4 +199,6 @@ app/
   db.py          SQLite cache (downloads table, track_id)
   queue.py       Redis + RQ
   jobs.py        the worker pipeline
+  youtube/       service-mode matcher (pure scoring) and the yt-dlp driver
+  service/       service mode (/v2): routes, worker, caches, sandbox
 ```

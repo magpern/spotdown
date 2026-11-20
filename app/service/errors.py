@@ -34,7 +34,7 @@ def install_handlers(app: FastAPI) -> None:
         # FastAPI's default 422 echoes the input, which could carry a URL's query string.
         assert isinstance(exc, RequestValidationError)
         locs = {".".join(str(p) for p in e.get("loc", ())[1:]) for e in exc.errors()}
-        fields = sorted(f for f in locs if _FIELD.match(f)) or ["body"]
+        fields = sorted(f for f in locs if _FIELD.fullmatch(f)) or ["body"]
         return error_response(422, "invalid_request", "invalid fields: " + ", ".join(fields))
 
     app.add_exception_handler(ApiError, _api_error)

@@ -49,7 +49,7 @@ def _normal_ref(kind: str, ref: str, allowed: frozenset) -> str:
             return url_policy.check_url(ref, allowed).ref
         except url_policy.UrlRefused:
             return ref  # never stored in this form, so it simply misses
-    if not _YOUTUBE_ID.match(ref):
+    if not _YOUTUBE_ID.fullmatch(ref):
         raise ApiError(422, "invalid_request", "invalid source")
     return ref
 
@@ -69,7 +69,7 @@ def lookup(
     if sha256 is not None:
         if scope is None:
             raise ApiError(422, "scope_required", "a valid cache_scope is required")
-        if not _SHA256.match(sha256):
+        if not _SHA256.fullmatch(sha256):
             raise ApiError(422, "invalid_request", "sha256 must be 64 lower-case hex digits")
         hit = store.find_by_sha(scope, sha256, version)
     else:
@@ -95,7 +95,7 @@ def get_analysis(
 ) -> JSONResponse:
     scope = _checked_scope(cache_scope)
     doc = None
-    if re.match(ID_PATTERN, analysis_id):
+    if re.fullmatch(ID_PATTERN, analysis_id):
         doc = store_of(request).get_analysis_in_scope(analysis_id, scope)
     if doc is None:
         raise _not_found()

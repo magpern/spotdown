@@ -89,6 +89,17 @@ class CacheStore(SqliteBase):
             self.entries_by_sha(scope, sha256), scope=scope, sha256=sha256, analyzer_version=version
         )
 
+    def find_global_by_sha(self, sha256: str, version: str) -> Optional[CacheEntry]:
+        """A global (``youtube``) analysis of these exact bytes, for reuse by a global source."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT {_ENTRY_COLUMNS} FROM analyses a"
+                " WHERE a.cache_scope IS NULL AND a.sha256 = ?",
+                (sha256,),
+            ).fetchall()
+        hits = [e for e in map(_entry, rows) if policy.usable(e, None, version)]
+        return hits[0] if hits else None
+
     def find_by_source(
         self, kind: str, ref: str, scope: Optional[str], version: str
     ) -> Optional[CacheEntry]:

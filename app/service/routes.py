@@ -1,12 +1,15 @@
 """The v2 routes of this phase: ``PUT /v2/uploads``, ``POST /v2/analyses``, ``GET /v2/jobs/{id}``.
 
-Sources: ``upload`` and ``url``. ``source_ref`` sources (``youtube``) are ``422 source_disabled``
-until spotdown#10, and a ``reference`` (alignment) is refused until spotdown#11. Lookups,
-``GET /v2/analyses/{id}`` and the scope deletion are in ``cache_routes``.
+Sources: ``upload``, ``url`` and ``youtube`` (``source_ref`` ``youtube:<video id>``, ``422
+source_disabled`` unless ``ALLOW_YTDLP_SOURCING=true``; its ``cache_scope`` is optional and its
+analysis is global). A ``reference`` (alignment) is refused until spotdown#11. Lookups,
+``GET /v2/analyses/{id}`` and the scope deletion are in ``cache_routes``; the matcher in
+``match_routes``.
 
 ``POST /v2/analyses`` answers from the cache when it can (equal sha256 and ``analyzer_version`` in
-the caller's scope, or the same source reference in that scope): ``200`` with a job that is already
-``done``, no queue, no analysis. Both it and ``PUT /v2/uploads`` need an ``Idempotency-Key``.
+the caller's scope, or the same source reference in that scope; a global ``youtube`` link in
+any scope): ``200`` with a job that is already ``done``, no queue, no analysis. Both it and
+``PUT /v2/uploads`` need an ``Idempotency-Key``.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from typing import Any, Dict, Optional, Tuple
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
 
+from ..youtube.normalise_policy import VIDEO_ID
 from . import analysis_doc, url_policy
 from . import idempotency_policy as idem
 from .api_models import ID_PATTERN, AnalysisRequest, scope_problem
@@ -42,7 +46,7 @@ async def put_upload(
     return await receive_upload(request, settings_of(request), store_of(request), idempotency_key)
 
 
-def _replay(store: Any, scope: str, key: str, req_hash: str) -> Optional[JSONResponse]:
+def replay(store: Any, scope: str, key: str, req_hash: str) -> Optional[JSONResponse]:
     """The first response for this key, ``409`` when the key was used for another request."""
     recorded = store.idem_get(scope, key)
     verdict = idem.decide(recorded, req_hash)
@@ -55,6 +59,18 @@ def _replay(store: Any, scope: str, key: str, req_hash: str) -> Optional[JSONRes
     return None
 
 
+def _youtube_ref(source_ref: str, settings: Any) -> str:
+    """The 11-character video id of ``youtube:<id>``; the source is off unless enabled."""
+    kind, sep, ref = source_ref.partition(":")
+    if not sep or kind != "youtube":
+        raise ApiError(422, "invalid_request", "source_ref must be youtube:<video id>")
+    if not settings.allow_ytdlp_sourcing:
+        raise ApiError(422, "source_disabled", "this source is disabled in this deployment")
+    if not VIDEO_ID.fullmatch(ref):
+        raise ApiError(422, "invalid_request", "a youtube reference is an 11-character video id")
+    return ref
+
+
 @router.post("/analyses")
 def post_analysis(
     body: AnalysisRequest,
@@ -64,23 +80,24 @@ def post_analysis(
     settings, store = settings_of(request), store_of(request)
     if body.source_count() != 1:
         raise ApiError(422, "invalid_request", "give exactly one of upload_id, source_ref or url")
-    if body.source_ref is not None:
-        raise ApiError(422, "source_disabled", "this source is disabled in this deployment")
+    video_id = _youtube_ref(body.source_ref, settings) if body.source_ref is not None else None
     allowed = url_policy.parse_allowlist(settings.url_allowed_hosts)
     if body.url is not None and not allowed:
         raise ApiError(422, "source_disabled", "this source is disabled in this deployment")
     problem = scope_problem(body.cache_scope)
-    if problem:
+    if problem and not (video_id is not None and body.cache_scope is None):
+        # Optional for a global (youtube) source; required and valid for every other one.
         raise ApiError(422, problem, "a valid cache_scope is required")
     if body.reference is not None:
         raise ApiError(422, "alignment_unavailable", "alignment is not available yet")
     problem = idem.key_problem(idempotency_key)
     if problem:
         raise ApiError(422, problem, "a valid Idempotency-Key header is required")
-    assert body.cache_scope is not None and idempotency_key is not None
+    assert idempotency_key is not None
     scope, key = body.cache_scope, idempotency_key
+    idem_scope = scope or ""  # a scope-less (youtube-only) request keys under the global ""
     req_hash = idem.request_hash(ANALYSES, body.model_dump(mode="json", exclude_none=True))
-    replayed = _replay(store, scope, key, req_hash)
+    replayed = replay(store, idem_scope, key, req_hash)
     if replayed is not None:
         return replayed
 
@@ -91,7 +108,10 @@ def post_analysis(
     }
     version = analysis_doc.ANALYZER_VERSION_V2
     hit = None
-    if body.url is not None:
+    if video_id is not None:
+        job.update(source_kind="youtube", source_ref=video_id)
+        hit = store.find_by_source("youtube", video_id, scope, version)
+    elif body.url is not None:
         try:
             checked = url_policy.check_url(body.url, allowed)
         except url_policy.UrlRefused as refused:
@@ -100,7 +120,7 @@ def post_analysis(
         hit = store.find_by_source("url", checked.ref, scope, version)
     else:
         purge_expired_uploads(settings, store)
-        assert body.upload_id is not None
+        assert body.upload_id is not None and scope is not None
         claimed = store.claim_upload(body.upload_id, scope)
         if claimed is None:
             raise ApiError(404, "upload_not_found", "no such upload in this scope")
@@ -119,11 +139,11 @@ def post_analysis(
             "status": "done",
             "analysis_id": hit.analysis_id,
         }
-        return _record(store, scope, key, req_hash, 200, answer, job["job_id"])[0]
+        return _record(store, idem_scope, key, req_hash, 200, answer, job["job_id"])[0]
 
     store.add_job(job)
     answer = {"job_id": job["job_id"], "status": "queued"}
-    response, won = _record(store, scope, key, req_hash, 202, answer, job["job_id"])
+    response, won = _record(store, idem_scope, key, req_hash, 202, answer, job["job_id"])
     if not won:
         return response
     dispatch: Dispatch = request.app.state.dispatch
@@ -131,7 +151,7 @@ def post_analysis(
         dispatch(job["job_id"])
     except Exception:  # noqa: BLE001 - the queue is down; nothing was started
         store.delete_job(job["job_id"])
-        store.idem_delete(scope, key)
+        store.idem_delete(idem_scope, key)
         if job.get("upload_id"):
             store.release_upload(job["upload_id"])
         raise ApiError(503, "queue_unavailable", "the job queue is unavailable") from None
@@ -184,7 +204,7 @@ def get_job(
     cache_scope: Optional[str] = Query(default=None, max_length=128),
 ) -> JSONResponse:
     found = None
-    if re.match(ID_PATTERN, job_id):
+    if re.fullmatch(ID_PATTERN, job_id):
         # Jobs are visible only in the scope that created them; a miss reveals nothing.
         found = store_of(request).get_job_in_scope(job_id, cache_scope)
     if found is None:
