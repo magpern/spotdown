@@ -1,4 +1,5 @@
-"""Runs the core analyser in a subprocess with rlimits on memory, CPU time and decoded length.
+"""Runs the core analyser in a subprocess with rlimits on memory, CPU time and decoded length,
+and deadlines on the decode and the whole run.
 
 The worker process never decodes untrusted audio itself: a crash, a runaway decode or an
 allocation storm ends the child, and the worker maps it to a failure reason and carries on.
@@ -33,6 +34,7 @@ class Limits:
     cpu_s: int
     wall_s: float
     decoded_s: float
+    decode_s: float  # the decode itself (inside wall_s)
 
 
 def _apply_limits(limits: Limits) -> None:
@@ -58,12 +60,18 @@ def _children_cpu_s() -> float:
 def _reason_for(returncode: int, cpu_used_s: float, limits: Limits) -> Reason:
     if returncode == child.EXIT_DECODE:
         return Reason.DECODE
+    if returncode == child.EXIT_INVALID_MEDIA:
+        return Reason.UNSUPPORTED_MEDIA
+    if returncode == child.EXIT_DECODE_TIMEOUT:
+        return Reason.DEADLINE
     if returncode == child.EXIT_TOO_LONG:
         return Reason.TOO_LONG
     if returncode == child.EXIT_MEMORY:
         return Reason.MEMORY
     if returncode == -signal.SIGXCPU:
         return Reason.CPU_LIMIT
+    if returncode == -signal.SIGALRM:  # the child's decode deadline
+        return Reason.DEADLINE
     if returncode == -signal.SIGKILL:
         # The hard CPU limit kills with SIGKILL too; a kill well inside the CPU budget is the
         # kernel's (or the container's) out-of-memory killer.
@@ -86,6 +94,7 @@ def run_analysis(audio: Path, media: str, work: Path, limits: Limits) -> Dict[st
         str(result),
         repr(float(limits.decoded_s)),
         media,
+        repr(float(limits.decode_s)),
     ]
     proc = subprocess.Popen(
         cmd,

@@ -1,8 +1,10 @@
 """``PUT /v2/uploads``: stream audio bytes to a temporary file under a size cap.
 
 The body is read chunk by chunk and refused once it passes ``MAX_UPLOAD_BYTES``; only mp3, mp4 and
-wav are kept (recognised by their bytes). No file name is kept. The file is deleted after the job
-that uses it, or once its TTL passes unused.
+wav are kept, recognised by their bytes and then checked whole (``container_io``: truncated,
+malformed or mixed files and insane streams are refused). No file name is kept. A refused upload
+leaves no file and no row. The file is deleted after the job that uses it, or once its TTL passes
+unused.
 """
 
 from __future__ import annotations
@@ -12,13 +14,15 @@ import secrets
 import time
 from pathlib import Path
 
+import anyio.to_thread
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from ..config import Settings
+from . import container_io, media_policy
 from . import idempotency_policy as idem
-from . import media_policy
 from .api_models import scope_problem
+from .container_policy import InvalidMedia
 from .errors import ApiError
 from .store import Store
 
@@ -77,6 +81,14 @@ async def receive_upload(
         media = media_policy.sniff(head)
         if media is None:
             raise ApiError(415, "unsupported_media_type", "only mp3, mp4 and wav are accepted")
+        try:  # the whole structure, off the event loop (it reads the file)
+            await anyio.to_thread.run_sync(
+                container_io.inspect_file, part, media, settings.analysis_max_decoded_s
+            )
+        except InvalidMedia:
+            raise ApiError(
+                415, "unsupported_media_type", "not a well-formed mp3, mp4 or wav file"
+            ) from None
         req_hash = idem.request_hash(ENDPOINT, {"sha256": digest.hexdigest(), "bytes": size})
         recorded = store.idem_get(scope, idem_key)
         verdict = idem.decide(recorded, req_hash)

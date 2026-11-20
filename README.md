@@ -53,10 +53,13 @@ read from the file in `SERVICE_KEY_FILE` (the service refuses to start without i
 `/files`, `/api/v1`, Spotify URL resolution, CORS and the API docs are off.
 
 - `PUT /v2/uploads?cache_scope=…`: stream mp3, mp4 or wav bytes (`application/octet-stream`, capped
-  by `MAX_UPLOAD_BYTES`); kept for one job or `UPLOAD_TTL_S`.
+  by `MAX_UPLOAD_BYTES`, 60 MiB by default); the whole structure is checked and a malformed,
+  truncated or mixed file is refused (`415`) with nothing kept; kept for one job or `UPLOAD_TTL_S`.
 - `POST /v2/analyses` with `upload_id` or `url` (https, hosts in `URL_ALLOWED_HOSTS` only, every
   resolved address public, no redirect to another host, size cap and deadline); `GET /v2/jobs/{id}`.
-- The analysis runs in a subprocess with rlimits (`ANALYSIS_MAX_*`); a file over a limit ends as
+- The analysis runs in a subprocess with rlimits (`ANALYSIS_MAX_*`, the decode itself within
+  `ANALYSIS_MAX_DECODE_S`); the file is checked again and decoded by a decoder pinned to its
+  container; a file over a limit ends as
   `processing_failed` and the worker carries on. Temporary audio is deleted after every job; a job
   whose worker was killed is failed (`timeout`) once past its lease and its audio swept.
 - Global rows holding a catalogue-derived reference (a chosen video's match record, a YouTube

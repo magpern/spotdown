@@ -14,6 +14,7 @@ from app.main import create_app
 from app.service.store import Store
 from app.service.uploads import purge_expired_uploads
 
+from . import media_fixtures as mf
 from .service_helpers import (
     AUTH,
     SCOPE,
@@ -51,14 +52,17 @@ def test_an_upload_is_stored_without_a_name(settings, tmp_path: Path) -> None:
     assert "evil" not in str(row)
 
 
-@pytest.mark.parametrize(
-    "head", [b"ID3\x04\x00\x00\x00\x00\x00\x00", b"\xff\xfb\x90\x64", b"\x00\x00\x00\x20ftypM4A "]
-)
-def test_mp3_and_mp4_are_accepted(settings, head: bytes) -> None:
-    res = client_for(settings).put(
-        f"/v2/uploads?cache_scope={SCOPE}", headers=OCTET, content=head + b"\x00" * 100
-    )
+@pytest.mark.parametrize("media", ["mp3", "mp3_id3", "mp4"])
+def test_mp3_and_mp4_are_accepted(settings, media: str) -> None:
+    data = {
+        "mp3": mf.mp3_frames(20),
+        "mp3_id3": mf.id3v2() + mf.mp3_frames(20),
+        "mp4": mf.mp4(),
+    }[media]
+    res = client_for(settings).put(f"/v2/uploads?cache_scope={SCOPE}", headers=OCTET, content=data)
     assert res.status_code == 201
+    row = Store(settings.service_db_path).get_upload(res.json()["upload_id"])
+    assert row is not None and row["media"] == media[:3]
 
 
 @pytest.mark.parametrize("data", [b"OggS" + b"\x00" * 100, b"<html>" * 10, b"", b"RIFF"])

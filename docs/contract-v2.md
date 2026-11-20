@@ -143,6 +143,22 @@ Push audio bytes (`Content-Type: application/octet-stream`; query `cache_scope`)
 after 1 hour) and no file name is kept. Callers first try the sha256 lookup below, so unchanged
 audio is never uploaded twice.
 
+Every upload is treated as hostile (spotdown#29). Only mp3 (MPEG Layer III), mp4/m4a (an MP4 brand
+with an AAC track) and wav (PCM or float) are accepted, recognised by their bytes and then checked
+whole; the extension and `Content-Type` are never trusted. A body over the byte cap (the operator's
+`MAX_UPLOAD_BYTES`, 60 MiB by default, whatever the caller declares) is `413 too_large`. A file
+that is empty, truncated, malformed, mixed with other content (anything after the audio but an
+ID3v1 or APEv2 tag), outside 8000 to 192000 Hz or 1 to 8 channels, or whose tables declare more
+than they hold, is `415 unsupported_media_type`. A refused upload leaves no file, no row and no
+idempotency record. Tags and metadata are never read into any output. A file whose structure
+already shows more than the decoded-length cap is accepted here and refused by its job
+(`processing_failed`, `out_of_memory`) before it is decoded.
+
+The job checks every source (upload, `url`, `youtube`) the same way in the analysis sandbox before
+decoding, and decodes with a decoder pinned to that container (no format guessing). A file refused
+there is `processing_failed` with `decode_error`; a decode past the operator's decode deadline
+(`ANALYSIS_MAX_DECODE_S`, 120 s by default) is `processing_failed` with `timeout`.
+
 ### `POST /v2/analyses`
 
 Start an analysis. Exactly one of `upload_id`, `source_ref` (`<kind>:<ref>`, for example
