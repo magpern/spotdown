@@ -1,16 +1,23 @@
-"""Beat-synchronous structural segmentation (librosa), on the file's own clock."""
+"""Structural segmentation on the file's own clock: novelty peaks, drops and silence edges.
+
+Boundaries come from a self-similarity novelty curve over log-mel and chroma features (see
+``novelty_calc``), plus the detected drops and the content edges; none of them needs a beat grid,
+so empty intros and breakdowns resolve like any other section.
+"""
 
 from __future__ import annotations
 
-from typing import List
+from typing import Any, Dict, List, Sequence
 
 import librosa
 import numpy as np
 
-from . import HOP
+from . import HOP, novelty_calc
 from .signal_calc import quiet_region_edges, segment_label
 
 MIN_SEG_S = 2.0
+FRAME_S = 0.5
+MERGE_S = 3.0  # a drop or edge this close to a novelty peak is the same boundary
 
 
 def cluster_groups(seg_feats: List[np.ndarray]) -> List[int]:
@@ -20,95 +27,95 @@ def cluster_groups(seg_feats: List[np.ndarray]) -> List[int]:
     try:
         from scipy.cluster.hierarchy import fcluster, linkage
 
-        X = np.vstack(seg_feats)
-        Z = linkage(X, method="ward")
-        ngroups = min(4, len(seg_feats))
-        labels = fcluster(Z, t=ngroups, criterion="maxclust")
+        Z = linkage(np.vstack(seg_feats), method="ward")
+        labels = fcluster(Z, t=min(4, len(seg_feats)), criterion="maxclust")
         return [int(v) for v in labels]
     except Exception:
         return [0] * len(seg_feats)
 
 
-def segments(
-    y, sr, beat_frames, beat_times, duration, grid, e_full, e_struct, struct_frames, drops
-) -> list:
-    if len(beat_frames) < 6:
-        return []
-    chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=HOP)
-    mfcc = librosa.feature.mfcc(y=y, sr=sr, hop_length=HOP, n_mfcc=13)
-    feat = np.vstack(
-        [
-            librosa.util.normalize(chroma, axis=0),
-            librosa.util.normalize(mfcc, axis=0),
-        ]
+def features(y: np.ndarray, sr: int) -> "tuple[np.ndarray, float]":
+    """Log-mel plus half-weight chroma, averaged to ``FRAME_S`` frames: ``(matrix, frame_s)``."""
+    mel = librosa.power_to_db(
+        librosa.feature.melspectrogram(y=y, sr=sr, hop_length=HOP, n_mels=40, fmax=8000)
     )
-    fsync = librosa.util.sync(feat, beat_frames, aggregate=np.mean)
-    n = fsync.shape[1]
-    if n < 3:
+    chroma = librosa.feature.chroma_stft(y=y, sr=sr, hop_length=HOP)
+    k = max(1, int(round(FRAME_S / (HOP / sr))))
+    n = mel.shape[1] // k
+
+    def avg(a: np.ndarray) -> np.ndarray:
+        return a[:, : n * k].reshape(a.shape[0], n, k).mean(axis=2)
+
+    z = novelty_calc.zscore
+    return np.vstack([z(avg(mel)), 0.5 * z(avg(chroma))]), k * HOP / sr
+
+
+def boundaries(
+    feat: np.ndarray,
+    frame_s: float,
+    duration: float,
+    drops: Sequence[float],
+    edges: Sequence[float],
+) -> List[Dict[str, float]]:
+    """Interior boundaries ``{"t", "novelty"}``: peaks, plus drops and edges not near one."""
+    nov = novelty_calc.novelty_curve(feat)
+    found = [
+        {"t": i * frame_s, "novelty": float(nov[i])} for i in novelty_calc.pick_peaks(nov, frame_s)
+    ]
+
+    def at(t: float) -> float:
+        return float(nov[min(nov.size - 1, max(0, int(round(t / frame_s))))]) if nov.size else 0.0
+
+    for t in [*drops, *edges]:
+        if MIN_SEG_S < t < duration - MIN_SEG_S and all(abs(t - b["t"]) > MERGE_S for b in found):
+            found.append({"t": float(t), "novelty": at(t)})
+        else:
+            near = [b for b in found if abs(t - b["t"]) <= MERGE_S]
+            if near and t in drops:
+                min(near, key=lambda b: abs(t - b["t"]))["t"] = float(t)  # the drop is exact
+    return sorted(found, key=lambda b: b["t"])
+
+
+def segments(
+    y: np.ndarray,
+    sr: int,
+    duration: float,
+    grid: np.ndarray,
+    e_full: np.ndarray,
+    e_struct: np.ndarray,
+    drops: Sequence[float],
+    content: Sequence[float],
+) -> List[Dict[str, Any]]:
+    feat, frame_s = features(y, sr)
+    if feat.shape[1] < 3:
         return []
-
-    # Energy weighted into the beat-synchronous features so loud<->quiet shifts matter.
-    esync = librosa.util.sync(struct_frames[np.newaxis, :], beat_frames, aggregate=np.mean)[0]
-    esync = esync / (float(esync.max()) or 1.0)
-    feat_full = np.vstack([fsync, np.tile(esync, (8, 1))])
-
-    # Column i of fsync spans edges[i]..edges[i+1]; its center time locates it.
-    edges = [0.0] + [float(t) for t in beat_times] + [float(duration)]
-    col_center = np.array([0.5 * (edges[i] + edges[i + 1]) for i in range(n)])
-
-    def edge_time(idx: int) -> float:
-        return float(edges[max(0, min(idx, len(edges) - 1))])
-
-    # Boundaries are assembled in TIME from three sources, so regions without a beat
-    # grid (empty intros) are still resolved:
-    k = int(max(4, min(16, round(duration / 12.0))))
-    k = min(k, n - 1)
-    try:
-        beat_bounds = [edge_time(int(b)) for b in librosa.segment.agglomerative(feat_full, k)]
-    except Exception:
-        beat_bounds = []
-    quiet_edges = quiet_region_edges(grid, e_struct, thresh=0.15, min_len=3.0)
-    drop_times = [float(d) for d in drops]
-
-    cand = {0.0, float(duration)}
-    cand.update(beat_bounds)
-    cand.update(quiet_edges)
-    cand.update(drop_times)
-    times = sorted(t for t in cand if 0.0 <= t <= duration)
-
-    # Enforce a minimum segment length.
-    merged = [times[0]]
-    for t in times[1:]:
-        if t - merged[-1] >= MIN_SEG_S:
-            merged.append(t)
-    if float(duration) - merged[-1] >= MIN_SEG_S:
-        merged.append(float(duration))
-    else:
-        merged[-1] = float(duration)
-
+    edges = [t for t in content if MIN_SEG_S < t < duration - MIN_SEG_S]
+    edges += quiet_region_edges(grid, e_struct, thresh=0.05, min_len=3.0)
+    cuts = boundaries(feat, frame_s, duration, drops, edges)
+    times = [0.0]
+    strength = {0.0: 1.0}
+    for b in cuts:
+        if b["t"] - times[-1] >= MIN_SEG_S and duration - b["t"] >= MIN_SEG_S:
+            times.append(round(b["t"], 3))
+            strength[times[-1]] = b["novelty"]
+    times.append(float(duration))
     raw, seg_feats = [], []
-    for st, en in zip(merged[:-1], merged[1:]):
+    for st, en in zip(times[:-1], times[1:]):
         mask = (grid >= st) & (grid < en)
-        ef = float(e_full[mask].mean()) if mask.any() else 0.0
-        es = float(e_struct[mask].mean()) if mask.any() else 0.0
-        cmask = (col_center >= st) & (col_center < en)
-        segf = fsync[:, cmask].mean(axis=1) if cmask.any() else np.zeros(fsync.shape[0])
-        seg_feats.append(segf)
+        cols = feat[:, int(st / frame_s) : max(int(en / frame_s), int(st / frame_s) + 1)]
+        seg_feats.append(cols.mean(axis=1))
         raw.append(
             {
                 "start": round(st, 3),
                 "end": round(en, 3),
-                "energy_full": round(ef, 3),
-                "energy_struct": round(es, 3),
+                "energy_full": round(float(e_full[mask].mean()) if mask.any() else 0.0, 3),
+                "energy_struct": round(float(e_struct[mask].mean()) if mask.any() else 0.0, 3),
+                "boundary_novelty": round(strength.get(round(st, 3), 0.0), 4),
             }
         )
-    if not raw:
-        return []
-
     groups = cluster_groups(seg_feats)
     structs = [s["energy_struct"] for s in raw]
-    hi = float(np.percentile(structs, 60))
-    lo = float(np.percentile(structs, 35))
+    hi, lo = float(np.percentile(structs, 60)), float(np.percentile(structs, 35))
     for i, s in enumerate(raw):
         s["group"] = groups[i] if i < len(groups) else 0
         s["label"] = segment_label(i, len(raw), s["energy_struct"], hi, lo)

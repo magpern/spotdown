@@ -78,3 +78,10 @@ def quiet_region_edges(
         else:
             i += 1
     return edges
+
+
+def bin_frames(x: np.ndarray, frame_s: float, step_s: float) -> "tuple[float, np.ndarray]":
+    """Mean of ``x`` over bins of about ``step_s``: ``(actual step in s, binned values)``."""
+    k = max(1, int(round(step_s / frame_s)))
+    n = x.size // k
+    return k * frame_s, x[: n * k].reshape(n, k).mean(axis=1) if n else x[:0]

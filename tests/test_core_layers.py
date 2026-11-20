@@ -99,6 +99,6 @@ def test_the_standalone_v1_analysis_keeps_its_shape(tmp_path: Path) -> None:
         "segments_aligned_to_spotify", "bpm", "bpm_candidates", "downbeat_phase", "beat_count",
         "beat_grid", "bars", "drops", "build_ups", "energy_curve", "segments",
     }  # fmt: skip
-    assert result["analyzer_version"] == 4
+    assert result["analyzer_version"] == 5
     assert result["timeline_matches_spotify"] is True
     assert set(result["energy_curve"][0]) == {"t", "full", "percussive", "low"}
