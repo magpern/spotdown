@@ -10,9 +10,12 @@ found (energy, repetition group, position) and the detected drops, nothing else.
 * **bridge**: a middle segment straight after a chorus, with another chorus still to come.
 * **verse**: every other middle segment (including a build into a drop, the pre-chorus).
 
-Every label carries a confidence from how many independent cues agree. Until the label gate in
-``quality/quality_gates.json`` passes on the synthetic fixtures (``GATE_PASSED``), no confidence
-exceeds ``UNGATED_CAP``, so a consumer that only trusts confident features ignores them.
+Every label carries a confidence from how many independent cues agree. The rules and the synthetic
+truth labels were written by the same author on the same three section templates, so the label
+gates (``label_accuracy``, ``label_overconfidence``) are regression checks, not a measurement of
+label quality. ``GATE_PASSED`` therefore stays False and no confidence exceeds ``UNGATED_CAP``
+until held-out evidence exists (CC-licensed fixtures or the owner corpus, spotdown#20); a consumer
+that only trusts confident features then ignores the labels.
 """
 
 from __future__ import annotations
@@ -21,18 +24,20 @@ from typing import Any, Dict, List, Optional, Sequence
 
 LABELS = ("intro", "verse", "chorus", "bridge", "outro", "breakdown")
 
-# Set True only when the label gate (label_accuracy, ece_labels) passes on the synthetic corpus;
-# tests/test_quality_runner.py fails if it is True while a label gate fails.
-GATE_PASSED = True
+# Stays False until held-out evidence exists (spotdown#20): the synthetic corpus is the corpus the
+# rules were written on, so passing label_accuracy and label_overconfidence there does not unlock
+# a higher confidence. tests/test_label_calc.py pins it to False.
+GATE_PASSED = False
 UNGATED_CAP = 0.4  # the most confidence a label carries before its gate passes
-GATED_CAP = 0.75  # synthetic evidence only: never claims more than this
+GATED_CAP = 0.75  # the most a label may claim once held-out evidence exists (not used yet)
 DROP_SNAP_S = 1.0  # a segment this close to a drop starts at it
 BREAKDOWN_RATIO = 0.25  # a middle segment this much below the chorus level is a breakdown
 PEAK_GROUP_RATIO = 0.8  # a member of the peak group at least this loud is a chorus
 SHORT_SEGMENT_S = 4.0  # shorter segments carry less evidence
 
-# Rule confidence before the cap: how often the rule was right on the synthetic corpus, rounded
-# down (the owner corpus recalibrates it). See docs/quality-harness.md.
+# Rule confidence before the cap: deliberately conservative priors (more cues agreeing, more
+# confidence), not measured hit rates; the in-sample accuracy is higher (about 0.9). Held-out
+# evidence recalibrates them. See docs/quality-harness.md.
 BASE_CONFIDENCE = {
     "chorus": 0.8,
     "intro": 0.7,

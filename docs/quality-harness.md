@@ -45,15 +45,20 @@ Truth labels are annotated per section in the specs (`label` on each section, ca
 as `labels`): intro, verse, chorus, bridge, outro, breakdown. Convention: a build into a drop is a
 `verse` (pre-chorus), a drop a `chorus`, a pulse-free pad section a `breakdown`, the thinner middle
 section between two choruses of a groove track a `bridge`. The thresholds (accuracy >= 0.70,
-overconfidence <= 0.10) are set by this enhancement; they are not in plan section 7. Achieved on the
-24 fixtures: accuracy 0.914, overconfidence 0.003 (the two-sided calibration error, 0.30, is reported: the confidences are deliberately low). Failures are visible, not tuned away: the labels
+overconfidence <= 0.10) are set by this enhancement, are not in plan section 7 and are to be recorded in classbeat ADR 0040. Achieved on the
+24 fixtures: accuracy 0.914, overconfidence 0.0 with the 0.4 cap (the two-sided calibration error, 0.53, is reported only: the confidences are deliberately low). Failures are visible, not tuned away: the labels
 mistake a thin breakdown for a bridge (slow-drop-80), end on a verse when the outro is a fade
 (fade-out-108) and miss the chorus on noisy-break-98.
 
-Gate status is `label_calc.GATE_PASSED`: while False no label confidence exceeds 0.4; it may only
-be True while both gates pass on the corpus (the runner test fails otherwise, as it fails on any
-failing gate). The rules were written while looking at the synthetic fixtures, so the accuracy is an
-in-sample figure; the owner corpus (spotdown#20) is the real test and recalibrates the confidences.
+**The two label gates are regression checks, not evidence of label quality.** The truth labels are a
+convention written for the same three section templates the rules were written against, so the
+accuracy is in-sample, and the one-sided overconfidence gate constrains almost nothing while
+accuracy is about 0.9 (a mutation setting every confidence to 0.99 still passed it). So
+`label_calc.GATE_PASSED` stays False and **no label confidence exceeds 0.4**; the cap is not raised
+until held-out evidence exists (CC-licensed fixtures or the owner corpus, spotdown#20), ideally with
+a two-sided calibration gate or per-label reliability. `tests/test_label_calc.py` pins the flag to
+False. The base confidences are deliberately conservative priors, not measured hit rates. The report
+records both the core analyzer version and the document version (`5.1`) that produced the labels.
 
 ## Changing a threshold
 

@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional
 
 from ..config import Settings
 from ..core import ANALYZER_VERSION
+from ..service.analysis_doc import ANALYZER_VERSION_V2
 from ..service.store import Store
 from ..service.uploads import upload_path
 from ..service.worker import execute_job
@@ -143,6 +144,7 @@ def build_report(
     rows = gates_calc.evaluate(gates, metrics)
     return {
         "analyzer_version": ANALYZER_VERSION,
+        "document_version": ANALYZER_VERSION_V2,
         "gates_version": gates["version"],
         "tracks": n,
         "metrics": metrics,
@@ -158,7 +160,8 @@ def build_report(
 
 def format_table(report: Dict[str, Any]) -> str:
     lines = [
-        f"quality gates v{report['gates_version']}, analyzer {report['analyzer_version']}, "
+        f"quality gates v{report['gates_version']}, analyzer {report['analyzer_version']} "
+        f"(document {report['document_version']}), "
         f"{report['tracks']} tracks",
         f"{'gate':32} {'rule':>10} {'value':>9}  result",
     ]

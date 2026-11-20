@@ -82,7 +82,18 @@ def test_confidence_is_capped_until_the_gate_passes(monkeypatch: pytest.MonkeyPa
     assert [x["label"] for x in low] == [x["label"] for x in high]
 
 
-def test_a_chorus_with_both_cues_is_more_confident_than_one_with_a_single_cue() -> None:
+def test_the_label_gate_is_not_passed_without_held_out_evidence() -> None:
+    # The synthetic corpus is the one the rules were written on (spotdown#20 holds the real
+    # evidence), so passing its gates never raises the cap. Change this only with held-out gates.
+    assert label_calc.GATE_PASSED is False
+    found = label_calc.label_segments(_segs(CLUB), [20.0, 60.0], 0.0, 100.0)
+    assert found and max(x["confidence"] for x in found) <= 0.4
+
+
+def test_a_chorus_with_both_cues_is_more_confident_than_one_with_a_single_cue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(label_calc, "GATE_PASSED", True)
     both = label_calc.label_segments(_segs(CLUB), [20.0, 60.0], 0.0, 100.0)
     one = label_calc.label_segments(_segs(CLUB), [20.0], 0.0, 100.0)  # second drop undetected
 
@@ -95,7 +106,8 @@ def test_a_chorus_with_both_cues_is_more_confident_than_one_with_a_single_cue() 
     assert chorus(one, 2) <= chorus(both, 2)
 
 
-def test_a_short_segment_carries_less_confidence() -> None:
+def test_a_short_segment_carries_less_confidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(label_calc, "GATE_PASSED", True)
     rows: List[Seg] = [(0, 10, 0.2, 4), (10, 12, 0.4, 2), (12, 22, 0.5, 1), (22, 32, 0.5, 1)]
     found = label_calc.label_segments(_segs(rows), [], 0.0, 100.0)
     assert found[1]["confidence"] < label_calc.BASE_CONFIDENCE[found[1]["label"]]

@@ -4,7 +4,7 @@ Times stay on the file's own clock. The confidences are first, documented estima
 regularity, energy contrast); the quality harness (spotdown#6) calibrates them. Optional groups
 (meter, downbeats, phrases, alignment) are left out until their gates pass: the meter is never
 assumed to be 4/4. Section labels are always ``heuristic`` and, until their gate passes
-(``label_calc.GATE_PASSED``), low-confidence.
+(``label_calc.GATE_PASSED``, held-out evidence), capped at 0.4.
 """
 
 from __future__ import annotations
