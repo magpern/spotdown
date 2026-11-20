@@ -25,6 +25,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="spotdown", version="0.1.0", lifespan=lifespan)
 
+# Dev convenience: allow the page to call the API when it's opened cross-origin
+# (e.g. a local file:// editor preview hitting http://localhost:8000). Tighten
+# allow_origins for any real deployment.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
