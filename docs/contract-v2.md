@@ -262,13 +262,15 @@ and treat `heuristic` ones as hints.
 | `signal` | duration, content start and end (one `confidence` and `method` for the group), silence regions and fades (each with its own), energy curves (full, percussive, low band) at 1 s | yes |
 | `tempo` | BPM, half and double candidates, stability, change points | yes |
 | `grid` | `beats` | yes |
-| `grid` | `meter` (estimated or heuristic, never assumed 4/4), `downbeats`, `phrases` (8 and 16 bars) | optional |
+| `grid` | `meter` (estimated or heuristic, never assumed 4/4), `downbeats`, `phrases` (8 and 16 bars; analyzer `5.2`: always `heuristic`, confidence at most 0.4, see below) | optional |
 | `structure` | segments with boundary confidence, repetition groups | yes |
 | `events` | build-ups, drops, breakdowns and transitions (hard stop, fade, tempo change), each with strength and confidence | yes |
 | `labels` | intro, verse, chorus, bridge, outro, breakdown per labelled segment, each with a label confidence; always `heuristic` (analyzer `5.1`: present when the content has two or more segments, confidence at most 0.4, see below) | optional |
 | `alignment` | reference (kind, id, duration), offset, residual, confidence, carried recording-match confidence | optional |
 
 **Labels (spotdown#7).** Rule-based, from the segment structure alone (energy, repetition group, position, detected drops): a chorus starts at a drop or belongs to the loudest repeating group, the first and last other segments are intro and outro, a much quieter middle segment is a breakdown, a middle segment right after a chorus with another chorus to come is a bridge, the rest are verses (a build into a drop is a verse, the pre-chorus). Silence around the content is not labelled. The label gates (`label_accuracy`, `label_overconfidence`) pass on the synthetic corpus but are only regression checks there (the rules were written on it), so no label confidence exceeds 0.4; the cap is not raised until held-out evidence exists (spotdown#20: CC-licensed fixtures or the owner corpus). Treat every label as a hint. The schema is unchanged (`labels` was already optional and `heuristic`).
+
+**Phrases (spotdown#8).** Between structural boundaries (the segment starts, which include the detected drops), the next boundary 8 bars later closes an 8-bar phrase, else one 16 bars later closes a 16-bar phrase; a section that is not a whole phrase long gives nothing, so `grid.phrases` is absent when the structure has no such sections. A bar is four beats of the estimated tempo: the meter is not estimated, so the document makes no meter claim and every phrase is a `heuristic` that assumes 4/4. A phrase's times are boundary times on the file's clock, snapped to a tracked bar start when one is within half a bar. Confidence is half the mean boundary confidence of its two ends, capped at 0.4; the cap is not raised until held-out evidence exists (spotdown#20). The phrase gates pass on the synthetic corpus but are regression checks there (see `docs/quality-harness.md`). The schema is unchanged (`grid.phrases` was already optional).
 
 Baseline fields are those the integration depends on; labels, phrases, downbeats and meter are
 incremental enhancements and are never blocking. Until an enhancement passes its gate the field is

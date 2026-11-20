@@ -23,11 +23,13 @@ ACHIEVED_FLOORS: Dict[str, float] = {
     "drop_recall": 1.0,
     "robustness_fraction": 1.0,
     "label_accuracy": 0.85,
+    "phrase_f": 0.80,
 }
 ACHIEVED_CEILINGS: Dict[str, float] = {
     "ece_bpm": 0.08,
     "ece_boundaries": 0.075,
     "label_overconfidence": 0.05,
+    "phrase_overconfidence": 0.02,
 }
 # The 60 s plan threshold stays in the gates file and in the command line run. Under pytest the
 # machine is shared and the run uses fewer workers, so this test only guards against a blow-up.

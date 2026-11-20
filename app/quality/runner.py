@@ -127,7 +127,15 @@ def build_report(
     for entry, res in zip(entries, results):
         if res["doc"] is not None:
             records.append(
-                scoring_calc.score_track(dict(entry["truth"], id=entry["id"]), res["doc"], tol)
+                scoring_calc.score_track(
+                    dict(
+                        entry["truth"],
+                        id=entry["id"],
+                        corpus=entry["spec"].get("corpus", "baseline"),
+                    ),
+                    res["doc"],
+                    tol,
+                )
             )
     metrics = scoring_calc.aggregate(records) if records else {}
     n = len(results)
@@ -173,6 +181,10 @@ def format_table(report: Dict[str, Any]) -> str:
     m = report["metrics"]
     lines.append(f"(reported only) boundary F at 1.5 s: {m.get('boundary_f_1_5s_reported')}")
     lines.append(f"(reported only) label ECE: {m.get('ece_labels_reported')}")
+    lines.append(
+        f"(reported only) phrase precision {m.get('phrase_precision')}, "
+        f"recall {m.get('phrase_recall')}"
+    )
     return "\n".join(lines)
 
 

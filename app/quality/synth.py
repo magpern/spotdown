@@ -112,6 +112,27 @@ def _four_on_the_floor(spec: Dict[str, Any]) -> bool:
     return kicks == {"kick"}
 
 
+def _phrases(spec: Dict[str, Any], t0: float) -> List[Dict[str, Any]]:
+    """Phrase truth by arithmetic on the arrangement: consecutive sections are grouped until they
+    add up to exactly 8 bars (an 8-bar phrase) or 16 bars (a 16-bar phrase); a group that skips
+    past both starts over at the section that overshot (a 4-bar pickup, then 8-bar sections: the
+    phrases start after the pickup; 3-bar sections: 3, 6, 9 never make one). Sections that never
+    add up (a short tail) give none."""
+    bar = 240.0 / spec["bpm"]
+    out: List[Dict[str, Any]] = []
+    at, run, run_start = t0, 0, t0
+    for sec in spec["sections"]:
+        run = run + sec["bars"] if run else sec["bars"]
+        run_start = run_start if run > sec["bars"] else at
+        if run >= 8 and run not in (8, 16):  # skipped past a phrase: start over at this section
+            run, run_start = sec["bars"], at
+        at += sec["bars"] * bar
+        if run in (8, 16):
+            out.append({"start": round(run_start, 3), "end": round(at, 3), "bars": run})
+            run = 0
+    return out
+
+
 def _truth(spec: Dict[str, Any], t0: float, total: float) -> Dict[str, Any]:
     bar = 240.0 / spec["bpm"]
     beats: List[float] = []
@@ -157,6 +178,7 @@ def _truth(spec: Dict[str, Any], t0: float, total: float) -> Dict[str, Any]:
         "drops": r(drops),
         "build_ups": [r(b) for b in builds],
         "labels": labels,
+        "phrases": _phrases(spec, t0),
         "content_start_s": round(start, 3),
         "content_end_s": round(stop, 3),
         "fade_in_end_s": round(start + spec["fade_in_s"], 3) if spec["fade_in_s"] else None,

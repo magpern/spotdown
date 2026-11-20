@@ -29,6 +29,8 @@ differs from what the code generates.
 | `edge_within_0_25s_fraction` | silence and fade start/end within 0.25 s |
 | `drop_precision`, `drop_recall` | drops within one beat |
 | `ece_bpm`, `ece_boundaries` | expected calibration error, 10 bins |
+| `phrase_f` | phrases (SD-P2+, spotdown#8): pooled F of phrases, right when start and end are within 2 beats of a truth phrase (one to one; the ends fix 8 or 16 bars). Precision and recall are reported only |
+| `phrase_overconfidence` | phrase confidence above achieved precision, 10 bins (one-sided) |
 | `label_accuracy` | section labels (SD-P2+, spotdown#7): share of 0.5 s frames in the content range whose label equals the annotated one, mean over tracks; a frame without a label is wrong |
 | `label_overconfidence` | label confidence above achieved accuracy, per segment, 10 bins (one-sided calibration error; underconfidence is not penalised). The two-sided `ece_labels_reported` is reported only |
 | `robustness_fraction`, `p95_seconds_per_5min`, `peak_memory_gib` | jobs that finish, time per 5 minutes of audio, peak child memory |
@@ -46,7 +48,7 @@ as `labels`): intro, verse, chorus, bridge, outro, breakdown. Convention: a buil
 `verse` (pre-chorus), a drop a `chorus`, a pulse-free pad section a `breakdown`, the thinner middle
 section between two choruses of a groove track a `bridge`. The thresholds (accuracy >= 0.70,
 overconfidence <= 0.10) are set by this enhancement, are not in plan section 7 and are to be recorded in classbeat ADR 0040. Achieved on the
-24 fixtures: accuracy 0.914, overconfidence 0.0 with the 0.4 cap (the two-sided calibration error, 0.53, is reported only: the confidences are deliberately low). Failures are visible, not tuned away: the labels
+26 fixtures: accuracy 0.914, overconfidence 0.0 with the 0.4 cap (the two-sided calibration error, 0.53, is reported only: the confidences are deliberately low). Failures are visible, not tuned away: the labels
 mistake a thin breakdown for a bridge (slow-drop-80), end on a verse when the outro is a fade
 (fade-out-108) and miss the chorus on noisy-break-98.
 
@@ -60,6 +62,29 @@ a two-sided calibration gate or per-label reliability. `tests/test_label_calc.py
 False. The base confidences are deliberately conservative priors, not measured hit rates. The report
 records both the core analyzer version and the document version (`5.1`) that produced the labels.
 
+## Phrase gate (SD-P2+, spotdown#8)
+
+Truth phrases come from the arrangement by arithmetic (`synth._phrases`): consecutive sections
+are grouped until they add up to exactly 8 or 16 bars; a group that skips past both starts over at
+the section that overshot (a 4-bar pickup, then 8-bar sections, puts the first phrase after the
+pickup; 3-bar sections never make one). Two extra fixtures, `pickup-edm-140` and
+`pickup-groove-118` (`corpus: phrases`), test the pickup case. They enter only the phrase gate:
+the baseline and label metrics are computed on the original 24 fixtures, so the committed floors
+measure the same set (with them included, `boundary_f_3s` falls to 0.964, below its floor of
+0.975: the structure analysis misses the first boundary after a 4-bar pickup, a known limit).
+
+Thresholds set by this enhancement, to be recorded in classbeat ADR 0040: `phrase_f` >= 0.70
+(achieved 0.842: precision 0.889, recall 0.800) and `phrase_overconfidence` <= 0.03 (achieved 0.004).
+Mutation checks done for the PR: inflating the confidences (cap 0.99, scale 1.2) gives 0.099 and
+fails the overconfidence gate; an empty detector fails `phrase_f`. **Blind tiling (8-bar phrases
+from the first boundary, no structure) scores 0.807, so `phrase_f` cannot tell the detector from
+tiling**; the pickup unit test (`tests/test_phrase_calc.py`) is what pins the structural
+behaviour. Like the labels, the rules and the truth convention come from one author, the corpus is
+small (26 tracks, 5 phrase shapes), so the gates are regression checks and the 0.4 cap
+(`phrase_calc.CAP`, pinned by a test) is not raised until held-out evidence exists (spotdown#20).
+Phrases also depend on the downbeat grid and a 4/4 assumption; #9 (downbeats and meter) should
+improve them and may let the meter claim be made.
+
 ## Changing a threshold
 
 Only with evaluation evidence in the PR and the usual review, recorded in classbeat ADR 0040. Bump
@@ -67,7 +92,7 @@ Only with evaluation evidence in the PR and the usual review, recorded in classb
 
 ## Synthetic fixtures
 
-`app/quality/specs.py` lists 24 specs (tempo, sections, silence, fades, noise); `synth.py` renders
+`app/quality/specs.py` lists 26 specs (tempo, sections, silence, fades, noise); `synth.py` renders
 them with a seeded generator and computes the truth (beats, boundaries, drops, edges) arithmetically
 from the spec. Only the truth manifest is committed; audio is rendered to a temporary directory at
 run time. Add a fixture by adding a spec and running `fixtures_io --write`.

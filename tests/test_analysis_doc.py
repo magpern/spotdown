@@ -107,3 +107,35 @@ def test_labels_are_absent_when_there_is_no_structure_to_label() -> None:
     core = canned_core()
     core["segments"] = core["segments"][:1]
     assert "labels" not in build(core, {"kind": "upload"})
+
+
+def _phrase_core() -> Dict[str, Any]:
+    core = canned_core(40)  # 120 BPM: a bar is 2 s
+    core["content_end_s"] = 39.5
+    core["segments"] = [
+        {"start": 0.0, "end": 16.4, "group": 1, "label": "intro", "energy_struct": 0.2},
+        {"start": 16.4, "end": 32.4, "group": 2, "label": "verse", "energy_struct": 0.6},
+        {"start": 32.4, "end": 40.0, "group": 3, "label": "outro", "energy_struct": 0.3},
+    ]
+    return core
+
+
+def test_phrases_are_heuristic_low_confidence_and_schema_valid() -> None:
+    doc = build(_phrase_core(), {"kind": "upload"})
+    assert_valid("analysis-v1", doc)
+    found = doc["grid"]["phrases"]
+    assert [(p["start_s"], p["end_s"], p["bars"]) for p in found] == [
+        (0.4, 16.4, 8),
+        (16.4, 32.4, 8),
+    ]
+    assert {p["method"] for p in found} == {"heuristic"}
+    assert max(p["confidence"] for p in found) <= 0.4
+    assert "meter" not in doc["grid"] and "downbeats" not in doc["grid"]
+
+
+def test_phrases_are_absent_when_no_section_is_a_whole_phrase() -> None:
+    core = _phrase_core()
+    # boundaries at 0.4, 13.0 and 27.0 s: 6.3, 7 and 13.3 bars apart, none a phrase
+    core["segments"][0]["end"] = core["segments"][1]["start"] = 13.0
+    core["segments"][1]["end"] = core["segments"][2]["start"] = 27.0
+    assert "phrases" not in build(core, {"kind": "upload"})["grid"]

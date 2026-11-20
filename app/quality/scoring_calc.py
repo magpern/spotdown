@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from . import labels_calc as lab
 from . import metrics_calc as m
+from . import phrases_calc as ph
 
 
 def _edges(doc: Dict[str, Any]) -> List[float]:
@@ -43,8 +44,10 @@ def score_track(
     ]
     spans = lab.estimated_spans(doc)
     c0, c1 = truth["content_start_s"], truth["content_end_s"]
+    phrase_hits = ph.match(truth["phrases"], ph.estimated(doc), tol["phrase_tol_beats"] * beat_s)
     return {
         "id": truth.get("id"),
+        "corpus": truth.get("corpus", "baseline"),
         "four_on_the_floor": truth["four_on_the_floor"],
         "bpm_octave_ok": bpm_octave,
         "bpm_exact_ok": bpm_exact,
@@ -62,6 +65,8 @@ def score_track(
         "drops": list(m.drop_counts(truth["drops"], drops, tol["drop_tol_beats"] * beat_s)),
         "label_frames": list(lab.frame_counts(truth["labels"], spans, c0, c1)),
         "label_segments": lab.segment_outcomes(truth["labels"], spans, c0, c1),
+        "phrase_hits": phrase_hits,
+        "phrase_truth": len(truth["phrases"]),
     }
 
 
@@ -70,8 +75,14 @@ def _mean(values: Sequence[float]) -> float:
 
 
 def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
-    """Corpus-level metrics, keyed as the ``quality_gates`` file names them."""
-    n = len(records)
+    """Corpus-level metrics, keyed as the ``quality_gates`` file names them.
+
+    The plan section 7 gates and the label gates are measured on the baseline fixtures only; the
+    fixtures of an enhancement corpus (``corpus`` other than ``baseline``, for example the phrase
+    fixtures) enter only their own gate, so adding them never moves a baseline floor."""
+    everything = records
+    n = len(everything)
+    records = [r for r in everything if r["corpus"] == "baseline"]
     four = [r["beat_f"] for r in records if r["four_on_the_floor"]]
     tp = sum(r["drops"][0] for r in records)
     fp = sum(r["drops"][1] for r in records)
@@ -81,6 +92,11 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     b_ok = [c for r in records for c in r["boundary_correct"]]
     frames = [r["label_frames"] for r in records]
     segs = [o for r in records for o in r["label_segments"]]
+    p_out = [o for r in everything for o in r["phrase_hits"]]
+    p_tp = sum(1 for _, ok in p_out if ok)
+    p_truth = sum(r["phrase_truth"] for r in everything)
+    p_prec = p_tp / len(p_out) if p_out else 1.0
+    p_rec = p_tp / p_truth if p_truth else 1.0
     out = {
         "tracks": float(n),
         "bpm_within_2pct_fraction": _mean([float(r["bpm_octave_ok"]) for r in records]),
@@ -98,6 +114,12 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
         "ece_boundaries": m.ece(b_conf, b_ok),
         "label_accuracy": _mean([hit / total for hit, total in frames if total]),
         "ece_labels_reported": m.ece([c for c, _ in segs], [ok for _, ok in segs]),
+        "phrase_precision": p_prec,
+        "phrase_recall": p_rec,
+        "phrase_f": m.f_measure(p_prec, p_rec),
+        "phrase_overconfidence": m.ece(
+            [c for c, _ in p_out], [ok for _, ok in p_out], over_only=True
+        ),
         "label_overconfidence": m.ece([c for c, _ in segs], [ok for _, ok in segs], over_only=True),
     }
     return {k: round(v, 4) for k, v in out.items()}

@@ -48,7 +48,7 @@ BASE_CONFIDENCE = {
 }
 
 
-def _content_indices(
+def content_indices(
     segments: Sequence[Dict[str, Any]], content_start: float, content_end: float
 ) -> List[int]:
     """Segments at least half inside the content range (silence at the file's ends is not music)."""
@@ -99,7 +99,7 @@ def label_segments(
 
     A single content segment has no structure to label and gives nothing.
     """
-    idx = _content_indices(segments, content_start, content_end)
+    idx = content_indices(segments, content_start, content_end)
     if len(idx) < 2:
         return []
     choruses = _choruses(segments, idx, drops)

@@ -1,4 +1,4 @@
-"""The committed synthetic corpus: 24 specs built from a few section templates (pure data).
+"""The committed synthetic corpus: 26 specs built from a few section templates (pure data).
 
 Every spec is deterministic. ``python -m app.quality.fixtures_io --write`` renders their truth to
 ``quality/fixtures/synthetic/manifest.json``; a test fails if the committed file is stale.
@@ -111,6 +111,46 @@ def _slow_drop(sid: str, bpm: float, seed: int, bars: int = 4, **kw: Any) -> Dic
     )
 
 
+PHRASES = "phrases"  # corpus of the fixtures that only the phrase gate measures
+
+
+def _pickup_edm(sid: str, bpm: float, seed: int, **kw: Any) -> Dict[str, Any]:
+    """A 4-bar pickup intro, then 8-bar sections: the phrases start after the pickup."""
+    return _spec(
+        sid,
+        bpm,
+        seed,
+        [
+            _s(4, "intro", kick=0.8, hat=1.0, pad=1.0),
+            _s(8, "verse", snare=1.0, hat=1.0, riser=1.0, pad=1.0),
+            _s(8, "chorus", True, kick=1.0, snare=1.0, hat=1.0, bass=1.0, lead=1.0),
+            _s(8, "breakdown", pad=1.0, lead=0.6),
+            _s(8, "verse", snare=1.0, hat=1.0, riser=1.0, pad=1.0),
+            _s(8, "chorus", True, kick=1.0, snare=1.0, hat=1.0, bass=1.0, lead=1.0),
+            _s(4, "outro", kick=0.8, hat=1.0, pad=1.0),
+        ],
+        **kw,
+    )
+
+
+def _pickup_groove(sid: str, bpm: float, seed: int, **kw: Any) -> Dict[str, Any]:
+    """A 4-bar pickup intro, then 8-bar groove sections (annotation as in ``_groove``)."""
+    full = {"kick": 1.0, "snare": 1.0, "hat": 1.0, "bass": 1.0, "lead": 1.0, "pad": 1.0}
+    return _spec(
+        sid,
+        bpm,
+        seed,
+        [
+            _sd(4, "intro", {"kick": 0.9, "bass": 1.0}),
+            _sd(8, "verse", {"kick": 0.9, "snare": 1.0, "hat": 1.0, "bass": 1.0}),
+            _sd(8, "chorus", full),
+            _sd(8, "bridge", {"kick": 0.9, "snare": 1.0, "bass": 1.0}),
+            _sd(8, "chorus", full),
+        ],
+        **kw,
+    )
+
+
 SPECS: List[Dict[str, Any]] = [
     _edm("edm-100", 100, 1, 4),
     _edm("edm-110", 110, 2, 4),
@@ -136,4 +176,6 @@ SPECS: List[Dict[str, Any]] = [
     _edm("silence-edges-130", 130, 22, 4, lead_in_s=2.0, tail_s=3.0),
     _edm("noisy-122", 122, 23, 4, noise_db=-32.0),
     _groove("noisy-break-98", 98, 24, "kick_break", "hat", noise_db=-30.0, lead_in_s=0.37),
+    _pickup_edm("pickup-edm-140", 140, 25, corpus=PHRASES),
+    _pickup_groove("pickup-groove-118", 118, 26, corpus=PHRASES),
 ]

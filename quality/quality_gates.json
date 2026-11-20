@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "plan": "classbeat docs/plans/spotdown-integration.md section 7 (Revision 2, frozen)",
   "change_rule": "A threshold changes only with evaluation evidence in the PR and the usual review, and is recorded in classbeat ADR 0040. The two hard gates are never relaxed.",
   "parameters": {
@@ -8,7 +8,8 @@
     "boundary_tol_s": 3.0,
     "boundary_report_tol_s": 1.5,
     "edge_tol_s": 0.25,
-    "drop_tol_beats": 1
+    "drop_tol_beats": 1,
+    "phrase_tol_beats": 2
   },
   "hard": {
     "false_exact": 0,
@@ -27,6 +28,8 @@
     "ece_boundaries": {"op": "<=", "value": 0.10},
     "label_accuracy": {"op": ">=", "value": 0.70},
     "label_overconfidence": {"op": "<=", "value": 0.10},
+    "phrase_f": {"op": ">=", "value": 0.70},
+    "phrase_overconfidence": {"op": "<=", "value": 0.03},
     "robustness_fraction": {"op": ">=", "value": 0.99},
     "p95_seconds_per_5min": {"op": "<=", "value": 60},
     "peak_memory_gib": {"op": "<=", "value": 1.5}
@@ -35,7 +38,8 @@
     "boundary_f_1_5s_reported",
     "ece_labels_reported",
     "downbeats",
-    "phrases"
+    "phrase_precision",
+    "phrase_recall"
   ],
   "per_source": {
     "status": "not evaluated here: needs the baseline path and the owner corpus (classbeat#1298)",
