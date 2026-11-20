@@ -142,8 +142,20 @@ def canned_core(seconds: int = 12) -> Dict[str, Any]:
             "struct": energy,
         },
         "segments": [
-            {"start": 0.0, "end": float(seconds // 2), "group": 1, "label": "intro"},
-            {"start": float(seconds // 2), "end": float(seconds), "group": 2, "label": "verse"},
+            {
+                "start": 0.0,
+                "end": float(seconds // 2),
+                "group": 1,
+                "label": "intro",
+                "energy_struct": 0.2,
+            },
+            {
+                "start": float(seconds // 2),
+                "end": float(seconds),
+                "group": 2,
+                "label": "verse",
+                "energy_struct": 0.6,
+            },
         ],
     }
 

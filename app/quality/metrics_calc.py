@@ -84,8 +84,15 @@ def drop_counts(
     return hits, len(est) - hits, len(ref) - hits
 
 
-def ece(confidences: Sequence[float], correct: Sequence[bool], bins: int = 10) -> float:
-    """Expected calibration error: the bin-weighted gap between confidence and accuracy."""
+def ece(
+    confidences: Sequence[float],
+    correct: Sequence[bool],
+    bins: int = 10,
+    over_only: bool = False,
+) -> float:
+    """Expected calibration error: the bin-weighted gap between confidence and accuracy.
+
+    With ``over_only`` only bins that claim more than they achieve count (overconfidence)."""
     n = len(confidences)
     if n == 0:
         return 0.0
@@ -96,7 +103,8 @@ def ece(confidences: Sequence[float], correct: Sequence[bool], bins: int = 10) -
     for b in range(bins):
         mask = idx == b
         if mask.any():
-            total += float(mask.sum()) / n * abs(float(ok[mask].mean()) - float(conf[mask].mean()))
+            gap = float(conf[mask].mean()) - float(ok[mask].mean())
+            total += float(mask.sum()) / n * (max(gap, 0.0) if over_only else abs(gap))
     return total
 
 

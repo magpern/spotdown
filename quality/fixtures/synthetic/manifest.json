@@ -13,6 +13,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -21,6 +22,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -31,6 +33,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -41,6 +44,7 @@
      },
      {
       "bars": 4,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -48,6 +52,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -58,6 +63,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -68,6 +74,7 @@
      },
      {
       "bars": 4,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -241,7 +248,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 9.6,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 19.2,
+      "label": "verse",
+      "start": 9.6
+     },
+     {
+      "end": 38.4,
+      "label": "chorus",
+      "start": 19.2
+     },
+     {
+      "end": 48.0,
+      "label": "breakdown",
+      "start": 38.4
+     },
+     {
+      "end": 57.6,
+      "label": "verse",
+      "start": 48.0
+     },
+     {
+      "end": 76.8,
+      "label": "chorus",
+      "start": 57.6
+     },
+     {
+      "end": 86.4,
+      "label": "outro",
+      "start": 76.8
+     }
+    ]
    }
   },
   {
@@ -255,6 +299,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -263,6 +308,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -273,6 +319,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -283,6 +330,7 @@
      },
      {
       "bars": 4,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -290,6 +338,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -300,6 +349,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -310,6 +360,7 @@
      },
      {
       "bars": 4,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -483,7 +534,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 8.727,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 17.455,
+      "label": "verse",
+      "start": 8.727
+     },
+     {
+      "end": 34.909,
+      "label": "chorus",
+      "start": 17.455
+     },
+     {
+      "end": 43.636,
+      "label": "breakdown",
+      "start": 34.909
+     },
+     {
+      "end": 52.364,
+      "label": "verse",
+      "start": 43.636
+     },
+     {
+      "end": 69.818,
+      "label": "chorus",
+      "start": 52.364
+     },
+     {
+      "end": 78.545,
+      "label": "outro",
+      "start": 69.818
+     }
+    ]
    }
   },
   {
@@ -497,6 +585,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -505,6 +594,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -515,6 +605,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -525,6 +616,7 @@
      },
      {
       "bars": 4,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -532,6 +624,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -542,6 +635,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -552,6 +646,7 @@
      },
      {
       "bars": 4,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -725,7 +820,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 8.0,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 16.0,
+      "label": "verse",
+      "start": 8.0
+     },
+     {
+      "end": 32.0,
+      "label": "chorus",
+      "start": 16.0
+     },
+     {
+      "end": 40.0,
+      "label": "breakdown",
+      "start": 32.0
+     },
+     {
+      "end": 48.0,
+      "label": "verse",
+      "start": 40.0
+     },
+     {
+      "end": 64.0,
+      "label": "chorus",
+      "start": 48.0
+     },
+     {
+      "end": 72.0,
+      "label": "outro",
+      "start": 64.0
+     }
+    ]
    }
   },
   {
@@ -739,6 +871,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -747,6 +880,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -757,6 +891,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -767,6 +902,7 @@
      },
      {
       "bars": 4,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -774,6 +910,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -784,6 +921,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -794,6 +932,7 @@
      },
      {
       "bars": 4,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -967,7 +1106,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 7.619,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 15.238,
+      "label": "verse",
+      "start": 7.619
+     },
+     {
+      "end": 30.476,
+      "label": "chorus",
+      "start": 15.238
+     },
+     {
+      "end": 38.095,
+      "label": "breakdown",
+      "start": 30.476
+     },
+     {
+      "end": 45.714,
+      "label": "verse",
+      "start": 38.095
+     },
+     {
+      "end": 60.952,
+      "label": "chorus",
+      "start": 45.714
+     },
+     {
+      "end": 68.571,
+      "label": "outro",
+      "start": 60.952
+     }
+    ]
    }
   },
   {
@@ -981,6 +1157,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -989,6 +1166,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -999,6 +1177,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -1009,6 +1188,7 @@
      },
      {
       "bars": 4,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -1016,6 +1196,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -1026,6 +1207,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -1036,6 +1218,7 @@
      },
      {
       "bars": 4,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -1209,7 +1392,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 7.5,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 15.0,
+      "label": "verse",
+      "start": 7.5
+     },
+     {
+      "end": 30.0,
+      "label": "chorus",
+      "start": 15.0
+     },
+     {
+      "end": 37.5,
+      "label": "breakdown",
+      "start": 30.0
+     },
+     {
+      "end": 45.0,
+      "label": "verse",
+      "start": 37.5
+     },
+     {
+      "end": 60.0,
+      "label": "chorus",
+      "start": 45.0
+     },
+     {
+      "end": 67.5,
+      "label": "outro",
+      "start": 60.0
+     }
+    ]
    }
   },
   {
@@ -1223,6 +1443,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -1231,6 +1452,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -1241,6 +1463,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -1251,6 +1474,7 @@
      },
      {
       "bars": 4,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -1258,6 +1482,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -1268,6 +1493,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -1278,6 +1504,7 @@
      },
      {
       "bars": 4,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -1451,7 +1678,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 7.273,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 14.545,
+      "label": "verse",
+      "start": 7.273
+     },
+     {
+      "end": 29.091,
+      "label": "chorus",
+      "start": 14.545
+     },
+     {
+      "end": 36.364,
+      "label": "breakdown",
+      "start": 29.091
+     },
+     {
+      "end": 43.636,
+      "label": "verse",
+      "start": 36.364
+     },
+     {
+      "end": 58.182,
+      "label": "chorus",
+      "start": 43.636
+     },
+     {
+      "end": 65.455,
+      "label": "outro",
+      "start": 58.182
+     }
+    ]
    }
   },
   {
@@ -1465,6 +1729,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -1473,6 +1738,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -1483,6 +1749,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -1493,6 +1760,7 @@
      },
      {
       "bars": 4,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -1500,6 +1768,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -1510,6 +1779,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -1520,6 +1790,7 @@
      },
      {
       "bars": 4,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -1693,7 +1964,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 6.857,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 13.714,
+      "label": "verse",
+      "start": 6.857
+     },
+     {
+      "end": 27.429,
+      "label": "chorus",
+      "start": 13.714
+     },
+     {
+      "end": 34.286,
+      "label": "breakdown",
+      "start": 27.429
+     },
+     {
+      "end": 41.143,
+      "label": "verse",
+      "start": 34.286
+     },
+     {
+      "end": 54.857,
+      "label": "chorus",
+      "start": 41.143
+     },
+     {
+      "end": 61.714,
+      "label": "outro",
+      "start": 54.857
+     }
+    ]
    }
   },
   {
@@ -1707,6 +2015,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -1715,6 +2024,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -1725,6 +2035,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -1735,6 +2046,7 @@
      },
      {
       "bars": 4,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -1742,6 +2054,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -1752,6 +2065,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -1762,6 +2076,7 @@
      },
      {
       "bars": 4,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -1935,7 +2250,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 6.4,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 12.8,
+      "label": "verse",
+      "start": 6.4
+     },
+     {
+      "end": 25.6,
+      "label": "chorus",
+      "start": 12.8
+     },
+     {
+      "end": 32.0,
+      "label": "breakdown",
+      "start": 25.6
+     },
+     {
+      "end": 38.4,
+      "label": "verse",
+      "start": 32.0
+     },
+     {
+      "end": 51.2,
+      "label": "chorus",
+      "start": 38.4
+     },
+     {
+      "end": 57.6,
+      "label": "outro",
+      "start": 51.2
+     }
+    ]
    }
   },
   {
@@ -1949,6 +2301,7 @@
     "sections": [
      {
       "bars": 8,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -1957,6 +2310,7 @@
      },
      {
       "bars": 8,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -1967,6 +2321,7 @@
      {
       "bars": 16,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -1977,6 +2332,7 @@
      },
      {
       "bars": 8,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -1984,6 +2340,7 @@
      },
      {
       "bars": 8,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -1994,6 +2351,7 @@
      {
       "bars": 16,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -2004,6 +2362,7 @@
      },
      {
       "bars": 8,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -2305,7 +2664,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 12.0,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 24.0,
+      "label": "verse",
+      "start": 12.0
+     },
+     {
+      "end": 48.0,
+      "label": "chorus",
+      "start": 24.0
+     },
+     {
+      "end": 60.0,
+      "label": "breakdown",
+      "start": 48.0
+     },
+     {
+      "end": 72.0,
+      "label": "verse",
+      "start": 60.0
+     },
+     {
+      "end": 96.0,
+      "label": "chorus",
+      "start": 72.0
+     },
+     {
+      "end": 108.0,
+      "label": "outro",
+      "start": 96.0
+     }
+    ]
    }
   },
   {
@@ -2319,6 +2715,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "bass": 1.0,
        "kick_break": 0.9
@@ -2326,6 +2723,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -2335,6 +2733,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -2346,6 +2745,7 @@
      },
      {
       "bars": 4,
+      "label": "bridge",
       "layers": {
        "bass": 1.0,
        "kick_break": 0.9,
@@ -2354,6 +2754,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -2468,7 +2869,34 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": false
+    "four_on_the_floor": false,
+    "labels": [
+     {
+      "end": 10.667,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 21.333,
+      "label": "verse",
+      "start": 10.667
+     },
+     {
+      "end": 32.0,
+      "label": "chorus",
+      "start": 21.333
+     },
+     {
+      "end": 42.667,
+      "label": "bridge",
+      "start": 32.0
+     },
+     {
+      "end": 53.333,
+      "label": "chorus",
+      "start": 42.667
+     }
+    ]
    }
   },
   {
@@ -2482,6 +2910,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "bass": 1.0,
        "kick_break": 0.9
@@ -2489,6 +2918,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "bass": 1.0,
        "hat16": 1.0,
@@ -2498,6 +2928,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat16": 1.0,
@@ -2509,6 +2940,7 @@
      },
      {
       "bars": 4,
+      "label": "bridge",
       "layers": {
        "bass": 1.0,
        "kick_break": 0.9,
@@ -2517,6 +2949,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat16": 1.0,
@@ -2631,7 +3064,34 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": false
+    "four_on_the_floor": false,
+    "labels": [
+     {
+      "end": 9.143,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 18.286,
+      "label": "verse",
+      "start": 9.143
+     },
+     {
+      "end": 27.429,
+      "label": "chorus",
+      "start": 18.286
+     },
+     {
+      "end": 36.571,
+      "label": "bridge",
+      "start": 27.429
+     },
+     {
+      "end": 45.714,
+      "label": "chorus",
+      "start": 36.571
+     }
+    ]
    }
   },
   {
@@ -2645,6 +3105,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "bass": 1.0,
        "kick_break": 0.9
@@ -2652,6 +3113,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -2661,6 +3123,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -2672,6 +3135,7 @@
      },
      {
       "bars": 4,
+      "label": "bridge",
       "layers": {
        "bass": 1.0,
        "kick_break": 0.9,
@@ -2680,6 +3144,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -2794,7 +3259,34 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": false
+    "four_on_the_floor": false,
+    "labels": [
+     {
+      "end": 7.68,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 15.36,
+      "label": "verse",
+      "start": 7.68
+     },
+     {
+      "end": 23.04,
+      "label": "chorus",
+      "start": 15.36
+     },
+     {
+      "end": 30.72,
+      "label": "bridge",
+      "start": 23.04
+     },
+     {
+      "end": 38.4,
+      "label": "chorus",
+      "start": 30.72
+     }
+    ]
    }
   },
   {
@@ -2808,6 +3300,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "bass": 1.0,
        "kick": 0.9
@@ -2815,6 +3308,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -2824,6 +3318,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -2835,6 +3330,7 @@
      },
      {
       "bars": 4,
+      "label": "bridge",
       "layers": {
        "bass": 1.0,
        "kick": 0.9,
@@ -2843,6 +3339,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -2957,7 +3454,34 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 8.348,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 16.696,
+      "label": "verse",
+      "start": 8.348
+     },
+     {
+      "end": 25.043,
+      "label": "chorus",
+      "start": 16.696
+     },
+     {
+      "end": 33.391,
+      "label": "bridge",
+      "start": 25.043
+     },
+     {
+      "end": 41.739,
+      "label": "chorus",
+      "start": 33.391
+     }
+    ]
    }
   },
   {
@@ -2971,6 +3495,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "bass": 1.0,
        "kick": 0.9
@@ -2978,6 +3503,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "bass": 1.0,
        "hat16": 1.0,
@@ -2987,6 +3513,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat16": 1.0,
@@ -2998,6 +3525,7 @@
      },
      {
       "bars": 4,
+      "label": "bridge",
       "layers": {
        "bass": 1.0,
        "kick": 0.9,
@@ -3006,6 +3534,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat16": 1.0,
@@ -3120,7 +3649,34 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 7.111,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 14.222,
+      "label": "verse",
+      "start": 7.111
+     },
+     {
+      "end": 21.333,
+      "label": "chorus",
+      "start": 14.222
+     },
+     {
+      "end": 28.444,
+      "label": "bridge",
+      "start": 21.333
+     },
+     {
+      "end": 35.556,
+      "label": "chorus",
+      "start": 28.444
+     }
+    ]
    }
   },
   {
@@ -3134,6 +3690,7 @@
     "sections": [
      {
       "bars": 3,
+      "label": "intro",
       "layers": {
        "hat": 0.8,
        "kick_half": 0.8,
@@ -3143,6 +3700,7 @@
      {
       "bars": 3,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat16": 0.8,
@@ -3153,6 +3711,7 @@
      },
      {
       "bars": 3,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -3161,6 +3720,7 @@
      {
       "bars": 3,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat16": 0.8,
@@ -3232,7 +3792,29 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": false
+    "four_on_the_floor": false,
+    "labels": [
+     {
+      "end": 9.73,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 19.459,
+      "label": "chorus",
+      "start": 9.73
+     },
+     {
+      "end": 29.189,
+      "label": "breakdown",
+      "start": 19.459
+     },
+     {
+      "end": 38.919,
+      "label": "chorus",
+      "start": 29.189
+     }
+    ]
    }
   },
   {
@@ -3246,6 +3828,7 @@
     "sections": [
      {
       "bars": 3,
+      "label": "intro",
       "layers": {
        "hat": 0.8,
        "kick_half": 0.8,
@@ -3255,6 +3838,7 @@
      {
       "bars": 3,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat16": 0.8,
@@ -3265,6 +3849,7 @@
      },
      {
       "bars": 3,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -3273,6 +3858,7 @@
      {
       "bars": 3,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat16": 0.8,
@@ -3344,7 +3930,29 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": false
+    "four_on_the_floor": false,
+    "labels": [
+     {
+      "end": 9.0,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 18.0,
+      "label": "chorus",
+      "start": 9.0
+     },
+     {
+      "end": 27.0,
+      "label": "breakdown",
+      "start": 18.0
+     },
+     {
+      "end": 36.0,
+      "label": "chorus",
+      "start": 27.0
+     }
+    ]
    }
   },
   {
@@ -3358,6 +3966,7 @@
     "sections": [
      {
       "bars": 8,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -3366,6 +3975,7 @@
      },
      {
       "bars": 8,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -3376,6 +3986,7 @@
      {
       "bars": 16,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -3386,6 +3997,7 @@
      },
      {
       "bars": 8,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -3393,6 +4005,7 @@
      },
      {
       "bars": 8,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -3403,6 +4016,7 @@
      {
       "bars": 16,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -3413,6 +4027,7 @@
      },
      {
       "bars": 8,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -3714,7 +4329,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 11.566,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 23.133,
+      "label": "verse",
+      "start": 11.566
+     },
+     {
+      "end": 46.265,
+      "label": "chorus",
+      "start": 23.133
+     },
+     {
+      "end": 57.831,
+      "label": "breakdown",
+      "start": 46.265
+     },
+     {
+      "end": 69.398,
+      "label": "verse",
+      "start": 57.831
+     },
+     {
+      "end": 92.53,
+      "label": "chorus",
+      "start": 69.398
+     },
+     {
+      "end": 104.096,
+      "label": "outro",
+      "start": 92.53
+     }
+    ]
    }
   },
   {
@@ -3728,6 +4380,7 @@
     "sections": [
      {
       "bars": 8,
+      "label": "intro",
       "layers": {
        "bass": 1.0,
        "kick": 0.9
@@ -3735,6 +4388,7 @@
      },
      {
       "bars": 8,
+      "label": "verse",
       "layers": {
        "bass": 1.0,
        "hat16": 1.0,
@@ -3744,6 +4398,7 @@
      },
      {
       "bars": 8,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat16": 1.0,
@@ -3755,6 +4410,7 @@
      },
      {
       "bars": 8,
+      "label": "bridge",
       "layers": {
        "bass": 1.0,
        "kick": 0.9,
@@ -3763,6 +4419,7 @@
      },
      {
       "bars": 8,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat16": 1.0,
@@ -3957,7 +4614,34 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 11.429,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 22.857,
+      "label": "verse",
+      "start": 11.429
+     },
+     {
+      "end": 34.286,
+      "label": "chorus",
+      "start": 22.857
+     },
+     {
+      "end": 45.714,
+      "label": "bridge",
+      "start": 34.286
+     },
+     {
+      "end": 57.143,
+      "label": "chorus",
+      "start": 45.714
+     }
+    ]
    }
   },
   {
@@ -3971,6 +4655,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -3979,6 +4664,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -3989,6 +4675,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -3999,6 +4686,7 @@
      },
      {
       "bars": 4,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -4006,6 +4694,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -4016,6 +4705,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -4026,6 +4716,7 @@
      },
      {
       "bars": 4,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -4200,7 +4891,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 9.112,
+      "label": "intro",
+      "start": 1.37
+     },
+     {
+      "end": 16.854,
+      "label": "verse",
+      "start": 9.112
+     },
+     {
+      "end": 32.338,
+      "label": "chorus",
+      "start": 16.854
+     },
+     {
+      "end": 40.08,
+      "label": "breakdown",
+      "start": 32.338
+     },
+     {
+      "end": 47.822,
+      "label": "verse",
+      "start": 40.08
+     },
+     {
+      "end": 63.305,
+      "label": "chorus",
+      "start": 47.822
+     },
+     {
+      "end": 71.047,
+      "label": "outro",
+      "start": 63.305
+     }
+    ]
    }
   },
   {
@@ -4214,6 +4942,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -4222,6 +4951,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -4232,6 +4962,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -4242,6 +4973,7 @@
      },
      {
       "bars": 4,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -4249,6 +4981,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -4259,6 +4992,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -4269,6 +5003,7 @@
      },
      {
       "bars": 4,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -4444,7 +5179,44 @@
     ],
     "fade_in_end_s": 6.0,
     "fade_out_start_s": 67.22,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 8.136,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 16.271,
+      "label": "verse",
+      "start": 8.136
+     },
+     {
+      "end": 32.542,
+      "label": "chorus",
+      "start": 16.271
+     },
+     {
+      "end": 40.678,
+      "label": "breakdown",
+      "start": 32.542
+     },
+     {
+      "end": 48.814,
+      "label": "verse",
+      "start": 40.678
+     },
+     {
+      "end": 65.085,
+      "label": "chorus",
+      "start": 48.814
+     },
+     {
+      "end": 73.22,
+      "label": "outro",
+      "start": 65.085
+     }
+    ]
    }
   },
   {
@@ -4458,6 +5230,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "bass": 1.0,
        "kick": 0.9
@@ -4465,6 +5238,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -4474,6 +5248,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -4485,6 +5260,7 @@
      },
      {
       "bars": 4,
+      "label": "bridge",
       "layers": {
        "bass": 1.0,
        "kick": 0.9,
@@ -4493,6 +5269,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -4608,7 +5385,34 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": 37.444,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 8.889,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 17.778,
+      "label": "verse",
+      "start": 8.889
+     },
+     {
+      "end": 26.667,
+      "label": "chorus",
+      "start": 17.778
+     },
+     {
+      "end": 35.556,
+      "label": "bridge",
+      "start": 26.667
+     },
+     {
+      "end": 44.444,
+      "label": "chorus",
+      "start": 35.556
+     }
+    ]
    }
   },
   {
@@ -4622,6 +5426,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -4630,6 +5435,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -4640,6 +5446,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -4650,6 +5457,7 @@
      },
      {
       "bars": 4,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -4657,6 +5465,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -4667,6 +5476,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -4677,6 +5487,7 @@
      },
      {
       "bars": 4,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -4852,7 +5663,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 9.385,
+      "label": "intro",
+      "start": 2.0
+     },
+     {
+      "end": 16.769,
+      "label": "verse",
+      "start": 9.385
+     },
+     {
+      "end": 31.538,
+      "label": "chorus",
+      "start": 16.769
+     },
+     {
+      "end": 38.923,
+      "label": "breakdown",
+      "start": 31.538
+     },
+     {
+      "end": 46.308,
+      "label": "verse",
+      "start": 38.923
+     },
+     {
+      "end": 61.077,
+      "label": "chorus",
+      "start": 46.308
+     },
+     {
+      "end": 68.462,
+      "label": "outro",
+      "start": 61.077
+     }
+    ]
    }
   },
   {
@@ -4867,6 +5715,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -4875,6 +5724,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -4885,6 +5735,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -4895,6 +5746,7 @@
      },
      {
       "bars": 4,
+      "label": "breakdown",
       "layers": {
        "lead": 0.6,
        "pad": 1.0
@@ -4902,6 +5754,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "hat": 1.0,
        "pad": 1.0,
@@ -4912,6 +5765,7 @@
      {
       "bars": 8,
       "drop": true,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -4922,6 +5776,7 @@
      },
      {
       "bars": 4,
+      "label": "outro",
       "layers": {
        "hat": 1.0,
        "kick": 0.8,
@@ -5095,7 +5950,44 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": true
+    "four_on_the_floor": true,
+    "labels": [
+     {
+      "end": 7.869,
+      "label": "intro",
+      "start": 0.0
+     },
+     {
+      "end": 15.738,
+      "label": "verse",
+      "start": 7.869
+     },
+     {
+      "end": 31.475,
+      "label": "chorus",
+      "start": 15.738
+     },
+     {
+      "end": 39.344,
+      "label": "breakdown",
+      "start": 31.475
+     },
+     {
+      "end": 47.213,
+      "label": "verse",
+      "start": 39.344
+     },
+     {
+      "end": 62.951,
+      "label": "chorus",
+      "start": 47.213
+     },
+     {
+      "end": 70.82,
+      "label": "outro",
+      "start": 62.951
+     }
+    ]
    }
   },
   {
@@ -5110,6 +6002,7 @@
     "sections": [
      {
       "bars": 4,
+      "label": "intro",
       "layers": {
        "bass": 1.0,
        "kick_break": 0.9
@@ -5117,6 +6010,7 @@
      },
      {
       "bars": 4,
+      "label": "verse",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -5126,6 +6020,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -5137,6 +6032,7 @@
      },
      {
       "bars": 4,
+      "label": "bridge",
       "layers": {
        "bass": 1.0,
        "kick_break": 0.9,
@@ -5145,6 +6041,7 @@
      },
      {
       "bars": 4,
+      "label": "chorus",
       "layers": {
        "bass": 1.0,
        "hat": 1.0,
@@ -5259,7 +6156,34 @@
     ],
     "fade_in_end_s": null,
     "fade_out_start_s": null,
-    "four_on_the_floor": false
+    "four_on_the_floor": false,
+    "labels": [
+     {
+      "end": 10.166,
+      "label": "intro",
+      "start": 0.37
+     },
+     {
+      "end": 19.962,
+      "label": "verse",
+      "start": 10.166
+     },
+     {
+      "end": 29.758,
+      "label": "chorus",
+      "start": 19.962
+     },
+     {
+      "end": 39.554,
+      "label": "bridge",
+      "start": 29.758
+     },
+     {
+      "end": 49.35,
+      "label": "chorus",
+      "start": 39.554
+     }
+    ]
    }
   }
  ]

@@ -29,6 +29,8 @@ differs from what the code generates.
 | `edge_within_0_25s_fraction` | silence and fade start/end within 0.25 s |
 | `drop_precision`, `drop_recall` | drops within one beat |
 | `ece_bpm`, `ece_boundaries` | expected calibration error, 10 bins |
+| `label_accuracy` | section labels (SD-P2+, spotdown#7): share of 0.5 s frames in the content range whose label equals the annotated one, mean over tracks; a frame without a label is wrong |
+| `label_overconfidence` | label confidence above achieved accuracy, per segment, 10 bins (one-sided calibration error; underconfidence is not penalised). The two-sided `ece_labels_reported` is reported only |
 | `robustness_fraction`, `p95_seconds_per_5min`, `peak_memory_gib` | jobs that finish, time per 5 minutes of audio, peak child memory |
 | `false_exact`, `audio_kept_after_job` | **hard gates**, always 0 |
 
@@ -36,6 +38,27 @@ The hard gates are never relaxed: `gates_calc.validate` refuses a file where eit
 an unmeasured gate fails. `false_exact` counts any `exact` claim in an analysis document; matching
 does not exist yet, so it is 0 by construction until a later phase adds it and must then be
 measured against real alignments.
+
+## Section label gate (SD-P2+, spotdown#7)
+
+Truth labels are annotated per section in the specs (`label` on each section, carried into the truth
+as `labels`): intro, verse, chorus, bridge, outro, breakdown. Convention: a build into a drop is a
+`verse` (pre-chorus), a drop a `chorus`, a pulse-free pad section a `breakdown`, the thinner middle
+section between two choruses of a groove track a `bridge`. The thresholds (accuracy >= 0.70,
+overconfidence <= 0.10) are set by this enhancement, are not in plan section 7 and are to be recorded in classbeat ADR 0040. Achieved on the
+24 fixtures: accuracy 0.914, overconfidence 0.0 with the 0.4 cap (the two-sided calibration error, 0.53, is reported only: the confidences are deliberately low). Failures are visible, not tuned away: the labels
+mistake a thin breakdown for a bridge (slow-drop-80), end on a verse when the outro is a fade
+(fade-out-108) and miss the chorus on noisy-break-98.
+
+**The two label gates are regression checks, not evidence of label quality.** The truth labels are a
+convention written for the same three section templates the rules were written against, so the
+accuracy is in-sample, and the one-sided overconfidence gate constrains almost nothing while
+accuracy is about 0.9 (a mutation setting every confidence to 0.99 still passed it). So
+`label_calc.GATE_PASSED` stays False and **no label confidence exceeds 0.4**; the cap is not raised
+until held-out evidence exists (CC-licensed fixtures or the owner corpus, spotdown#20), ideally with
+a two-sided calibration gate or per-label reliability. `tests/test_label_calc.py` pins the flag to
+False. The base confidences are deliberately conservative priors, not measured hit rates. The report
+records both the core analyzer version and the document version (`5.1`) that produced the labels.
 
 ## Changing a threshold
 

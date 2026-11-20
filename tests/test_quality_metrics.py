@@ -66,3 +66,9 @@ def test_ece_weights_each_bin_by_its_share_of_the_samples() -> None:
 def test_bpm_tolerance_is_a_parameter() -> None:
     assert m.bpm_errors(120.0, 123.0) == (False, False)
     assert m.bpm_errors(120.0, 123.0, tol=0.03) == (True, True)
+
+
+def test_overconfidence_counts_only_bins_that_claim_more_than_they_achieve() -> None:
+    assert m.ece([0.95] * 10, [True] * 5 + [False] * 5, over_only=True) == pytest.approx(0.45)
+    assert m.ece([0.3] * 4, [True] * 4, over_only=True) == 0.0  # underconfident is not penalised
+    assert m.ece([], [], over_only=True) == 0.0
