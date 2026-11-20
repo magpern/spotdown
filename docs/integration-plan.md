@@ -1,7 +1,14 @@
 # spotdown as classbeat's music-analysis service (integration plan)
 
-**Status: FROZEN, 2026-11-20. Every phase is PLANNED / NOT AUTHORIZED FOR IMPLEMENTATION** until
-the owner authorizes it explicitly.
+**Status: FROZEN, 2026-11-20. AUTHORIZED by the owner on 2026-11-20**, except the owner decisions
+classbeat#1296 to #1299 and spotdown#1. No deploy, no live-account test and no real provider call
+(YouTube, Spotify, SwedeBeat, MOWL) by any agent or CI job; those stay the owner's.
+
+**Merged state (2026-11-20).** P1 (service mode, v2 API, caches, scoped lookups), P3 (YouTube matcher and
+source, faked in tests), hardening #23, section labels #24, 8 and 16 bar phrases #25, and downbeats
+with meter #26. Quality gates file `quality/quality_gates.json` is at v4; the document version is 6.3
+and the core analyzer version is 6. The quality thresholds are set by the amendment in classbeat
+ADR 0040 (Accepted); see that ADR for the numbers.
 
 The complete plan, with every decision, is in classbeat:
 [docs/plans/spotdown-integration.md](https://github.com/magpern/classbeat/blob/main/docs/plans/spotdown-integration.md)
