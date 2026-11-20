@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 
 from . import db, sources, storage, transcode
 from .config import get_settings

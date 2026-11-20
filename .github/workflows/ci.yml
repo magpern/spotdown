@@ -1,0 +1,51 @@
+name: CI
+
+# `ci` is the required check on main (ruleset set by the owner). Lint, types and tests, nothing
+# else. The only network access is installing packages; the tests themselves run with a netguard
+# (tests/netguard.py) that blocks every non-loopback connection. No secrets are used.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: 0.13.7
+
+      # Python 3.11 is what the Dockerfile runs.
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          uv venv --python 3.11 .venv
+          uv pip install --python .venv/bin/python -r requirements-dev.txt
+
+      - name: ruff check
+        run: .venv/bin/ruff check .
+
+      - name: ruff format
+        run: .venv/bin/ruff format --check .
+
+      - name: pyright
+        run: .venv/bin/pyright --pythonpath .venv/bin/python
+
+      - name: pytest
+        run: .venv/bin/python -m pytest

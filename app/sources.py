@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, cast
 
 from .config import get_settings
 from .schemas import TrackMeta
@@ -12,7 +11,7 @@ class SourceError(RuntimeError):
     pass
 
 
-def _ydl_opts(outtmpl: str) -> dict:
+def _ydl_opts(outtmpl: str) -> Any:
     return {
         "format": "bestaudio/best",
         "outtmpl": outtmpl,
@@ -82,7 +81,7 @@ def _best_match(entries: list, meta: TrackMeta) -> Optional[dict]:
 
     # 2) Otherwise the closest duration within tolerance.
     best, delta = _closest_by_duration(entries, meta)
-    if best is not None and delta <= settings.max_duration_drift_s:
+    if best is not None and delta is not None and delta <= settings.max_duration_drift_s:
         return best
 
     # 3) Nothing reliable -> YouTube's top-ranked result.
@@ -107,11 +106,16 @@ def source_from_spotify(meta: TrackMeta, dest_dir: Path, basename: str) -> Path:
     query = f"ytsearch{settings.source_search_results}:{meta.search_query}"
     # Flat extraction: list candidates (id/title/duration) WITHOUT resolving formats,
     # so one bad result can't abort the search. Formats are resolved only for the pick.
-    search_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "extract_flat": True}
+    search_opts: Any = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "extract_flat": True,
+    }
     with yt_dlp.YoutubeDL(search_opts) as ydl:
         result = ydl.extract_info(query, download=False)
     entries = (result or {}).get("entries") or []
-    chosen = _best_match(entries, meta)
+    chosen = _best_match(cast(list[Any], entries), meta)
     if not chosen:
         raise SourceError("No source found for this track")
 
