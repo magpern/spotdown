@@ -1,0 +1,129 @@
+# spotdown
+
+A stand-alone reference backend with the same architecture the **SpotMate** Android app
+talks to: an async **"resolve metadata → source audio → transcode → serve file"** pipeline.
+
+It exposes the same API shape the app expects:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/Gettrack?spotify_url=…` | Resolve a Spotify track/album/playlist to metadata (no audio) |
+| `POST /api/v1/convert` | Create a conversion job → returns `task_id` (or `download_url` if cached) |
+| `GET /api/v1/tasks/{id}` | Poll job status → `download_url` when done |
+| `GET /files/{name}` | Download the finished file |
+
+```
+client → FastAPI ──enqueue──> Redis ──> RQ worker
+                                          1. Spotify Web API  (metadata only)
+                                          2. yt-dlp           (find + download source)   [GATED]
+                                          3. ffmpeg           (transcode mp3/m4a)
+                                          4. mutagen          (tags + cover art)
+                                          5. publish file + cache by track_id
+```
+
+## ⚠️ Legal — read this
+
+Spotify streams are DRM-protected; this server (like SpotMate) uses Spotify **only for
+metadata**. The actual audio would come from a third-party source via `yt-dlp`.
+**Downloading copyrighted audio you do not have the rights to infringes copyright and
+violates Spotify's and the source site's Terms of Service.** Operating such a service
+publicly carries real legal exposure.
+
+Because of that, **`yt-dlp` sourcing from a Spotify URL is OFF by default**
+(`ALLOW_YTDLP_SOURCING=false`). The pipeline is identical for lawful inputs — content you
+own, Creative-Commons / public-domain audio, licensed material, your own uploads, podcasts
+with permission. Test it with `source_url` pointing at such content. You are responsible
+for how you use this.
+
+## Run it
+
+```bash
+cp .env.example .env         # fill in SPOTIFY_CLIENT_ID/SECRET for full metadata (optional)
+docker compose up --build
+```
+
+Or locally without Docker (needs `ffmpeg` on PATH + a running Redis):
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+redis-server &                                   # or: docker run -p6379:6379 redis
+uvicorn app.main:app --reload &                  # API on :8000
+rq worker -u redis://localhost:6379/0 spotdown   # worker (separate terminal)
+```
+
+> **macOS note:** RQ's default worker `fork()`s a work-horse, which macOS aborts
+> (SIGABRT/signal 6) when the child touches Objective-C frameworks. Locally, run the
+> worker without forking:
+> ```bash
+> OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
+>   rq worker --worker-class rq.SimpleWorker -u redis://localhost:6379/0 spotdown
+> ```
+> The Docker/Linux worker in `docker-compose.yml` is unaffected and uses the default worker.
+
+## Try it (lawful path — a direct source URL)
+
+```bash
+# 1) kick off a conversion of content you have the right to download
+curl -s -X POST localhost:8000/api/v1/convert \
+  -H 'content-type: application/json' \
+  -d '{"source_url":"https://example.com/my-own-audio.wav","format":"mp3","bitrate":320}'
+# -> {"status":"queued","task_id":"src_...:mp3:320", ...}
+
+# 2) poll until done
+curl -s localhost:8000/api/v1/tasks/<task_id>
+# -> {"status":"done","download_url":"http://localhost:8000/files/src_....mp3"}
+
+# 3) download
+curl -O -J localhost:8000/files/<name>
+```
+
+Resolving metadata from a Spotify URL always works (needs API creds for album/playlist):
+
+```bash
+curl -s 'localhost:8000/api/Gettrack?spotify_url=https://open.spotify.com/track/XXXX'
+```
+
+## How it maps to what SpotMate does
+
+- The app POSTs to `/api/v1/convert`; the **server** returns `download_url` **or** a
+  `task_id` (the app's string `Convert response missing download_url/task_id`).
+- If a `task_id`, the app polls `/api/v1/tasks/{id}` until the server finishes.
+- The finished file is fetched over HTTP by the app's `background_downloader` and stored in
+  a local SQLite `downloads` table keyed by `track_id` — this server dedupes by `track_id`
+  the same way (`idx_downloads_track_id`).
+
+## Things to harden before anything real
+
+- **Matching accuracy** (`app/sources.py`): match on duration (and ideally ISRC), not just
+  title+artist, or you get wrong/live/sped-up versions.
+- **Caching**: already keyed by `track_id`; convert once, serve many.
+- **yt-dlp upkeep** (`app/sources.py`): the real operational burden. YouTube actively fights
+  downloaders, so expect to update `yt-dlp` constantly. Two failures you *will* hit:
+  - **"Requested format is not available"** → yt-dlp too old to decode YouTube's current
+    signatures. Fix: `pip install -U yt-dlp` (and bump the pin in `requirements.txt`).
+  - **"The page needs to be reloaded" / "Sign in to confirm you're not a bot"** → YouTube's
+    bot challenge on the default `web` client. We pass
+    `extractor_args={"youtube": {"player_client": ["android", "tv", "web"]}}` to skip it.
+    From datacenter IPs you may *still* be blocked and need cookies (`cookiefile`) or a
+    PO token. This is inherent to sourcing from YouTube, not a one-time fix.
+- **Python**: yt-dlp has deprecated Python 3.9. The Docker image uses 3.11; if you run the
+  local venv on 3.9 it still works for now but will stop — use 3.11+.
+- **Abuse/rate limiting**, auth, and **file cleanup/TTL** (expire `data/files`).
+- **Storage/CDN**: swap `app/storage.py` for S3 + pre-signed, expiring URLs.
+
+## Layout
+
+```
+app/
+  main.py        FastAPI routes (Gettrack, convert, tasks, files)
+  config.py      env-driven settings
+  schemas.py     pydantic models
+  spotify.py     Spotify Web API metadata (+ oEmbed fallback)
+  sources.py     yt-dlp sourcing (direct URL, or gated Spotify-match search)
+  transcode.py   ffmpeg transcode + mutagen tagging
+  storage.py     publish file -> public URL
+  db.py          SQLite cache (downloads table, track_id)
+  queue.py       Redis + RQ
+  jobs.py        the worker pipeline
+```
