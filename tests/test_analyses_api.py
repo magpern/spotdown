@@ -125,15 +125,6 @@ def test_a_url_analysis_is_queued_without_keeping_the_query(settings) -> None:
         ({"cache_scope": SCOPE, "upload_id": "up_missing"}, 404, "upload_not_found"),
         ({"cache_scope": SCOPE, "upload_id": "../../etc/passwd"}, 422, "invalid_request"),
         (
-            {
-                "cache_scope": SCOPE,
-                "upload_id": "up_1",
-                "reference": {"kind": "k", "id": "i", "duration_s": 1},
-            },
-            422,
-            "alignment_unavailable",
-        ),
-        (
             {"cache_scope": SCOPE, "upload_id": "up_1", "extra": "https://x/?sig=leak"},
             422,
             "invalid_request",

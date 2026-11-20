@@ -20,6 +20,7 @@ from ..config import Settings, get_settings
 from ..youtube import match_calc
 from ..youtube.ytdlp_client import YtDlpClient
 from . import analysis_doc, cache_policy, media_policy, sandbox, url_fetch, url_policy
+from .alignment_store import Aligning, aligning_for
 from .failure_policy import JobFailure, Reason, outcome_for
 from .store import Store
 from .uploads import upload_path
@@ -116,6 +117,14 @@ def _check_decoded(sourced: Sourced, core: Dict[str, Any]) -> None:
     sourced.source["decoded_duration_check"] = check
 
 
+def _aligning(
+    job: Dict[str, Any], base: Dict[str, Any], scope: Optional[str]
+) -> Optional[Aligning]:
+    """The alignment layer, when the job asked for it: on the file-clock analysis, in its scope."""
+    reference = job.get("reference")
+    return aligning_for(base, scope, reference) if reference else None
+
+
 def execute_job(
     job_id: str,
     settings: Settings,
@@ -141,8 +150,14 @@ def execute_job(
         else:
             known = store.find_by_sha(scope, sourced.sha256, version) if scope else None
         if known is not None:  # the same bytes were analysed already: reuse, don't analyse
+            aligning = None
+            if job["reference"]:
+                base = store.get_analysis(known.analysis_id)
+                if base is None:  # deleted with its scope meanwhile, and this job with it
+                    raise JobFailure(Reason.SOURCE_MISSING)
+                aligning = _aligning(job, base, scope)
             store.finish_job_reused(
-                job_id, known.analysis_id, scope, kind, sourced.source.get("ref")
+                job_id, known.analysis_id, scope, kind, sourced.source.get("ref"), aligning
             )
             return
         result = analyser(sourced.path, sourced.media, work, limits_from(settings))
@@ -163,7 +178,7 @@ def execute_job(
             timings_s=timings,
             created_at=_now(),
         )
-        store.finish_job_done(job_id, analysis_id, scope, doc)
+        store.finish_job_done(job_id, analysis_id, scope, doc, _aligning(job, doc, scope))
     except JobFailure as failure:
         outcome, fkind = outcome_for(failure.reason)
         retry = failure.retry_after_s if outcome == "rate_limited" else None

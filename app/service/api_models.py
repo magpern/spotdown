@@ -26,7 +26,7 @@ class Reference(BaseModel):
 
     kind: str = Field(min_length=1, max_length=64)
     id: str = Field(min_length=1, max_length=256)
-    duration_s: float = Field(ge=0)
+    duration_s: float = Field(gt=0, le=7200)
 
 
 class AnalysisRequest(BaseModel):

@@ -2,7 +2,8 @@
 
 Sources: ``upload``, ``url`` and ``youtube`` (``source_ref`` ``youtube:<video id>``, ``422
 source_disabled`` unless ``ALLOW_YTDLP_SOURCING=true``; its ``cache_scope`` is optional and its
-analysis is global). A ``reference`` (alignment) is refused until spotdown#11. Lookups,
+analysis is global). A ``reference`` adds the alignment layer (spotdown#11): the job ends on an
+aligned analysis, ``alignment_failed`` when no offset maps the file onto it. Lookups,
 ``GET /v2/analyses/{id}`` and the scope deletion are in ``cache_routes``; the matcher in
 ``match_routes``.
 
@@ -24,6 +25,7 @@ from fastapi.responses import JSONResponse
 from ..youtube.normalise_policy import VIDEO_ID
 from . import analysis_doc, url_policy
 from . import idempotency_policy as idem
+from .alignment_store import aligning_for
 from .api_models import ID_PATTERN, AnalysisRequest, scope_problem
 from .deps import require_key, settings_of, store_of
 from .dispatch import Dispatch
@@ -88,8 +90,6 @@ def post_analysis(
     if problem and not (video_id is not None and body.cache_scope is None):
         # Optional for a global (youtube) source; required and valid for every other one.
         raise ApiError(422, problem, "a valid cache_scope is required")
-    if body.reference is not None:
-        raise ApiError(422, "alignment_unavailable", "alignment is not available yet")
     problem = idem.key_problem(idempotency_key)
     if problem:
         raise ApiError(422, problem, "a valid Idempotency-Key header is required")
@@ -105,6 +105,7 @@ def post_analysis(
         "job_id": "job_" + uuid.uuid4().hex,
         "cache_scope": scope,
         "client_ref": body.client_ref,
+        "reference": body.reference.model_dump() if body.reference is not None else None,
     }
     version = analysis_doc.ANALYZER_VERSION_V2
     hit = None
@@ -127,17 +128,22 @@ def post_analysis(
         job.update(source_kind="upload", upload_id=body.upload_id)
         hit = store.find_by_sha(scope, claimed["sha256"], version)
 
+    reference = job["reference"]
+    base = store.get_analysis(hit.analysis_id) if hit is not None and reference else None
+    if hit is not None and reference and base is None:
+        hit = None  # deleted meanwhile: analyse again
     if hit is not None:  # a cache hit: no analysis, and the audio is not needed any more
         job.pop("fetch_url", None)
         used_upload = job.pop("upload_id", None)
-        store.add_job_done(job, hit.analysis_id)
+        aligning = aligning_for(base, hit.scope, reference) if base and reference else None
+        analysis_id = store.add_job_done(job, hit.analysis_id, aligning)
         if used_upload:
             upload_path(settings, used_upload).unlink(missing_ok=True)
             store.delete_upload(used_upload)
         answer: Dict[str, Any] = {
             "job_id": job["job_id"],
             "status": "done",
-            "analysis_id": hit.analysis_id,
+            "analysis_id": analysis_id,
         }
         return _record(store, idem_scope, key, req_hash, 200, answer, job["job_id"])[0]
 
@@ -179,17 +185,18 @@ def _record(
 
 def job_view(job: Dict[str, Any]) -> Dict[str, Any]:
     """A stored job as job-v1 (schema/job-v1.json)."""
+    # A done job has no outcome, except ``alignment_failed``: the file-clock analysis exists.
     view: Dict[str, Any] = {
         "schema_version": "job-v1",
         "job_id": job["job_id"],
         "status": job["status"],
-        "outcome": job["outcome"] if job["status"] == "failed" else None,
+        "outcome": job["outcome"] if job["status"] in ("done", "failed") else None,
     }
     if job["client_ref"] is not None:
         view["client_ref"] = job["client_ref"]
     if job["status"] == "done":
         view["analysis_id"] = job["analysis_id"]
-        view["failure_kind"] = None
+        view["failure_kind"] = job["failure_kind"]
     elif job["status"] == "failed":
         view["failure_kind"] = job["failure_kind"]
         if job["outcome"] == "rate_limited":
