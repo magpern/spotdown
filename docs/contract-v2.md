@@ -128,7 +128,7 @@ Poll a job. Response `200`, validated by `schema/job-v1.json`:
 ```
 
 `analysis_id` is set when `status` is `done`. `GET /v2/analyses/{id}` returns the analysis
-(`schema/analysis-v1.json`) for an id in the caller's scope. Jobs are visible only in the scope
+(`schema/analysis-v1.json`) for an id in the caller's scope or a global (public `youtube`) analysis; any other id is `404`. Jobs are visible only in the scope
 that created them. Callers poll with a backoff; no callback is made.
 
 ### Lookups

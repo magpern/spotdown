@@ -147,12 +147,15 @@ class CacheStore(SqliteBase):
         return idem.Recorded(row["request_hash"], row["status"], json.loads(row["body"]))
 
     def idem_put(self, scope: str, key: str, request_hash: str, status: int, body: Any) -> bool:
-        """Records the first response for a key; False if a live record already exists."""
+        """Records the first response for a key; False if a live record already exists.
+        Records past the window are purged here, so the table does not grow without bound."""
+        now = time.time()
         with self._conn() as conn:
+            conn.execute("DELETE FROM idempotency WHERE created_at <= ?", (now - idem.WINDOW_S,))
             cur = conn.execute(
                 "INSERT OR IGNORE INTO idempotency (cache_scope, idem_key, request_hash, status,"
                 " body, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (scope, key, request_hash, status, json.dumps(body), time.time()),
+                (scope, key, request_hash, status, json.dumps(body), now),
             )
         return cur.rowcount == 1
 

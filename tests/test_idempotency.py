@@ -122,3 +122,14 @@ def test_a_queue_outage_frees_the_key(tmp_path: Path) -> None:
     assert stack.analyse(up, key="retry").status_code == 503
     stack.dispatch.then = stack._run
     assert stack.analyse(up, key="retry").status_code == 202
+
+
+def test_expired_records_are_purged_on_the_next_insert(stack: Stack) -> None:
+    stack.upload(stack.audio("a.wav", 2.0), key="old-1")
+    stack.upload(stack.audio("b.wav", 3.0), "scope_b", key="old-2")
+    with stack.store._conn() as conn:
+        conn.execute("UPDATE idempotency SET created_at = ?", (time.time() - 24 * 3600 - 1,))
+    stack.upload(stack.audio("c.wav", 4.0), key="new")
+    with stack.store._conn() as conn:
+        keys = [r["idem_key"] for r in conn.execute("SELECT idem_key FROM idempotency")]
+    assert keys == ["new"]

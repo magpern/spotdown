@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.service.cache_store import insert_analysis
+from app.service.worker import execute_job
 
 from .cache_helpers import URL, Stack, sha
 from .service_helpers import AUTH, SCOPE, audio_files
@@ -92,22 +93,49 @@ def test_deleting_is_idempotent_and_validates_the_name(stack: Stack) -> None:
     assert stack.client.delete("/v2/scopes/x").status_code == 401
 
 
-def test_a_job_running_during_the_deletion_stores_nothing(stack: Stack) -> None:
-    up = stack.upload(stack.audio("a.wav")).json()["upload_id"]
-
-    def delete_while_running(*args, **kwargs):
-        stack.client.delete(f"/v2/scopes/{SCOPE}", headers=AUTH)
-        return stack._analyser(*args, **kwargs)
-
-    stack.dispatch.then = lambda job_id: __import__(
-        "app.service.worker", fromlist=["execute_job"]
-    ).execute_job(
-        job_id, stack.settings, stack.store, fetcher=stack._fetcher, analyser=delete_while_running
-    )
-    assert stack.analyse(up).status_code == 202
+def _rows_left(stack: Stack) -> dict:
+    out = {}
     for table in ("analyses", "jobs", "uploads", "source_links"):
         with stack.store._conn() as conn:
-            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0, table
+            out[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    return out
+
+
+def test_a_job_running_during_the_deletion_stores_nothing(stack: Stack) -> None:
+    up = stack.upload(stack.audio("a.wav")).json()["upload_id"]
+    ran = []
+
+    def delete_after_analysing(*args, **kwargs):
+        result = stack._analyser(*args, **kwargs)  # the analysis completes ...
+        ran.append(1)
+        stack.client.delete(f"/v2/scopes/{SCOPE}", headers=AUTH)  # ... then the scope goes
+        return result
+
+    stack.dispatch.then = lambda job_id: execute_job(
+        job_id, stack.settings, stack.store, analyser=delete_after_analysing
+    )
+    assert stack.analyse(up).status_code == 202
+    assert ran == [1]  # finish_job_done was reached after the deletion
+    assert _rows_left(stack) == {"analyses": 0, "jobs": 0, "uploads": 0, "source_links": 0}
+    assert audio_files(stack.settings) == []
+
+
+def test_a_reused_job_running_during_the_deletion_stores_nothing(stack: Stack) -> None:
+    data = stack.audio("a.wav")
+    stack.analysis_id(stack.analyse_bytes(data))
+    stack.fetch_bytes = data  # the url serves bytes that are already analysed in the scope
+    real_find = stack.store.find_by_sha
+
+    def find_then_delete(scope, sha256, version):
+        hit = real_find(scope, sha256, version)
+        assert hit is not None
+        stack.client.delete(f"/v2/scopes/{SCOPE}", headers=AUTH)
+        return hit
+
+    stack.store.find_by_sha = find_then_delete  # type: ignore[method-assign]
+    assert stack.post({"cache_scope": SCOPE, "url": URL}).status_code == 202
+    assert stack.analysed == [sha(data)]  # reused, not analysed again
+    assert _rows_left(stack) == {"analyses": 0, "jobs": 0, "uploads": 0, "source_links": 0}
     assert audio_files(stack.settings) == []
 
 

@@ -109,11 +109,11 @@ def post_analysis(
 
     if hit is not None:  # a cache hit: no analysis, and the audio is not needed any more
         job.pop("fetch_url", None)
-        job_id = job.pop("upload_id", None)
+        used_upload = job.pop("upload_id", None)
         store.add_job_done(job, hit.analysis_id)
-        if job_id:
-            upload_path(settings, job_id).unlink(missing_ok=True)
-            store.delete_upload(job_id)
+        if used_upload:
+            upload_path(settings, used_upload).unlink(missing_ok=True)
+            store.delete_upload(used_upload)
         answer: Dict[str, Any] = {
             "job_id": job["job_id"],
             "status": "done",
