@@ -20,6 +20,16 @@ CREATE TABLE IF NOT EXISTS downloads (
     created_at   INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_downloads_track_id ON downloads(track_id);
+
+-- Analysis cache, keyed by (track_id, analyzer_version) so tuning the analyzer
+-- (which bumps the version) refreshes instead of serving stale results.
+CREATE TABLE IF NOT EXISTS analyses (
+    track_id         TEXT NOT NULL,
+    analyzer_version INTEGER NOT NULL,
+    json             TEXT NOT NULL,
+    created_at       INTEGER NOT NULL,
+    PRIMARY KEY (track_id, analyzer_version)
+);
 """
 
 
@@ -73,4 +83,37 @@ def mark_done(
                (variant_id, track_id, title, artist, file_name, bitrate, format, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (vid, track_id, title, artist, file_name, bitrate, fmt, int(time.time())),
+        )
+
+
+def get_best_file_for_track(track_id: str) -> Optional[str]:
+    """Highest-bitrate converted file for this track (best source for analysis)."""
+    settings = get_settings()
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT file_name FROM downloads WHERE track_id = ? ORDER BY bitrate DESC LIMIT 1",
+            (track_id,),
+        ).fetchone()
+    if not row:
+        return None
+    if not (settings.files_dir / row["file_name"]).exists():
+        return None
+    return row["file_name"]
+
+
+def get_analysis(track_id: str, version: int) -> Optional[str]:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT json FROM analyses WHERE track_id = ? AND analyzer_version = ?",
+            (track_id, version),
+        ).fetchone()
+    return row["json"] if row else None
+
+
+def set_analysis(track_id: str, version: int, json_str: str) -> None:
+    with _conn() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO analyses (track_id, analyzer_version, json, created_at)
+               VALUES (?, ?, ?, ?)""",
+            (track_id, version, json_str, int(time.time())),
         )

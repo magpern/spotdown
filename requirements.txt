@@ -7,4 +7,5 @@ redis==5.2.1
 rq==2.0.0
 yt-dlp==2025.10.14
 mutagen==1.47.0
+librosa==0.10.2.post1
 python-multipart==0.0.17

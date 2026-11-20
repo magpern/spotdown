@@ -45,25 +45,47 @@ def download_direct(source_url: str, dest_dir: Path, basename: str) -> Path:
     return path
 
 
+def _is_topic(e: dict) -> bool:
+    """YouTube '... - Topic' channels are auto-generated release masters.
+
+    They usually match the Spotify release within ~1s, which keeps the analysis
+    timeline aligned to Spotify's.
+    """
+    ch = (e.get("channel") or e.get("uploader") or "").strip()
+    return ch.endswith("- Topic")
+
+
+def _closest_by_duration(entries: list, meta: TrackMeta):
+    scored = []
+    for e in entries:
+        dur = e.get("duration")
+        if dur and meta.duration_s:
+            scored.append((abs(dur - meta.duration_s), e))
+    if not scored:
+        return None, None
+    scored.sort(key=lambda x: x[0])
+    return scored[0][1], scored[0][0]
+
+
 def _best_match(entries: list, meta: TrackMeta) -> Optional[dict]:
-    """Prefer the closest duration match within tolerance; else the top-ranked result."""
+    """Prefer a '- Topic' master, then closest-duration within tolerance, then top hit."""
     settings = get_settings()
     entries = [e for e in entries if e]
     if not entries:
         return None
-    if meta.duration_s:
-        best = None
-        best_delta = None
-        for e in entries:
-            dur = e.get("duration")
-            if not dur:
-                continue
-            delta = abs(dur - meta.duration_s)
-            if best_delta is None or delta < best_delta:
-                best, best_delta = e, delta
-        if best is not None and best_delta <= settings.max_duration_drift_s:
-            return best
-    # No usable duration, or nothing within tolerance -> take YouTube's top hit.
+
+    # 1) A Topic upload is almost always the right master — take its closest by duration.
+    topic = [e for e in entries if _is_topic(e)]
+    if topic:
+        best, _ = _closest_by_duration(topic, meta)
+        return best or topic[0]
+
+    # 2) Otherwise the closest duration within tolerance.
+    best, delta = _closest_by_duration(entries, meta)
+    if best is not None and delta <= settings.max_duration_drift_s:
+        return best
+
+    # 3) Nothing reliable -> YouTube's top-ranked result.
     return entries[0]
 
 

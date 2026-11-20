@@ -11,6 +11,7 @@ It exposes the same API shape the app expects:
 | `POST /api/v1/convert` | Create a conversion job → returns `task_id` (or `download_url` if cached) |
 | `GET /api/v1/tasks/{id}` | Poll job status → `download_url` when done |
 | `GET /files/{name}` | Download the finished file |
+| `GET /api/v1/analyze/{track_id}` | MIR analysis JSON (tempo, beats, energy, drops, segments) of a converted track |
 
 ```
 client → FastAPI ──enqueue──> Redis ──> RQ worker
@@ -98,6 +99,33 @@ curl -s 'localhost:8000/api/Gettrack?spotify_url=https://open.spotify.com/track/
 - The finished file is fetched over HTTP by the app's `background_downloader` and stored in
   a local SQLite `downloads` table keyed by `track_id` — this server dedupes by `track_id`
   the same way (`idx_downloads_track_id`).
+
+## Music analysis (`GET /api/v1/analyze/{track_id}`)
+
+Runs [librosa](https://librosa.org) MIR on the highest-bitrate converted file for the track
+and returns JSON you can build a cycling class (or anything beat-timed) from. Cached per
+`analyzer_version`; pass `?refresh=true` to recompute. First call per process is slow
+(~10s) while numba JIT-compiles; cached calls are instant.
+
+Fields:
+- `bpm` + `bpm_candidates` — tempo, with ½/2× alternates (beat trackers octave-error).
+- `beat_grid`, `bars`, `downbeat_phase`, `meter_assumed` — the grid to snap intervals to
+  (4/4 assumed; `downbeat_phase` is the estimated bar offset).
+- `energy_curve` — per-second `full` / `percussive` / `low`-band energy (0–1). Percussive and
+  low-band expose kick/bass changes that full-band RMS misses on loud masters.
+- `drops` — energy rising-edges (breakdown → full), snapped to the beat; your sprint/accel cues.
+- `build_ups` — the climb before each drop; where to ramp effort up.
+- `segments` — beat-synchronous sections with `energy_full`, `energy_struct`, a repetition
+  `group` (repeats share an id), and a **heuristic** `label` (intro/verse/chorus-drop/
+  breakdown-quiet/outro). `label_method: "heuristic"` — reason from the numbers, not the label.
+
+**Timeline caveat (important):** the audio is a YouTube match, so its timeline may not equal
+Spotify's. Every timestamp is on the *analyzed file*. The result reports
+`analyzed_duration_s`, `spotify_duration_s`, `duration_delta_s`, `leading_silence_s` and
+`timeline_matches_spotify` (true when |delta| ≤ 1s). If you drive the class from Spotify
+playback and `timeline_matches_spotify` is false, the cues will be offset — prefer a
+`- Topic` source (the matcher already favors these; they align to Spotify within ~1s) or
+play the downloaded file itself.
 
 ## Things to harden before anything real
 

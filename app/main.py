@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json as _json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -126,6 +127,47 @@ def task_status(task_id: str) -> TaskStatus:
     if status == "started":
         return TaskStatus(status="processing")
     return TaskStatus(status="queued")
+
+
+@app.get("/api/v1/analyze/{track_id}")
+def analyze_track_endpoint(track_id: str, refresh: bool = False) -> dict:
+    """MIR analysis (tempo, beats, energy, drops, segments) of an already-converted track.
+
+    Runs on the highest-bitrate file for this track_id; result is cached per
+    analyzer version. Pass ?refresh=true to force re-analysis.
+    """
+    from . import analyze as analysis
+    from . import spotify as spotify_mod
+
+    if not refresh:
+        cached = db.get_analysis(track_id, analysis.ANALYZER_VERSION)
+        if cached:
+            return _json.loads(cached)
+
+    file_name = db.get_best_file_for_track(track_id)
+    if not file_name:
+        raise HTTPException(
+            status_code=404,
+            detail="No converted file for this track_id; run /api/v1/convert first.",
+        )
+    path = get_settings().files_dir / file_name
+
+    # Best-effort Spotify duration, to report timeline alignment (no-op for src_ ids).
+    spotify_dur = None
+    try:
+        tracks = spotify_mod.resolve(f"https://open.spotify.com/track/{track_id}")
+        if tracks:
+            spotify_dur = tracks[0].duration_s
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        result = analysis.analyze_track(path, track_id, spotify_dur)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
+
+    db.set_analysis(track_id, analysis.ANALYZER_VERSION, _json.dumps(result))
+    return result
 
 
 @app.get("/files/{file_name}")
