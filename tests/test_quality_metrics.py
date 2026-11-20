@@ -54,3 +54,15 @@ def test_ece_is_zero_when_calibrated_and_large_when_not() -> None:
 
 def test_percentile() -> None:
     assert m.percentile([1.0, 2.0, 3.0, 4.0], 50) == pytest.approx(2.5)
+
+
+def test_ece_weights_each_bin_by_its_share_of_the_samples() -> None:
+    # 9 samples at 0.95 that are all right (gap 0.05) and 1 at 0.15 that is right (gap 0.85):
+    # 0.9 * 0.05 + 0.1 * 0.85 = 0.13; an unweighted mean of the two bins would be 0.45.
+    conf = [0.95] * 9 + [0.15]
+    assert m.ece(conf, [True] * 10) == pytest.approx(0.13)
+
+
+def test_bpm_tolerance_is_a_parameter() -> None:
+    assert m.bpm_errors(120.0, 123.0) == (False, False)
+    assert m.bpm_errors(120.0, 123.0, tol=0.03) == (True, True)

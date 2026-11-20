@@ -62,12 +62,12 @@ def boundary_f(
     return prf(interior(ref, duration_s), interior(est, duration_s), window_s)[2]
 
 
-def bpm_errors(true_bpm: float, est_bpm: float) -> Tuple[bool, bool]:
-    """``(within tolerance at some octave, within tolerance at the exact octave)`` for +-2 %."""
+def bpm_errors(true_bpm: float, est_bpm: float, tol: float = 0.02) -> Tuple[bool, bool]:
+    """``(within ``tol`` at some octave, within ``tol`` at the exact octave)``."""
     if true_bpm <= 0 or est_bpm <= 0:
         return False, False
-    exact = abs(est_bpm - true_bpm) / true_bpm <= 0.02
-    octave = any(abs(est_bpm * f - true_bpm) / true_bpm <= 0.02 for f in (0.5, 1.0, 2.0))
+    exact = abs(est_bpm - true_bpm) / true_bpm <= tol
+    octave = any(abs(est_bpm * f - true_bpm) / true_bpm <= tol for f in (0.5, 1.0, 2.0))
     return octave, exact
 
 

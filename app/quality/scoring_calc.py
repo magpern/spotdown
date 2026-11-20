@@ -32,7 +32,7 @@ def score_track(
     truth: Dict[str, Any], doc: Dict[str, Any], tol: Dict[str, float]
 ) -> Dict[str, Any]:
     dur = truth["duration_s"]
-    bpm_octave, bpm_exact = m.bpm_errors(truth["bpm"], doc["tempo"]["bpm"])
+    bpm_octave, bpm_exact = m.bpm_errors(truth["bpm"], doc["tempo"]["bpm"], tol["bpm_tolerance"])
     est_bounds = _boundaries(doc)
     ref_bounds = truth["boundaries"]
     beat_s = 60.0 / truth["bpm"]

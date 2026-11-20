@@ -49,23 +49,35 @@ them with a seeded generator and computes the truth (beats, boundaries, drops, e
 from the spec. Only the truth manifest is committed; audio is rendered to a temporary directory at
 run time. Add a fixture by adding a spec and running `fixtures_io --write`.
 
-## Annotated CC-licensed tracks (procedure, nothing downloaded here)
+## Not yet runnable: CC-licensed tracks, the owner corpus, the baseline comparison
 
-1. The owner picks tracks under a licence that allows analysis and derived annotations (for example
-   CC BY or CC0) and records title, artist, licence and source URL.
-2. Annotate on the owner's machine: BPM, beat times, boundaries, drop times, silence/fade edges, in
-   the same truth shape as `manifest.json` (`bpm`, `beats`, `boundaries`, `drops`, `edges`,
-   `duration_s`).
-3. Commit only the annotation file and the licence record under `quality/fixtures/cc/`. Never commit
-   audio (`test_no_audio_is_committed_under_quality` enforces it) and never download in CI.
+Nothing below can be run with the code in this repository today. The runner only renders the
+committed synthetic specs: it has no input for local audio plus a truth record, nothing loads
+`quality/fixtures/cc/`, and `per_source` in the gates file is prose, not a computed gate. The work
+is tracked in [spotdown#20](https://github.com/magpern/spotdown/issues/20) (#6 stays open until it
+lands). What the procedures will be, so that the annotations made meanwhile have the right shape:
 
-## Owner-run real-music corpus
+- **CC-licensed tracks (at least 20).** The owner picks tracks whose licence allows analysis and
+  derived annotations (CC BY, CC0) and records title, artist, licence and source URL. Annotations
+  use the truth shape of `manifest.json` (`bpm`, `beats`, `boundaries`, `drops`, `edges`,
+  `duration_s`). Only annotations and provenance are committed, never audio
+  (`test_no_audio_is_committed_under_quality` enforces it); CI never downloads.
+- **Owner corpus.** Real songs stay on the owner's machine; only derived result JSON is shared.
+  Per-source gates (Spotify, YouTube, upload) against the baseline path (MOWL sections,
+  `mowl.music.analyze_track`, `mixanalysis`) need the corpus (classbeat#1298) and a
+  baseline-comparison mode.
 
-Real songs stay on the owner's machine. The owner annotates or reuses MOWL/classbeat analyses as
-reference, runs the runner against the local audio, and shares only the derived result JSON
-(`--json`). Per-source gates (Spotify, YouTube, upload vs the baseline path) need that corpus and
-the baseline path (classbeat#1298); they are listed under `per_source` in the gates file and are
-not evaluated by this harness yet.
+## Scope of what is measured
+
+- **Regression guard.** The runner test asserts every plan gate and, on top of that, a committed
+  floor a little inside the achieved values (`ACHIEVED_FLOORS` in `tests/test_quality_runner.py`),
+  so a regression that stays inside a plan threshold is still caught. The floors guard the
+  synthetic set only; raise them when the analysis improves, never lower one to pass.
+- **Time and memory are extrapolated.** The longest fixture is 108 s. `p95_seconds_per_5min` scales
+  the per-track time linearly to 5 minutes and `peak_memory_gib` is measured on tracks of 108 s or
+  less. Neither has been measured on a real 5-minute track (spotdown#20). The 60 s plan threshold
+  is unchanged in the gates file and the command-line run; under pytest on a shared machine the
+  test only guards against a blow-up (120 s).
 
 ## Known limits of the synthetic set
 
@@ -73,3 +85,14 @@ It is easy and the analysis constants were tuned on it, so passing it proves the
 absence of regressions, not real-music accuracy. Calibration error is low partly because the set has
 no wrong-octave cases. Octave choice prefers 70-170 BPM. Breakdown sections without a pulse can
 produce spurious beats.
+
+Further limits, all carried by spotdown#20:
+
+- Most truth edges are the file's own start and end, which `content_edges` reports exactly, so
+  `edge_within_0_25s_fraction` says little; only 3 fixtures carry real silence or fade edges.
+- `false_exact` is a placeholder: any `exact` string or `alignment` key counts. Upload and studio
+  sources are `exact` under the plan, so it must be redefined when matching and alignment exist.
+- Pulse-free breakdowns (edm-128, silence-edges-130) are not reported as breakdown events; they
+  have no gate in the plan.
+- BPM confidence is about 0.97 on most tracks (the cap) and ECE passes because accuracy is 100 %;
+  only the owner corpus is a real calibration test.

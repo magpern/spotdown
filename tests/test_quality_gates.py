@@ -23,15 +23,37 @@ def _passing(gates: Dict[str, Any]) -> Dict[str, float]:
     return out
 
 
-def test_the_committed_gates_are_valid_and_carry_the_plan_thresholds() -> None:
+# Plan section 7 (Revision 2), all thirteen signal thresholds. Changing one needs ADR 0040.
+PLAN_SECTION_7 = {
+    "bpm_within_2pct_fraction": (">=", 0.95),
+    "bpm_exact_octave_fraction": (">=", 0.85),
+    "beat_f_four_on_the_floor": (">=", 0.85),
+    "beat_f_overall": (">=", 0.75),
+    "boundary_f_3s": (">=", 0.60),
+    "edge_within_0_25s_fraction": (">=", 0.95),
+    "drop_precision": (">=", 0.75),
+    "drop_recall": (">=", 0.65),
+    "ece_bpm": ("<=", 0.10),
+    "ece_boundaries": ("<=", 0.10),
+    "robustness_fraction": (">=", 0.99),
+    "p95_seconds_per_5min": ("<=", 60),
+    "peak_memory_gib": ("<=", 1.5),
+}
+
+
+def test_the_committed_gates_are_valid_and_carry_every_plan_threshold() -> None:
     g = _gates()
     gates_calc.validate(g)
     assert g["version"] == 1
     assert g["hard"] == {"false_exact": 0, "audio_kept_after_job": 0}
-    s = g["signal"]
-    assert s["bpm_within_2pct_fraction"]["value"] == 0.95
-    assert s["boundary_f_3s"]["value"] == 0.60
-    assert s["peak_memory_gib"] == {"op": "<=", "value": 1.5}
+    assert {k: (v["op"], v["value"]) for k, v in g["signal"].items()} == PLAN_SECTION_7
+    assert g["parameters"]["bpm_tolerance"] == 0.02
+
+
+def test_a_gate_missing_from_the_file_is_noticed() -> None:
+    g = _gates()
+    del g["signal"]["drop_recall"]
+    assert set(PLAN_SECTION_7) - set(g["signal"]) == {"drop_recall"}
 
 
 def test_values_exactly_at_the_thresholds_pass() -> None:
