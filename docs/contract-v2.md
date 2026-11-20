@@ -49,7 +49,7 @@ Used in `/v2/match` results and in a job's per-track outcome.
 | Status | Meaning | Extra fields |
 |---|---|---|
 | `not_found` | search worked, no candidate | – |
-| `uncertain` | best candidate below the `confident` band | `best`, `alternates` |
+| `uncertain` | best candidate below the `confident` band; on a job, the decoded duration was more than 5 s from the matched one (no analysis is kept) | `best`, `alternates` (match only) |
 | `source_unavailable` | removed, region-blocked or age-gated | – |
 | `provider_error` | bot challenge, 5xx or network failure at the provider | – |
 | `rate_limited` | provider or service limit hit | `retry_after_s` (required) |
@@ -91,6 +91,37 @@ Recording-match bands: `confident` >= 0.85, `uncertain` 0.6 to 0.85, below 0.6 `
 (tuned on the evaluation set). Duration check against the requested duration: |delta| <= 2 s
 `ok`, <= 5 s `tolerable`, above 5 s `rejected`.
 
+The matcher is the `youtube` source's (spotdown#10):
+
+- **Off by default.** Unless the operator sets `ALLOW_YTDLP_SOURCING=true`, `POST /v2/match` is
+  `422 source_disabled`. `cache_scope` is optional; when given it only decides which cached
+  analyses a candidate reports (a `youtube` analysis is global, so every scope sees it).
+- **Signals** (`matcher_version` `youtube-1`): positive are an equal ISRC (when the source exposes
+  one), a `- Topic` release channel or a verified/VEVO artist channel, and an equal normalised
+  title and artist; negative are a version marker on one side only (live, remix, acoustic,
+  unplugged, sped up, slowed, reverb, nightcore, cover, karaoke, instrumental, extended, radio
+  edit, 8D, bass boosted, mashup, demo), a different ISRC, and the duration. A marker mismatch or a
+  `rejected` duration caps the confidence below 0.6, so a wrong version is never `confident`; a
+  different ISRC caps it below 0.85; an upload with no channel signal and no equal ISRC is at most
+  0.8 (`uncertain`).
+- **Status:** `matched` when the best candidate is `confident`, `uncertain` when it is `uncertain`,
+  `not_found` when there is no candidate or the best is `not_same` (no `best`, no alternates).
+  Alternates are the next candidates that are not `not_same`, at most two. A search entry without
+  an 11-character video id or a duration, or a live stream, is not a candidate (it cannot be checked
+  before download).
+- **Timing-approximate.** A match is evidence (the recording-match confidence and the duration
+  checks), never a claim that the audio is identical to the caller's reference; the caller decides
+  how far to trust it.
+- **Source-match cache:** global, keyed on the normalised metadata fingerprint (the ISRC, or the
+  normalised title, artists and a 5 s duration bucket) plus `matcher_version`. It holds the search
+  entries' id, title, channel and duration only, never a scope, `client_ref` or URL; results are
+  re-scored per request. Kept 3 days, a miss (no candidate) 6 hours.
+- **Rate limits:** a provider rate limit starts a global backoff; until it ends, a search or a
+  download that is not answered from a cache is `rate_limited` with the seconds left in
+  `retry_after_s`, without calling the provider.
+- A bot challenge, a 5xx or a network failure is `provider_error`; a removed, private,
+  region-blocked or age-gated video is `source_unavailable`.
+
 ### `PUT /v2/uploads`
 
 Push audio bytes (`Content-Type: application/octet-stream`; query `cache_scope`). Returns `201`
@@ -112,7 +143,15 @@ Start an analysis. Exactly one of `upload_id`, `source_ref` (`<kind>:<ref>`, for
 }
 ```
 
-`reference` is optional and requests an `alignment` object; `kind` is an open set. A cache hit
+`reference` is optional and requests an `alignment` object; `kind` is an open set.
+`source_ref` is `youtube:<11-character video id>` (nothing else: no URL, no other kind, `422
+invalid_request` otherwise); it is `422 source_disabled` unless `ALLOW_YTDLP_SOURCING=true`, and its
+`cache_scope` is optional. The worker downloads that one video's audio (size and duration caps
+checked on the metadata before any byte), analyses it, and stores the analysis **globally** with a
+global source link, so every scope then gets it as a cache hit. After decoding, the measured file
+and silence-trimmed content durations are checked against the requested duration of the match
+that chose the video (or, without one, the video's metadata duration); above 5 s the job ends
+`failed` with outcome `uncertain` and no analysis is kept. A cache hit
 (equal sha256 and `analyzer_version` **in the caller's scope**, or the same source reference in that scope; a global `youtube` analysis is reused in any scope) returns `200`
 `{"job_id", "status": "done", "analysis_id"}` at once. Otherwise `202` `{"job_id", "status":
 "queued"}`. A source that is disabled in this deployment is `422 source_disabled`.
@@ -174,6 +213,14 @@ absent or `heuristic` with a low confidence. `alignment.offset_s` means
 `reference_time = file_time + offset_s`. There are no `*_spotify` fields.
 
 **`provenance.source.ref`** never holds a file name or a signed URL: absent for `upload` (the sha256 identifies the audio), the video id for `youtube`, and for `url` a normalised https URL with host and path only (no userinfo, query or fragment) or `sha256:<hex digest of it>`.
+
+**Provenance of a global (`youtube`) analysis** names no caller, because every scope reads it:
+`run.job_id` is an opaque run id (not the id of the job that produced it), `run.timings_s` is empty,
+and no `cache_scope` or `client_ref` appears anywhere. `source.match` is the match record of the
+latest `/v2/match` that chose this video (normalised query, candidates with scores and duration
+deltas, choice, `matcher_version`): global public metadata, absent when the video was never
+matched. `source.decoded_duration_check` records the second duration check. The job record of the
+caller who started it stays in that caller's scope.
 
 **Provenance** is kept after the audio is deleted, so a decision can be reproduced, caches
 invalidated, analyser versions compared and alignment problems diagnosed. It never holds audio,

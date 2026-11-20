@@ -13,8 +13,9 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import cache_schema
+from . import cache_schema, match_store
 from .cache_store import CacheStore, insert_analysis, put_link
+from .match_store import MatchStore
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS uploads (
@@ -45,13 +46,14 @@ CREATE TABLE IF NOT EXISTS jobs (
 """
 
 
-class Store(CacheStore):
+class Store(CacheStore, MatchStore):
     def __init__(self, path: Path) -> None:
         super().__init__(path)
         with self._conn() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
             cache_schema.create(conn)
+            match_store.create(conn)
 
     # ---- uploads ----
     def add_upload(

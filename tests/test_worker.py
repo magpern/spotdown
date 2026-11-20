@@ -312,3 +312,10 @@ def test_the_real_sandbox_analyses_fixture_audio(settings, store, tmp_path) -> N
     assert_valid("analysis-v1", doc)
     assert doc is not None and doc["provenance"]["audio"]["codec"] == "pcm"
     assert_no_audio_left(settings, store, "job_real")
+
+
+def test_the_worker_pins_the_http_client_loggers_to_warning() -> None:
+    """httpx logs each request line (with its query string) at INFO; a url source's query can
+    be a signature, so importing the worker (done above) pins those loggers to WARNING."""
+    for name in ("httpx", "httpcore"):
+        assert logging.getLogger(name).level == logging.WARNING

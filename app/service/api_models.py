@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import Annotated, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -43,3 +43,26 @@ class AnalysisRequest(BaseModel):
 
     def source_count(self) -> int:
         return sum(v is not None for v in (self.upload_id, self.source_ref, self.url))
+
+
+MAX_MATCH_TRACKS = 50
+ArtistName = Annotated[str, Field(min_length=1, max_length=200)]
+
+
+class MatchTrack(BaseModel):
+    """One track of ``POST /v2/match``: metadata only, no Spotify call is made."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_ref: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=300)
+    artists: List[ArtistName] = Field(min_length=1, max_length=10)
+    duration_s: float = Field(gt=0, le=7200)
+    isrc: Optional[str] = Field(default=None, min_length=1, max_length=32)
+
+
+class MatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cache_scope: Optional[str] = Field(default=None, max_length=128)
+    tracks: List[MatchTrack] = Field(min_length=1, max_length=MAX_MATCH_TRACKS)

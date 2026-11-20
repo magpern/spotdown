@@ -5,26 +5,12 @@ from typing import Any, Optional, cast
 
 from .config import get_settings
 from .schemas import TrackMeta
+from .youtube.normalise_policy import is_topic_channel
+from .youtube.ytdlp_client import download_opts
 
 
 class SourceError(RuntimeError):
     pass
-
-
-def _ydl_opts(outtmpl: str) -> Any:
-    return {
-        "format": "bestaudio/best",
-        "outtmpl": outtmpl,
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "nocheckcertificate": False,
-        "retries": 3,
-        # YouTube challenges the default "web" client ("page needs to be reloaded").
-        # The android/tv clients skip that challenge without cookies or a PO token.
-        # This is brittle by nature — YouTube changes it often (see README).
-        "extractor_args": {"youtube": {"player_client": ["android", "tv", "web"]}},
-    }
 
 
 def download_direct(source_url: str, dest_dir: Path, basename: str) -> Path:
@@ -32,7 +18,7 @@ def download_direct(source_url: str, dest_dir: Path, basename: str) -> Path:
     import yt_dlp  # imported lazily so the API can boot without it
 
     outtmpl = str(dest_dir / (basename + ".%(ext)s"))
-    with yt_dlp.YoutubeDL(_ydl_opts(outtmpl)) as ydl:
+    with yt_dlp.YoutubeDL(download_opts(outtmpl)) as ydl:
         info = ydl.extract_info(source_url, download=True)
         path = Path(ydl.prepare_filename(info))
     if not path.exists():
@@ -42,16 +28,6 @@ def download_direct(source_url: str, dest_dir: Path, basename: str) -> Path:
             raise SourceError("Download produced no file")
         path = produced[0]
     return path
-
-
-def _is_topic(e: dict) -> bool:
-    """YouTube '... - Topic' channels are auto-generated release masters.
-
-    They usually match the Spotify release within ~1s, which keeps the analysis
-    timeline aligned to Spotify's.
-    """
-    ch = (e.get("channel") or e.get("uploader") or "").strip()
-    return ch.endswith("- Topic")
 
 
 def _closest_by_duration(entries: list, meta: TrackMeta):
@@ -74,7 +50,7 @@ def _best_match(entries: list, meta: TrackMeta) -> Optional[dict]:
         return None
 
     # 1) A Topic upload is almost always the right master — take its closest by duration.
-    topic = [e for e in entries if _is_topic(e)]
+    topic = [e for e in entries if is_topic_channel(e.get("channel") or e.get("uploader") or "")]
     if topic:
         best, _ = _closest_by_duration(topic, meta)
         return best or topic[0]

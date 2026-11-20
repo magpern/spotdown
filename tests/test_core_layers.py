@@ -54,6 +54,10 @@ def test_the_core_imports_no_source_service_or_io(path: Path) -> None:
         "service/media_policy.py",
         "service/failure_policy.py",
         "service/analysis_doc.py",
+        "service/match_policy.py",
+        "youtube/normalise_policy.py",
+        "youtube/match_calc.py",
+        "youtube/error_policy.py",
     ],
 )
 def test_pure_modules_import_no_io(module: str) -> None:
@@ -67,6 +71,7 @@ def test_pure_modules_import_no_io(module: str) -> None:
             "fastapi",
             "librosa",
             "os",
+            "yt_dlp",
         }, name
         assert "store" not in name and "config" not in name
 

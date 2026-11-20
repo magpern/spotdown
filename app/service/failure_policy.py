@@ -25,6 +25,9 @@ class Reason(str, Enum):
     DECODE = "decode"
     UNSUPPORTED_MEDIA = "unsupported_media"
     ANALYSIS = "analysis"
+    # The decoded audio's duration is more than 5 s from the expected one (spotdown#10): not the
+    # matched recording after all. No analysis is kept.
+    RECORDING_MISMATCH = "recording_mismatch"
 
 
 _TABLE = {
@@ -40,6 +43,7 @@ _TABLE = {
     Reason.DECODE: ("processing_failed", "decode_error"),
     Reason.UNSUPPORTED_MEDIA: ("processing_failed", "decode_error"),
     Reason.ANALYSIS: ("processing_failed", "analysis_error"),
+    Reason.RECORDING_MISMATCH: ("uncertain", None),
 }
 
 
