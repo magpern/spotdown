@@ -44,6 +44,20 @@ direct URL to content you own / Creative-Commons / public-domain / licensed / yo
 / podcasts with permission. `source_url` bypasses Spotify and the YouTube search entirely and
 just downloads the URL you give it. You are responsible for how you use this.
 
+## Service mode (v2 API)
+
+`SERVICE_MODE=true` turns spotdown into an internal analysis service ([contract](docs/contract-v2.md)):
+only `/v2` and `/healthz` are served. Every `/v2` call needs `Authorization: Bearer <service key>`,
+read from the file in `SERVICE_KEY_FILE` (the service refuses to start without it). The UI,
+`/files`, `/api/v1`, Spotify URL resolution, CORS and the API docs are off.
+
+- `PUT /v2/uploads?cache_scope=…`: stream mp3, mp4 or wav bytes (`application/octet-stream`, capped
+  by `MAX_UPLOAD_BYTES`); kept for one job or `UPLOAD_TTL_S`.
+- `POST /v2/analyses` with `upload_id` or `url` (https, hosts in `URL_ALLOWED_HOSTS` only, every
+  resolved address public, no redirect to another host, size cap and deadline); `GET /v2/jobs/{id}`.
+- The analysis runs in a subprocess with rlimits (`ANALYSIS_MAX_*`); a file over a limit ends as
+  `processing_failed` and the worker carries on. Temporary audio is deleted after every job.
+
 ## Backend-only (no web UI)
 
 Set `SERVE_UI=false` in `.env` to run API-only — the JSON endpoints, `/files`,

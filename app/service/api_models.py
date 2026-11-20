@@ -1,0 +1,45 @@
+"""Request shapes and field rules of the v2 API (docs/contract-v2.md). No I/O."""
+
+from __future__ import annotations
+
+import re
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
+SCOPE_PATTERN = r"^[A-Za-z0-9_-]{1,128}$"
+_SCOPE = re.compile(SCOPE_PATTERN)
+ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
+
+
+def scope_problem(value: Optional[str]) -> Optional[str]:
+    """The error code for a ``cache_scope`` that a source requires, or None when it is valid."""
+    if value is None or value == "":
+        return "scope_required"
+    if not _SCOPE.match(value):
+        return "invalid_request"
+    return None
+
+
+class Reference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(min_length=1, max_length=64)
+    id: str = Field(min_length=1, max_length=256)
+    duration_s: float = Field(ge=0)
+
+
+class AnalysisRequest(BaseModel):
+    """``POST /v2/analyses``: exactly one of ``upload_id``, ``source_ref`` or ``url``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cache_scope: Optional[str] = Field(default=None, max_length=128)
+    client_ref: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    upload_id: Optional[str] = Field(default=None, pattern=ID_PATTERN)
+    source_ref: Optional[str] = Field(default=None, min_length=1, max_length=256)
+    url: Optional[str] = Field(default=None, min_length=1, max_length=2048)
+    reference: Optional[Reference] = None
+
+    def source_count(self) -> int:
+        return sum(v is not None for v in (self.upload_id, self.source_ref, self.url))
