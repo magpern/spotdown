@@ -1,12 +1,18 @@
 # spotdown as classbeat's music-analysis service (integration plan)
 
-**Status: FROZEN, 2026-11-20. AUTHORIZED by the owner on 2026-11-20**, except the owner decisions
-classbeat#1296 to #1299 and spotdown#1. No deploy, no live-account test and no real provider call
+**Status: FROZEN, 2026-11-20. AUTHORIZED by the owner on 2026-11-20.** classbeat#1296 (YouTube
+terms of service) was **accepted by the owner on 2026-11-20**, so SD-P6 is unblocked. The owner
+decisions classbeat#1297 to #1299 and spotdown#1 are still the owner's. No deploy, no live-account test and no real provider call
 (YouTube, Spotify, SwedeBeat, MOWL) by any agent or CI job; those stay the owner's.
 
-**Merged state (2026-11-20).** P1 (service mode, v2 API, caches, scoped lookups), P3 (YouTube matcher and
-source, faked in tests), hardening #23, section labels #24, 8 and 16 bar phrases #25, and downbeats
-with meter #26. Quality gates file `quality/quality_gates.json` is at v4; the document version is 6.3
+**Merged state (2026-11-20).** P0 to P3 and P2+: governance and the v2 contract (#2, #3), service mode,
+v2 API, caches and scoped lookups (#4, #5), the YouTube matcher and source, faked in tests (#10), the
+alignment layer (#11), section labels (#7), 8 and 16 bar phrases (#8), downbeats with meter (#9), and
+the external-corpus runner (#28). #6 stays open only for the real-music runs (classbeat#1298); its
+harness is merged. Open spotdown work: #29 hostile-input hardening and #30 global cache retention
+purge (90 days unused or a version change, with an operator takedown; classbeat ADR 0040, amendment
+"#1296 accepted"). classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
+`ALLOW_YTDLP_SOURCING` stays off by default in code and is switched on only by the owner. Quality gates file `quality/quality_gates.json` is at v4; the document version is 6.3
 and the core analyzer version is 6. The quality thresholds are set by the amendment in classbeat
 ADR 0040 (Accepted); see that ADR for the numbers.
 
@@ -47,26 +53,30 @@ ISRC.
 
 **Terms of service:** downloading from YouTube is against YouTube's terms, and using it for
 Spotify-catalogue classes touches Spotify's Developer Policy. Returning only metadata, or running
-noncommercially, does not remove that risk. YouTube stays optional and off by default; enabling it
-is the owner's decision
-([classbeat#1296](https://github.com/magpern/classbeat/issues/1296)).
+noncommercially, does not remove that risk. The owner accepted that risk on 2026-11-20
+([classbeat#1296](https://github.com/magpern/classbeat/issues/1296)). YouTube stays optional and off
+by default in code (`ALLOW_YTDLP_SOURCING`); switching it on is the owner's deployment choice.
 
 ## Issues in this repository
 
-| Phase | Issue | Depends on |
-|---|---|---|
-| planning | #12 this page | – |
-| owner | #1 ruleset and required checks on `main` | #2 merged |
-| P0 | #2 governance bootstrap (AGENTS.md, CLAUDE.md, CI, pr-title, agent roles) | the classbeat plan doc |
-| P0 | #3 v2 contract and analysis schema v1 | #2; written together with classbeat#1300 (ADR 0040) |
-| P1 | #4 service mode, service key, upload and url sources, sandboxed analysis | #2, #3 |
-| P1 | #5 cache layers, both lookups, provenance, scope deletion | #4 |
-| P2 | #6 quality harness and baseline gates (bounded) | #4, #5; the real-music runs need classbeat#1298 |
-| P2+ | #7 labels, #8 phrases, #9 downbeats and meter (**never blocking**) | #6 |
-| P3 | #10 YouTube matcher and source | #4, #5 |
-| P3 | #11 alignment layer | #3, #5 |
+| Phase | Issue | State | Depends on |
+|---|---|---|---|
+| planning | #12 this page | kept current | – |
+| owner | #1 ruleset and required checks on `main` | owner | #2 merged |
+| P0 | #2 governance bootstrap (AGENTS.md, CLAUDE.md, CI, pr-title, agent roles) | merged | the classbeat plan doc |
+| P0 | #3 v2 contract and analysis schema v1 | merged | #2; written together with classbeat#1300 (ADR 0040) |
+| P1 | #4 service mode, service key, upload and url sources, sandboxed analysis | merged | #2, #3 |
+| P1 | #5 cache layers, both lookups, provenance, scope deletion | merged | #4 |
+| P2 | #6 quality harness and baseline gates (bounded) | open only for the real-music runs | #4, #5; the real-music runs need classbeat#1298 |
+| P2 | #28 external-corpus runner and baseline gates | merged | #6 |
+| P2+ | #7 labels, #8 phrases, #9 downbeats and meter (**never blocking**) | merged | #6 |
+| P3 | #10 YouTube matcher and source | merged | #4, #5 |
+| P3 | #11 alignment layer | merged | #3, #5 |
+| hardening | #29 hostile-input hardening | open | – |
+| hardening | #30 global cache retention purge | open | #5 |
 
-The classbeat issues SD-P4 to SD-P7 (classbeat#1301 to #1306) depend on #3, #4, #5, #6, #10 and #11.
+The classbeat issues SD-P4 to SD-P7 (classbeat#1301 to #1306) depend on #3, #4, #5, #6, #10 and #11;
+all but the real-music runs of #6 are merged, and classbeat#1296 is accepted, so SD-P6 is unblocked.
 
 ## Governance
 
@@ -76,11 +86,14 @@ This repository uses classbeat's workflow unchanged:
 - Opus is the Architect and Orchestrator;
 - Sonnet is the Developer;
 - Haiku is the Explorer;
-- **Opus reviews every PR.**
+- **Opus reviews every code PR**; a docs-only PR may be reviewed by Sonnet (owner, 2026-11-20);
+- after a second `FAIL` on a PR, an Opus Developer does the next fix round, and every Developer runs
+  a class-wide self-check before handing back.
 
 **Review gate**
 - a fresh reviewer for the first review, the same reviewer resumed for later rounds;
-- `Agent review (opus): PASS <exact head SHA>` recorded on the PR.
+- `Agent review (opus): PASS <exact head SHA>` recorded on the PR (`Agent review (sonnet): PASS <exact
+  head SHA>` is accepted only for a docs-only PR).
 
 **Merge controls**
 - green `ci` and `pr-title`;
@@ -92,4 +105,4 @@ This repository uses classbeat's workflow unchanged:
 - one issue per PR;
 - tests never touch the network.
 
-#2 writes these rules into the repository.
+#2 wrote these rules into the repository.

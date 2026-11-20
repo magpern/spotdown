@@ -3,8 +3,9 @@
 ## Before any `gh pr merge` (read this first)
 
 - No `Agent review (opus): PASS <sha>` comment for the PR's **current head commit** -> **do not
-  merge.** Run the review: spawn a fresh `reviewer` agent (`.claude/agents/reviewer.md`, **Opus for
-  every PR** here) for the PR's first review, and **resume that same agent** (SendMessage to its agent
+  merge.** The only other accepted PASS is `Agent review (sonnet): PASS <sha>`, and only on a
+  **docs-only** PR (owner, 2026-11-20). Run the review: spawn a fresh `reviewer` agent
+  (`.claude/agents/reviewer.md`, **Opus for every PR** here, Sonnet allowed for docs-only ones) for the PR's first review, and **resume that same agent** (SendMessage to its agent
   id, with the new head) for every later round on the PR. A fresh one only after a second `FAIL`
   or when it cannot be resumed (the comment says so). Never review in this session.
   Running the review is the default; don't ask whether to skip it.
@@ -17,6 +18,10 @@
   is the PR title (no `--subject`). The branch need not be up to date with `main`.
 - Never `--auto`, never `--admin`, never an approving review, never a ruleset change, never a
   comment starting `Human review:`.
+
+- After a second `FAIL` on a PR, the next fix round has an Opus Developer, and every Developer runs
+  each finding through a class-wide self-check before handing back (AGENTS.md "PR loop", owner,
+  2026-11-20).
 
 ## Code structure and token economy
 
@@ -39,5 +44,5 @@
 ## Plan
 
 spotdown is classbeat's music-analysis service. The frozen plan is summarised in
-[docs/integration-plan.md](docs/integration-plan.md); no phase is implemented until the owner
-authorizes it. No agent calls YouTube, Spotify, SwedeBeat or MOWL, ever.
+[docs/integration-plan.md](docs/integration-plan.md); the owner authorized its phases on
+2026-11-20 (deploying stays the owner's). No agent calls YouTube, Spotify, SwedeBeat or MOWL, ever.
