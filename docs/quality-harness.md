@@ -11,6 +11,8 @@ python -m app.quality.runner                  # all fixtures, prints one row per
 python -m app.quality.runner --only edm-128   # fixtures whose id contains the text
 python -m app.quality.runner --json out.json  # full report with per-track records
 python -m app.quality.fixtures_io --write     # regenerate quality/fixtures/synthetic/manifest.json
+python -m app.quality.corpus --corpus DIR [--baseline FILE]   # an external corpus (below)
+python -m app.quality.cc_fetch --dest DIR     # the CC-licensed audio of the catalog, owner only
 ```
 
 Each fixture is analysed as a real job (`execute_job`, sandboxed child, `Store`), so time, memory,
@@ -34,12 +36,39 @@ differs from what the code generates.
 | `label_accuracy` | section labels (SD-P2+, spotdown#7): share of 0.5 s frames in the content range whose label equals the annotated one, mean over tracks; a frame without a label is wrong |
 | `label_overconfidence` | label confidence above achieved accuracy, per segment, 10 bins (one-sided calibration error; underconfidence is not penalised). The two-sided `ece_labels_reported` is reported only |
 | `robustness_fraction`, `p95_seconds_per_5min`, `peak_memory_gib` | jobs that finish, time per 5 minutes of audio, peak child memory |
-| `false_exact`, `audio_kept_after_job` | **hard gates**, always 0 |
+| `false_exact`, `audio_kept_after_job` | **hard gates**, always 0 (`false_exact` is defined below) |
+
+In the external runner a hard gate is `not_measured` (with its `n`) when nothing was examined: no document for `false_exact`, no job for `audio_kept_after_job`; a job process that was killed (timeout, out of memory) has its leftover upload and work files counted, then removed.
 
 The hard gates are never relaxed: `gates_calc.validate` refuses a file where either is not 0, and
-an unmeasured gate fails. `false_exact` counts any `exact` claim in an analysis document; matching
-does not exist yet, so it is 0 by construction until a later phase adds it and must then be
-measured against real alignments.
+an unmeasured gate fails.
+
+## `false_exact` (spotdown#20)
+
+classbeat plan section 2: a track is `exact` only when the analysed file *is* the played recording
+(an upload that is played, a SwedeBeat studio track, the mix that is played), never for a YouTube
+match of a Spotify track however confident. spotdown reports evidence and never emits a timing
+class, so the gate (`exact_calc`) counts the **claims a document could make that its case does not
+earn**:
+
+- a claim is the string `exact` anywhere in an analysis document. An `alignment` object alone is
+  evidence, not a claim (the placeholder counted it, which made any alignment a failure);
+- it is entitled when the corpus is one whose files are the played recording (`baseline`,
+  `phrases`, `meter`, `cc`, `studio`, `mix`; **not** `spotify`, `youtube` or an unknown name), the
+  truth says the file is the played recording (`same_recording`, default true) and, when the document
+  carries an alignment, its `offset_s` is within 50 ms of the true offset (`true_offset_s`, the plan's
+  beat-level equivalence tolerance);
+- anything else is a false exact, counted once per document. Today the analysis never emits the
+  string, so the value is 0; the tests show the gate fails for each way of earning it wrongly.
+
+The synthetic run adds six alignment jobs (`align_cases`: the same recording with its leading silence
+cut or not, true offsets `-content_start_s` and 0, on the two fixtures that have leading silence,
+and a version 3 s longer that is not the same recording). The offset is found within 50 ms on the
+four same-recording cases (`alignment_offset_within_0_05s_reported`). **What this does not show:**
+durations alone cannot tell two recordings of similar length apart, so an `ok` alignment on another
+version with a high confidence is possible; it is counted as `alignment_overreach_reported` and is
+the reason spotdown never promotes an alignment to `exact` by itself (the consumer's timing class
+needs a beat-level reference, plan section 2).
 
 ## Section label gate (SD-P2+, spotdown#7)
 
@@ -192,23 +221,94 @@ them with a seeded generator and computes the truth (beats, boundaries, drops, e
 from the spec. Only the truth manifest is committed; audio is rendered to a temporary directory at
 run time. Add a fixture by adding a spec and running `fixtures_io --write`.
 
-## Not yet runnable: CC-licensed tracks, the owner corpus, the baseline comparison
+## External corpora: the CC and owner procedures (spotdown#20)
 
-Nothing below can be run with the code in this repository today. The runner only renders the
-committed synthetic specs: it has no input for local audio plus a truth record, nothing loads
-`quality/fixtures/cc/`, and `per_source` in the gates file is prose, not a computed gate. The work
-is tracked in [spotdown#20](https://github.com/magpern/spotdown/issues/20) (#6 stays open until it
-lands). What the procedures will be, so that the annotations made meanwhile have the right shape:
+`python -m app.quality.corpus --corpus DIR` runs a directory of local audio with annotated truth
+through the same service path as the fixtures (sandboxed child, throwaway store). **Nothing is
+downloaded and nothing is committed**: the directory must be outside the repository (the runner
+refuses one inside it), the audio is copied into the throwaway store and removed with it, and the
+report holds ids and derived numbers only (no titles, file names or documents). Only mp3, mp4 and wav
+are accepted, as by the service.
 
-- **CC-licensed tracks (at least 20).** The owner picks tracks whose licence allows analysis and
-  derived annotations (CC BY, CC0) and records title, artist, licence and source URL. Annotations
-  use the truth shape of `manifest.json` (`bpm`, `beats`, `boundaries`, `drops`, `edges`,
-  `duration_s`). Only annotations and provenance are committed, never audio
-  (`test_no_audio_is_committed_under_quality` enforces it); CI never downloads.
-- **Owner corpus.** Real songs stay on the owner's machine; only derived result JSON is shared.
-  Per-source gates (Spotify, YouTube, upload) against the baseline path (MOWL sections,
-  `mowl.music.analyze_track`, `mixanalysis`) need the corpus (classbeat#1298) and a
-  baseline-comparison mode.
+**Layout** of a corpus directory, one per source (`cc`, `spotify`, `studio`, `mix`):
+
+```json
+{"corpus_version": 1, "corpus": "studio", "tracks": [
+  {"id": "s01", "audio": "audio/s01.wav",
+   "truth": {"bpm": 128, "beats": [0.5, 0.97], "boundaries": [32.0], "drops": [64.0],
+             "edges": [0.0, 241.3], "four_on_the_floor": true}}]}
+```
+
+Truth times are seconds on the file's clock. A key that is absent is *not annotated* and its metric
+is not measured for that track; an empty list is an annotation. A mix has `songs` (`start_s`,
+`end_s`, `bpm`) instead. Unknown keys are refused. A CC track also carries `licence` (`CC0-1.0`,
+`CC-BY-3.0`, `CC-BY-4.0`) and `provenance` (`title`, `artist`, `source_url`). Optional per track:
+`reference` (`kind`, `id`, `duration_s`) to run the alignment, `same_recording` and
+`true_offset_s` for `false_exact`.
+
+**Gates and verdicts.** Each corpus is judged alone against its set in `quality_gates.json`
+(`external.gate_sets`; thresholds are the plan's, plus the mix gates: song start and end within
+2 s on at least 95 %, BPM per song within 2 % on at least 95 %, slowest mix 180 s, 1.5 GiB). A gate
+is `pass`, `FAIL`, or `not_measured`: no annotation, or too few five-minute tracks, is never a pass.
+Each corpus also has a size rule (`external.corpora`: cc 20 tracks all annotated, spotify 30 with 15
+annotated, studio 20 with 15, mix 5). Verdict: `FAIL` if any gate fails; otherwise `incomplete` if
+anything is not measured or the corpus is too small; `pass` only when all is measured and passes.
+Exit status 0, 1 and 2 respectively. Every metric prints how many tracks it rests on (`n`), so a
+number over three tracks says so. Nothing is pooled across corpora. The enhancement gates (labels,
+phrases, downbeats, meter) are not evaluated on external corpora and their confidence caps stay as
+they are: this runner produces the held-out evidence for them but does not raise any cap.
+
+**Time and memory are measured, not extrapolated.** Every track runs in its own process
+(`track_job`), so the peak memory of its analysis child is that track's (`ru_maxrss` of the
+process's children). `p95_seconds_per_5min` and `peak_memory_gib` use only tracks of 240 to 420 s
+and are `not_measured` with fewer than five of them: a corpus of short clips cannot pass them. The
+time is the job's decode and analysis time; the length factor only normalises a track a little
+under or over five minutes. Runs are serial because the machine is the thing being measured, on the
+box the gate is about (the 60 s is "on the box"). The sandbox uses POSIX resource limits: run it on
+Linux, macOS or WSL, not native Windows.
+
+**Baseline comparison.** With `--baseline FILE` (repeatable) the per-source rows of
+`per_source` in the gates file are computed from **derived baseline results only**. The owner runs
+today's path where the audio is (MOWL sections for Spotify tracks, `mowl.music.analyze_track` for
+studio tracks, `design/mixanalysis.py` for mixes) and keeps only this file:
+
+```json
+{"baseline_version": 1, "source": "mowl.music.analyze_track",
+ "tracks": {"s01": {"bpm": 128.0, "beats": [0.5, 0.97], "boundaries": [32.1], "drops": [64.0],
+                    "edges": [0.0, 241.3], "warnings": 0,
+                    "songs": [{"start_s": 0.0, "end_s": 200.0, "bpm": 128.0}]}}}
+```
+
+The `source` must be one a rule names (`mowl_sections`, `mowl.music.analyze_track` or `design/mixanalysis.py`); a file only feeds the corpus whose rule names it, and a track id in two files of one source is refused. Every field is optional and a field the baseline does not provide is never compared. Both sides are
+scored with the same metrics against the same truth, over the tracks where **both sides have that metric** (paired per metric: a baseline missing a key drops that track from that row on both sides), and
+a row passes when spotdown is at most the plan's tolerance worse: Spotify BPM agreement and boundary
+F within 0.02 of MOWL, warning share at most 5 percentage points above (absolute); studio beat F within 0.02, BPM agreement
+within 1 point, boundary F within 0.03; mix song start and end and BPM per song at least the
+baseline (and the absolute 95 % above). A row on fewer than five tracks is `not_measured`; a source
+that has a baseline rule and no baseline file is `incomplete`. For tracks without truth the report
+gives `bpm_agreement_with_baseline_reported` (the plan compares the unannotated rest with the
+baseline only). **Reading decisions** (accepted by the Architect): the mix gate reads the structure
+boundaries and the content ends as the estimated song starts and ends and takes the tempo at a
+song's midpoint from the tempo and its change points, because spotdown has no notion of a song; the
+spotdown side of "quality-report warnings" is counted from the document (a tempo confidence below
+0.5, fewer than four beats, music covering less than half of the file) because classbeat's quality
+report is not available here.
+
+**CC-licensed tracks (at least 20).** The catalog `quality/fixtures/cc/catalog.json` is the committed
+part: for each track the title, artist, licence, source page, direct https download URL, the file's
+size and sha256, and a **human** annotation with all of `bpm`, `beats`, `boundaries`, `drops` and
+`edges`. It is empty today: choosing and annotating real tracks is the owner's work and no annotation
+here was produced by running the analyser on the track (that would make the truth circular).
+`python -m app.quality.cc_fetch --dest DIR` (run by the owner; never by CI or an agent) downloads each
+file over https, keeps it only if its size and sha256 equal the catalog's, and writes `DIR/corpus.json`;
+then `python -m app.quality.corpus --corpus DIR`. Until there are 20 tracks the `cc` corpus reports
+`incomplete` and the CC set offers no held-out evidence.
+
+**Owner corpus (classbeat#1298).** Real songs stay on the owner's machine in one directory per
+source with a `corpus.json` as above, annotated on at least 15 of the real tracks (plan section 7).
+Shadow run: analyse, run the baseline path, then `python -m app.quality.corpus --corpus spotify
+--corpus studio --corpus mix --baseline spotify-baseline.json --baseline studio-baseline.json
+--baseline mix-baseline.json --json report.json` and share `report.json`.
 
 ## Scope of what is measured
 
@@ -216,11 +316,12 @@ lands). What the procedures will be, so that the annotations made meanwhile have
   floor a little inside the achieved values (`ACHIEVED_FLOORS` in `tests/test_quality_runner.py`),
   so a regression that stays inside a plan threshold is still caught. The floors guard the
   synthetic set only; raise them when the analysis improves, never lower one to pass.
-- **Time and memory are extrapolated.** The longest fixture is 108 s. `p95_seconds_per_5min` scales
-  the per-track time linearly to 5 minutes and `peak_memory_gib` is measured on tracks of 108 s or
-  less. Neither has been measured on a real 5-minute track (spotdown#20). The 60 s plan threshold
-  is unchanged in the gates file and the command-line run; under pytest on a shared machine the
-  test only guards against a blow-up (120 s).
+- **Time and memory of the synthetic run are extrapolated.** The longest fixture is 108 s.
+  `p95_seconds_per_5min` scales the per-track time linearly to 5 minutes and `peak_memory_gib` is
+  measured on tracks of 108 s or less. The gates on real five-minute tracks are the external-corpus
+  ones above (measured per track, `not_measured` without five such tracks); no such run exists yet,
+  because it needs real audio. The 60 s plan threshold is unchanged in the gates file and the
+  command-line run; under pytest on a shared machine the test only guards against a blow-up (120 s).
 
 ## Known limits of the synthetic set
 
@@ -229,12 +330,10 @@ absence of regressions, not real-music accuracy. Calibration error is low partly
 no wrong-octave cases. Octave choice prefers 70-170 BPM. Breakdown sections without a pulse can
 produce spurious beats.
 
-Further limits, all carried by spotdown#20:
+Further limits, carried by the owner's corpus (classbeat#1298):
 
 - Most truth edges are the file's own start and end, which `content_edges` reports exactly, so
   `edge_within_0_25s_fraction` says little; only 3 fixtures carry real silence or fade edges.
-- `false_exact` is a placeholder: any `exact` string or `alignment` key counts. Upload and studio
-  sources are `exact` under the plan, so it must be redefined when matching and alignment exist.
 - Pulse-free breakdowns (edm-128, silence-edges-130) are not reported as breakdown events; they
   have no gate in the plan.
 - BPM confidence is about 0.97 on most tracks (the cap) and ECE passes because accuracy is 100 %;

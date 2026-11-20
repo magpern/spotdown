@@ -1,0 +1,5 @@
+{
+  "catalog_version": 1,
+  "note": "Provenance and human annotations of CC-licensed tracks. Never audio. Empty until the owner picks and annotates tracks (spotdown#20, procedure in docs/quality-harness.md); the plan needs at least 20.",
+  "tracks": []
+}
