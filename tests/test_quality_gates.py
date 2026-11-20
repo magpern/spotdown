@@ -41,12 +41,21 @@ PLAN_SECTION_7 = {
 }
 
 
+# Enhancement gates (SD-P2+, spotdown#7): added with their own evidence, not in plan section 7.
+ENHANCEMENT_GATES = {
+    "label_accuracy": (">=", 0.70),
+    "label_overconfidence": ("<=", 0.10),
+}
+
+
 def test_the_committed_gates_are_valid_and_carry_every_plan_threshold() -> None:
     g = _gates()
     gates_calc.validate(g)
-    assert g["version"] == 1
+    assert g["version"] == 2
     assert g["hard"] == {"false_exact": 0, "audio_kept_after_job": 0}
-    assert {k: (v["op"], v["value"]) for k, v in g["signal"].items()} == PLAN_SECTION_7
+    committed = {k: (v["op"], v["value"]) for k, v in g["signal"].items()}
+    assert {k: v for k, v in committed.items() if k in PLAN_SECTION_7} == PLAN_SECTION_7
+    assert {k: v for k, v in committed.items() if k not in PLAN_SECTION_7} == ENHANCEMENT_GATES
     assert g["parameters"]["bpm_tolerance"] == 0.02
 
 

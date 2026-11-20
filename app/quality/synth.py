@@ -118,10 +118,12 @@ def _truth(spec: Dict[str, Any], t0: float, total: float) -> Dict[str, Any]:
     bounds: List[float] = []
     drops: List[float] = []
     builds: List[List[float]] = []
+    labels: List[Dict[str, Any]] = []
     prev = None
     at = t0
     for sec in spec["sections"]:
         end = at + sec["bars"] * bar
+        labels.append({"start": round(at, 3), "end": round(end, 3), "label": sec["label"]})
         if any(k in PULSE for k in sec["layers"]):
             beats += [at + i * bar / 4 for i in range(sec["bars"] * 4)]
         if prev is not None and set(prev) != set(sec["layers"]):
@@ -154,6 +156,7 @@ def _truth(spec: Dict[str, Any], t0: float, total: float) -> Dict[str, Any]:
         "boundaries": r(sorted(bounds)),
         "drops": r(drops),
         "build_ups": [r(b) for b in builds],
+        "labels": labels,
         "content_start_s": round(start, 3),
         "content_end_s": round(stop, 3),
         "fade_in_end_s": round(start + spec["fade_in_s"], 3) if spec["fade_in_s"] else None,

@@ -37,13 +37,15 @@ def test_the_document_is_schema_valid(source) -> None:
     assert doc["provenance"]["analyzer"]["analyzer_version"] == analysis_doc.ANALYZER_VERSION_V2
     for absent in ("meter", "downbeats", "phrases"):
         assert absent not in doc["grid"]
-    assert "labels" not in doc and "alignment" not in doc
+    assert "alignment" not in doc
     assert "spotify" not in str(doc).lower()
 
 
 def test_events_and_repetition_groups() -> None:
     core = canned_core()
-    core["segments"].append({"start": 12.0, "end": 12.0, "group": 1, "label": "outro"})
+    core["segments"].append(
+        {"start": 12.0, "end": 12.0, "group": 1, "label": "outro", "energy_struct": 0.2}
+    )
     doc = build(core, {"kind": "upload"})
     kinds = [e["kind"] for e in doc["events"]]
     assert kinds == ["build_up", "drop"]
@@ -87,3 +89,21 @@ def test_the_builder_does_not_change_its_input() -> None:
     before = copy.deepcopy(core)
     build(core, {"kind": "upload"})
     assert core == before
+
+
+def test_labels_are_heuristic_schema_valid_and_name_existing_segments() -> None:
+    doc = build(canned_core(), {"kind": "upload"})
+    assert_valid("analysis-v1", doc)
+    ids = {s["id"] for s in doc["structure"]["segments"]}
+    assert doc["labels"] and {x["segment_id"] for x in doc["labels"]} <= ids
+    assert {x["method"] for x in doc["labels"]} == {"heuristic"}
+    assert [x["label"] for x in doc["labels"]] == [
+        "intro",
+        "chorus",
+    ]  # the second segment starts at the drop
+
+
+def test_labels_are_absent_when_there_is_no_structure_to_label() -> None:
+    core = canned_core()
+    core["segments"] = core["segments"][:1]
+    assert "labels" not in build(core, {"kind": "upload"})

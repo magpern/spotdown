@@ -11,15 +11,15 @@ from typing import Any, Dict, List
 Layers = Dict[str, float]
 
 
-def _s(bars: int, drop: bool = False, **layers: Any) -> Dict[str, Any]:
-    sec: Dict[str, Any] = {"bars": bars, "layers": dict(layers)}
+def _s(bars: int, label: str, drop: bool = False, **layers: Any) -> Dict[str, Any]:
+    sec: Dict[str, Any] = {"bars": bars, "label": label, "layers": dict(layers)}
     if drop:
         sec["drop"] = True
     return sec
 
 
-def _sd(bars: int, layers: Dict[str, float]) -> Dict[str, Any]:
-    return {"bars": bars, "layers": dict(layers)}
+def _sd(bars: int, label: str, layers: Dict[str, float]) -> Dict[str, Any]:
+    return {"bars": bars, "label": label, "layers": dict(layers)}
 
 
 def _spec(
@@ -40,20 +40,24 @@ def _spec(
 
 
 def _edm(sid: str, bpm: float, seed: int, bars: int = 4, **kw: Any) -> Dict[str, Any]:
-    """Intro, build, drop, breakdown, build, drop, outro: a club track with two drops."""
+    """Intro, build, drop, breakdown, build, drop, outro: a club track with two drops.
+
+    Label annotation (the label gate's truth): a build into a drop is a ``verse`` (pre-chorus), a
+    drop is a ``chorus``, a pulse-free pad section is a ``breakdown``.
+    """
     k = bars
     return _spec(
         sid,
         bpm,
         seed,
         [
-            _s(k, kick=0.8, hat=1.0, pad=1.0),
-            _s(k, snare=1.0, hat=1.0, riser=1.0, pad=1.0),
-            _s(2 * k, True, kick=1.0, snare=1.0, hat=1.0, bass=1.0, lead=1.0),
-            _s(k, pad=1.0, lead=0.6),
-            _s(k, snare=1.0, hat=1.0, riser=1.0, pad=1.0),
-            _s(2 * k, True, kick=1.0, snare=1.0, hat=1.0, bass=1.0, lead=1.0),
-            _s(k, kick=0.8, hat=1.0, pad=1.0),
+            _s(k, "intro", kick=0.8, hat=1.0, pad=1.0),
+            _s(k, "verse", snare=1.0, hat=1.0, riser=1.0, pad=1.0),
+            _s(2 * k, "chorus", True, kick=1.0, snare=1.0, hat=1.0, bass=1.0, lead=1.0),
+            _s(k, "breakdown", pad=1.0, lead=0.6),
+            _s(k, "verse", snare=1.0, hat=1.0, riser=1.0, pad=1.0),
+            _s(2 * k, "chorus", True, kick=1.0, snare=1.0, hat=1.0, bass=1.0, lead=1.0),
+            _s(k, "outro", kick=0.8, hat=1.0, pad=1.0),
         ],
         **kw,
     )
@@ -62,18 +66,30 @@ def _edm(sid: str, bpm: float, seed: int, bars: int = 4, **kw: Any) -> Dict[str,
 def _groove(
     sid: str, bpm: float, seed: int, kick: str, hat: str, bars: int = 4, **kw: Any
 ) -> Dict[str, Any]:
-    """Verse and chorus style changes in density, no drop."""
+    """Verse and chorus style changes in density, no drop.
+
+    Label annotation: intro (bass and kick), verse (adds snare and hat), chorus (full), bridge (the
+    thinner middle section between two choruses), chorus.
+    """
     k = bars
     return _spec(
         sid,
         bpm,
         seed,
         [
-            _sd(k, {kick: 0.9, "bass": 1.0}),
-            _sd(k, {kick: 0.9, "snare": 1.0, hat: 1.0, "bass": 1.0}),
-            _sd(k, {kick: 1.0, "snare": 1.0, hat: 1.0, "bass": 1.0, "lead": 1.0, "pad": 1.0}),
-            _sd(k, {kick: 0.9, "snare": 1.0, "bass": 1.0}),
-            _sd(k, {kick: 1.0, "snare": 1.0, hat: 1.0, "bass": 1.0, "lead": 1.0, "pad": 1.0}),
+            _sd(k, "intro", {kick: 0.9, "bass": 1.0}),
+            _sd(k, "verse", {kick: 0.9, "snare": 1.0, hat: 1.0, "bass": 1.0}),
+            _sd(
+                k,
+                "chorus",
+                {kick: 1.0, "snare": 1.0, hat: 1.0, "bass": 1.0, "lead": 1.0, "pad": 1.0},
+            ),
+            _sd(k, "bridge", {kick: 0.9, "snare": 1.0, "bass": 1.0}),
+            _sd(
+                k,
+                "chorus",
+                {kick: 1.0, "snare": 1.0, hat: 1.0, "bass": 1.0, "lead": 1.0, "pad": 1.0},
+            ),
         ],
         **kw,
     )
@@ -86,10 +102,10 @@ def _slow_drop(sid: str, bpm: float, seed: int, bars: int = 4, **kw: Any) -> Dic
         bpm,
         seed,
         [
-            _s(k, pad=1.0, kick_half=0.8, hat=0.8),
-            _s(k, True, kick_half=1.0, snare=1.0, hat16=0.8, bass=1.0, lead=1.0),
-            _s(k, pad=1.0, lead=0.6),
-            _s(k, True, kick_half=1.0, snare=1.0, hat16=0.8, bass=1.0, lead=1.0),
+            _s(k, "intro", pad=1.0, kick_half=0.8, hat=0.8),
+            _s(k, "chorus", True, kick_half=1.0, snare=1.0, hat16=0.8, bass=1.0, lead=1.0),
+            _s(k, "breakdown", pad=1.0, lead=0.6),
+            _s(k, "chorus", True, kick_half=1.0, snare=1.0, hat16=0.8, bass=1.0, lead=1.0),
         ],
         **kw,
     )

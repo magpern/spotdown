@@ -167,8 +167,9 @@ def format_table(report: Dict[str, Any]) -> str:
             f"{r['gate']:32} {r['op']} {r['threshold']:>7} {r['value']!s:>9}  "
             f"{'pass' if r['pass'] else 'FAIL'}"
         )
-    extra = report["metrics"].get("boundary_f_1_5s_reported")
-    lines.append(f"(reported only) boundary F at 1.5 s: {extra}")
+    m = report["metrics"]
+    lines.append(f"(reported only) boundary F at 1.5 s: {m.get('boundary_f_1_5s_reported')}")
+    lines.append(f"(reported only) label ECE: {m.get('ece_labels_reported')}")
     return "\n".join(lines)
 
 

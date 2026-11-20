@@ -2,8 +2,9 @@
 
 Times stay on the file's own clock. The confidences are first, documented estimates (beat
 regularity, energy contrast); the quality harness (spotdown#6) calibrates them. Optional groups
-(meter, downbeats, phrases, labels, alignment) are left out until their gates pass: the meter is
-never assumed to be 4/4.
+(meter, downbeats, phrases, alignment) are left out until their gates pass: the meter is never
+assumed to be 4/4. Section labels are always ``heuristic`` and, until their gate passes
+(``label_calc.GATE_PASSED``), low-confidence.
 """
 
 from __future__ import annotations
@@ -13,11 +14,11 @@ import json
 import math
 from typing import Any, Dict, List, Optional, Sequence
 
-from ..core import ANALYZER_VERSION, HOP, SR
+from ..core import ANALYZER_VERSION, HOP, SR, label_calc
 
 ANALYZER_NAME = "spotdown"
-# The core analyser's version, then this document mapping's version.
-ANALYZER_VERSION_V2 = f"{ANALYZER_VERSION}.0"
+# The core analyser's version, then this document mapping's version (1: section labels).
+ANALYZER_VERSION_V2 = f"{ANALYZER_VERSION}.1"
 MEASURED_CONFIDENCE = 0.9
 
 
@@ -134,6 +135,21 @@ def _structure(core: Dict[str, Any]) -> Dict[str, Any]:
     return {"segments": segments, "repetition_groups": repetition}
 
 
+def _labels(core: Dict[str, Any]) -> List[Dict[str, Any]]:
+    found = label_calc.label_segments(
+        core["segments"], core["drops"], core["content_start_s"], core["content_end_s"]
+    )
+    return [
+        {
+            "segment_id": f"s{x['index'] + 1}",
+            "label": x["label"],
+            "confidence": _clip(x["confidence"]),
+            "method": "heuristic",
+        }
+        for x in found
+    ]
+
+
 def _events(core: Dict[str, Any]) -> List[Dict[str, Any]]:
     struct = core["energy"]["struct"]
     events: List[Dict[str, Any]] = []
@@ -218,7 +234,7 @@ def build(
         "stability": stability,
         "change_points": [],
     }
-    return {
+    doc: Dict[str, Any] = {
         "schema_version": "analysis-v1",
         "analysis_id": analysis_id,
         "provenance": {
@@ -258,3 +274,7 @@ def build(
         "structure": _structure(core),
         "events": _events(core),
     }
+    labels = _labels(core)
+    if labels:
+        doc["labels"] = labels
+    return doc

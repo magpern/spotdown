@@ -29,6 +29,8 @@ differs from what the code generates.
 | `edge_within_0_25s_fraction` | silence and fade start/end within 0.25 s |
 | `drop_precision`, `drop_recall` | drops within one beat |
 | `ece_bpm`, `ece_boundaries` | expected calibration error, 10 bins |
+| `label_accuracy` | section labels (SD-P2+, spotdown#7): share of 0.5 s frames in the content range whose label equals the annotated one, mean over tracks; a frame without a label is wrong |
+| `label_overconfidence` | label confidence above achieved accuracy, per segment, 10 bins (one-sided calibration error; underconfidence is not penalised). The two-sided `ece_labels_reported` is reported only |
 | `robustness_fraction`, `p95_seconds_per_5min`, `peak_memory_gib` | jobs that finish, time per 5 minutes of audio, peak child memory |
 | `false_exact`, `audio_kept_after_job` | **hard gates**, always 0 |
 
@@ -36,6 +38,22 @@ The hard gates are never relaxed: `gates_calc.validate` refuses a file where eit
 an unmeasured gate fails. `false_exact` counts any `exact` claim in an analysis document; matching
 does not exist yet, so it is 0 by construction until a later phase adds it and must then be
 measured against real alignments.
+
+## Section label gate (SD-P2+, spotdown#7)
+
+Truth labels are annotated per section in the specs (`label` on each section, carried into the truth
+as `labels`): intro, verse, chorus, bridge, outro, breakdown. Convention: a build into a drop is a
+`verse` (pre-chorus), a drop a `chorus`, a pulse-free pad section a `breakdown`, the thinner middle
+section between two choruses of a groove track a `bridge`. The thresholds (accuracy >= 0.70,
+overconfidence <= 0.10) are set by this enhancement; they are not in plan section 7. Achieved on the
+24 fixtures: accuracy 0.914, overconfidence 0.003 (the two-sided calibration error, 0.30, is reported: the confidences are deliberately low). Failures are visible, not tuned away: the labels
+mistake a thin breakdown for a bridge (slow-drop-80), end on a verse when the outro is a fade
+(fade-out-108) and miss the chorus on noisy-break-98.
+
+Gate status is `label_calc.GATE_PASSED`: while False no label confidence exceeds 0.4; it may only
+be True while both gates pass on the corpus (the runner test fails otherwise, as it fails on any
+failing gate). The rules were written while looking at the synthetic fixtures, so the accuracy is an
+in-sample figure; the owner corpus (spotdown#20) is the real test and recalibrates the confidences.
 
 ## Changing a threshold
 
