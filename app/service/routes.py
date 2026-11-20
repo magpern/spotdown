@@ -1,54 +1,67 @@
 """The v2 routes of this phase: ``PUT /v2/uploads``, ``POST /v2/analyses``, ``GET /v2/jobs/{id}``.
 
 Sources: ``upload`` and ``url``. ``source_ref`` sources (``youtube``) are ``422 source_disabled``
-until spotdown#10, and a ``reference`` (alignment) is refused until spotdown#11.
+until spotdown#10, and a ``reference`` (alignment) is refused until spotdown#11. Lookups,
+``GET /v2/analyses/{id}`` and the scope deletion are in ``cache_routes``.
+
+``POST /v2/analyses`` answers from the cache when it can (equal sha256 and ``analyzer_version`` in
+the caller's scope, or the same source reference in that scope): ``200`` with a job that is already
+``done``, no queue, no analysis. Both it and ``PUT /v2/uploads`` need an ``Idempotency-Key``.
 """
 
 from __future__ import annotations
 
 import re
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
 
-from ..config import Settings
-from . import url_policy
+from . import analysis_doc, url_policy
+from . import idempotency_policy as idem
 from .api_models import ID_PATTERN, AnalysisRequest, scope_problem
+from .deps import require_key, settings_of, store_of
 from .dispatch import Dispatch
 from .errors import ApiError
-from .service_key import ServiceKey
-from .store import Store
-from .uploads import purge_expired_uploads, receive_upload
+from .uploads import purge_expired_uploads, receive_upload, upload_path
 
+router = APIRouter(prefix="/v2", dependencies=[Depends(require_key)])
 
-def _require_key(request: Request) -> None:
-    """Second line behind ServiceKeyMiddleware: every v2 route checks the key itself too."""
-    key: ServiceKey = request.app.state.service_key
-    if not key.matches_authorization(request.headers.get("authorization")):
-        raise ApiError(401, "unauthorized", "unauthorized")
-
-
-router = APIRouter(prefix="/v2", dependencies=[Depends(_require_key)])
-
-
-def _settings(request: Request) -> Settings:
-    return request.app.state.settings
-
-
-def _store(request: Request) -> Store:
-    return request.app.state.store
+ANALYSES = "POST /v2/analyses"
 
 
 @router.put("/uploads", status_code=201)
-async def put_upload(request: Request) -> Dict[str, Any]:
-    return await receive_upload(request, _settings(request), _store(request))
+async def put_upload(
+    request: Request, idempotency_key: Optional[str] = Header(default=None)
+) -> JSONResponse:
+    problem = idem.key_problem(idempotency_key)
+    if problem:
+        raise ApiError(422, problem, "a valid Idempotency-Key header is required")
+    assert idempotency_key is not None
+    return await receive_upload(request, settings_of(request), store_of(request), idempotency_key)
 
 
-@router.post("/analyses", status_code=202)
-def post_analysis(body: AnalysisRequest, request: Request) -> Dict[str, Any]:
-    settings, store = _settings(request), _store(request)
+def _replay(store: Any, scope: str, key: str, req_hash: str) -> Optional[JSONResponse]:
+    """The first response for this key, ``409`` when the key was used for another request."""
+    recorded = store.idem_get(scope, key)
+    verdict = idem.decide(recorded, req_hash)
+    if verdict == "conflict":
+        raise ApiError(
+            409, "idempotency_conflict", "this Idempotency-Key was used for another request"
+        )
+    if recorded is not None:
+        return JSONResponse(recorded.body, status_code=recorded.status)
+    return None
+
+
+@router.post("/analyses")
+def post_analysis(
+    body: AnalysisRequest,
+    request: Request,
+    idempotency_key: Optional[str] = Header(default=None),
+) -> JSONResponse:
+    settings, store = settings_of(request), store_of(request)
     if body.source_count() != 1:
         raise ApiError(422, "invalid_request", "give exactly one of upload_id, source_ref or url")
     if body.source_ref is not None:
@@ -61,35 +74,87 @@ def post_analysis(body: AnalysisRequest, request: Request) -> Dict[str, Any]:
         raise ApiError(422, problem, "a valid cache_scope is required")
     if body.reference is not None:
         raise ApiError(422, "alignment_unavailable", "alignment is not available yet")
+    problem = idem.key_problem(idempotency_key)
+    if problem:
+        raise ApiError(422, problem, "a valid Idempotency-Key header is required")
+    assert body.cache_scope is not None and idempotency_key is not None
+    scope, key = body.cache_scope, idempotency_key
+    req_hash = idem.request_hash(ANALYSES, body.model_dump(mode="json", exclude_none=True))
+    replayed = _replay(store, scope, key, req_hash)
+    if replayed is not None:
+        return replayed
 
     job: Dict[str, Any] = {
         "job_id": "job_" + uuid.uuid4().hex,
-        "cache_scope": body.cache_scope,
+        "cache_scope": scope,
         "client_ref": body.client_ref,
     }
+    version = analysis_doc.ANALYZER_VERSION_V2
+    hit = None
     if body.url is not None:
         try:
             checked = url_policy.check_url(body.url, allowed)
         except url_policy.UrlRefused as refused:
             raise ApiError(422, "url_not_allowed", f"url refused: {refused.reason}") from None
         job.update(source_kind="url", source_ref=checked.ref, fetch_url=body.url)
+        hit = store.find_by_source("url", checked.ref, scope, version)
     else:
         purge_expired_uploads(settings, store)
-        assert body.upload_id is not None and body.cache_scope is not None
-        if store.claim_upload(body.upload_id, body.cache_scope) is None:
+        assert body.upload_id is not None
+        claimed = store.claim_upload(body.upload_id, scope)
+        if claimed is None:
             raise ApiError(404, "upload_not_found", "no such upload in this scope")
         job.update(source_kind="upload", upload_id=body.upload_id)
+        hit = store.find_by_sha(scope, claimed["sha256"], version)
+
+    if hit is not None:  # a cache hit: no analysis, and the audio is not needed any more
+        job.pop("fetch_url", None)
+        used_upload = job.pop("upload_id", None)
+        store.add_job_done(job, hit.analysis_id)
+        if used_upload:
+            upload_path(settings, used_upload).unlink(missing_ok=True)
+            store.delete_upload(used_upload)
+        answer: Dict[str, Any] = {
+            "job_id": job["job_id"],
+            "status": "done",
+            "analysis_id": hit.analysis_id,
+        }
+        return _record(store, scope, key, req_hash, 200, answer, job["job_id"])[0]
 
     store.add_job(job)
+    answer = {"job_id": job["job_id"], "status": "queued"}
+    response, won = _record(store, scope, key, req_hash, 202, answer, job["job_id"])
+    if not won:
+        return response
     dispatch: Dispatch = request.app.state.dispatch
     try:
         dispatch(job["job_id"])
     except Exception:  # noqa: BLE001 - the queue is down; nothing was started
         store.delete_job(job["job_id"])
+        store.idem_delete(scope, key)
         if job.get("upload_id"):
             store.release_upload(job["upload_id"])
         raise ApiError(503, "queue_unavailable", "the job queue is unavailable") from None
-    return {"job_id": job["job_id"], "status": "queued"}
+    return response
+
+
+def _record(
+    store: Any,
+    scope: str,
+    key: str,
+    req_hash: str,
+    status: int,
+    answer: Dict[str, Any],
+    job_id: str,
+) -> Tuple[JSONResponse, bool]:
+    """Remembers the first response for the key. If a concurrent request with the same key won,
+    this job is dropped and the winner's response is returned instead."""
+    if store.idem_put(scope, key, req_hash, status, answer):
+        return JSONResponse(answer, status_code=status), True
+    store.delete_job(job_id)
+    winner = store.idem_get(scope, key)
+    assert winner is not None
+    return JSONResponse(winner.body, status_code=winner.status), False
 
 
 def job_view(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -121,7 +186,7 @@ def get_job(
     found = None
     if re.match(ID_PATTERN, job_id):
         # Jobs are visible only in the scope that created them; a miss reveals nothing.
-        found = _store(request).get_job_in_scope(job_id, cache_scope)
+        found = store_of(request).get_job_in_scope(job_id, cache_scope)
     if found is None:
         raise ApiError(404, "not_found", "no such job in this scope")
     return JSONResponse(job_view(found))

@@ -87,6 +87,15 @@ def execute_job(
     try:
         work.mkdir(parents=True, exist_ok=True)
         audio, media, sha256, source, timings = _source(job, settings, store, work, fetcher)
+        scope = job["cache_scope"]
+        known = (
+            store.find_by_sha(scope, sha256, analysis_doc.ANALYZER_VERSION_V2) if scope else None
+        )
+        if known is not None:  # the same bytes were analysed in this scope: reuse, don't analyse
+            store.finish_job_reused(
+                job_id, known.analysis_id, scope, source["kind"], source.get("ref")
+            )
+            return
         result = analyser(audio, media, work, limits_from(settings))
         analysis_id = "an_" + uuid.uuid4().hex
         doc = analysis_doc.build(
