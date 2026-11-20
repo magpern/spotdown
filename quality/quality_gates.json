@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "plan": "classbeat docs/plans/spotdown-integration.md section 7 (Revision 2, frozen)",
   "change_rule": "A threshold changes only with evaluation evidence in the PR and the usual review, and is recorded in classbeat ADR 0040. The two hard gates are never relaxed.",
   "parameters": {
@@ -9,7 +9,10 @@
     "boundary_report_tol_s": 1.5,
     "edge_tol_s": 0.25,
     "drop_tol_beats": 1,
-    "phrase_tol_beats": 2
+    "phrase_tol_beats": 2,
+    "song_tol_s": 2.0,
+    "warn_bpm_confidence": 0.5,
+    "baseline_min_tracks": 5
   },
   "hard": {
     "false_exact": 0,
@@ -55,12 +58,48 @@
     "phrase_f_baseline_reported",
     "phrase_f_pickup_reported",
     "phrase_overconfidence_pickup_reported",
-    "boundary_f_3s_all_reported"
+    "boundary_f_3s_all_reported",
+    "alignment_cases_reported",
+    "alignment_overreach_reported",
+    "alignment_offset_within_0_05s_reported"
   ],
+  "external": {
+    "note": "Gates for an external corpus (python -m app.quality.corpus), one verdict per source corpus, never pooled. A gate that cannot be measured is not_measured, never passed. Thresholds are the entries of signal, or of extra (the mix gates of plan section 7).",
+    "measurement": {"min_track_s": 240, "max_track_s": 420, "min_tracks": 5},
+    "extra": {
+      "song_start_end_within_2s_fraction": {"op": ">=", "value": 0.95},
+      "song_bpm_within_2pct_fraction": {"op": ">=", "value": 0.95},
+      "max_track_seconds": {"op": "<=", "value": 180},
+      "peak_memory_gib_all": {"op": "<=", "value": 1.5}
+    },
+    "corpora": {
+      "cc": {"min_tracks": 20, "min_annotated": 20, "annotated_keys": ["bpm", "beats", "boundaries", "drops", "edges"]},
+      "spotify": {"min_tracks": 30, "min_annotated": 15, "annotated_keys": ["bpm", "beats", "boundaries", "drops", "edges"]},
+      "studio": {"min_tracks": 20, "min_annotated": 15, "annotated_keys": ["bpm", "beats", "boundaries", "drops", "edges"]},
+      "mix": {"min_tracks": 5, "min_annotated": 5, "annotated_keys": ["songs"]}
+    },
+    "gate_sets": {
+      "cc": ["bpm_within_2pct_fraction", "bpm_exact_octave_fraction", "beat_f_four_on_the_floor", "beat_f_overall", "boundary_f_3s", "edge_within_0_25s_fraction", "drop_precision", "drop_recall", "ece_bpm", "ece_boundaries", "robustness_fraction", "p95_seconds_per_5min", "peak_memory_gib"],
+      "studio": ["bpm_within_2pct_fraction", "bpm_exact_octave_fraction", "beat_f_four_on_the_floor", "beat_f_overall", "boundary_f_3s", "edge_within_0_25s_fraction", "drop_precision", "drop_recall", "ece_bpm", "ece_boundaries", "robustness_fraction", "p95_seconds_per_5min", "peak_memory_gib"],
+      "spotify": ["bpm_within_2pct_fraction", "bpm_exact_octave_fraction", "beat_f_four_on_the_floor", "beat_f_overall", "boundary_f_3s", "edge_within_0_25s_fraction", "ece_bpm", "ece_boundaries", "robustness_fraction", "p95_seconds_per_5min", "peak_memory_gib"],
+      "mix": ["song_start_end_within_2s_fraction", "song_bpm_within_2pct_fraction", "robustness_fraction", "max_track_seconds", "peak_memory_gib_all"]
+    }
+  },
   "per_source": {
-    "status": "not evaluated here: needs the baseline path and the owner corpus (classbeat#1298)",
-    "spotify": {"vs_baseline": "BPM agreement and boundary F >= MOWL - 0.02; quality-report warnings <= MOWL + 5 %"},
-    "studio": {"vs_baseline": "beat F >= baseline - 0.02; BPM >= baseline - 1 point; boundary F >= baseline - 0.03"},
-    "mix": {"vs_baseline": "song start and end within the mix +-2 s on >= 95 %; BPM per song +-2 % on >= 95 %"}
+    "note": "Plan section 7, computed by app.quality.baseline_calc from derived baseline results (baseline-v1) over the tracks where both have a value. A row passes when spotdown is not worse than the baseline by more than the tolerance. spotify is judged against MOWL sections, studio against mowl.music.analyze_track, mix against design/mixanalysis.py. The mix absolute gates (>= 95 %) are in external.gate_sets.",
+    "spotify": {"baseline": "mowl_sections", "rows": [
+      {"metric": "bpm_within_2pct_fraction", "direction": "higher", "tolerance": 0.02},
+      {"metric": "boundary_f_3s", "direction": "higher", "tolerance": 0.02},
+      {"metric": "warning_fraction", "direction": "lower", "tolerance": 0.05}
+    ]},
+    "studio": {"baseline": "mowl.music.analyze_track", "rows": [
+      {"metric": "beat_f_overall", "direction": "higher", "tolerance": 0.02},
+      {"metric": "bpm_within_2pct_fraction", "direction": "higher", "tolerance": 0.01},
+      {"metric": "boundary_f_3s", "direction": "higher", "tolerance": 0.03}
+    ]},
+    "mix": {"baseline": "design/mixanalysis.py", "rows": [
+      {"metric": "song_start_end_within_2s_fraction", "direction": "higher", "tolerance": 0.0},
+      {"metric": "song_bpm_within_2pct_fraction", "direction": "higher", "tolerance": 0.0}
+    ]}
   }
 }
