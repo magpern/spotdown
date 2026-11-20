@@ -3,6 +3,9 @@
 A stand-alone reference backend with the same architecture the **SpotMate** Android app
 talks to: an async **"resolve metadata → source audio → transcode → serve file"** pipeline.
 
+> **Planned:** spotdown as classbeat's music-analysis service. See the frozen
+> [integration plan](docs/integration-plan.md) (planned, not authorized for implementation).
+
 It exposes the same API shape the app expects:
 
 | Endpoint | Purpose |
