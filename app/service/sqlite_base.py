@@ -4,16 +4,23 @@ reference rows (``GLOBAL_REFERENCE_TTL_S``, ADR 0040 §7)."""
 from __future__ import annotations
 
 import sqlite3
+import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Callable, Iterator
 
 from .cache_policy import GLOBAL_REFERENCE_TTL_S
 
 
 class SqliteBase:
-    def __init__(self, path: Path, global_ttl_s: float = GLOBAL_REFERENCE_TTL_S) -> None:
+    def __init__(
+        self,
+        path: Path,
+        global_ttl_s: float = GLOBAL_REFERENCE_TTL_S,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
         self.path = path
+        self.clock = clock  # the retention rules read it, so tests move time without sleeping
         self.global_ttl_s = float(global_ttl_s)
         path.parent.mkdir(parents=True, exist_ok=True)
 

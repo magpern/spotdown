@@ -223,9 +223,35 @@ deletion removes them, so they have a bounded lifetime, the operator setting
 `GLOBAL_REFERENCE_TTL_S` (default 3 days, the source-match cache's hit lifetime). An expired row is
 never served and is purged (when one of its kind is next stored, and by the worker before each job).
 An expired aligned analysis id is `404`; the same request then aligns again at once under a new id.
-This lifetime does not cover the global analyses, their source links or the match record copied
-into a global analysis' `provenance.source.match`: whether those get a lifetime or a
-reference-driven purge is the owner's decision recorded in ADR 0040 §7.
+### Retention of global analyses
+
+The global analyses themselves (a public `youtube` source), their source links, the global
+alignments built on them and the match record inside them hold no user data, but no scope deletion
+removes them, so they are purged too (classbeat ADR 0040 §7):
+
+- **Unused for 90 days.** An analysis not read for `GLOBAL_ANALYSIS_TTL_S` (default 90 days, at
+  least one day) is purged with its links and alignments. A read renews it: a source lookup or
+  an analysis request that hits it, a content hit on its bytes, `GET /v2/analyses/{id}` of it or of
+  an alignment built on it. The renewal is written at most once an hour. An entry that existed
+  before this rule counts from its creation.
+- **Analyzer version change.** An analysis of another `analyzer_version` than the running one can
+  never be a hit again and is purged at the next sweep, however recently it was read.
+- **Takedown.** The operator runs `python -m app.service.takedown youtube:<video id>` on the host
+  (not an endpoint; nothing is reachable over HTTP). It removes every global analysis of that
+  source (found by link and by the source in the document), the links to them, the alignments built
+  on them and the match records of the video, in one transaction, and prints counts only
+  (`alignments=… analyses=… links=… match_records=…`). It only accepts a global source reference,
+  and a second run reports zeros.
+- **Where it runs.** The purge runs in the worker's sweep before each job (the same path that purges
+  expired match records and alignments) and is idempotent. Scoped data is never selected: a scope
+  deletion never touches a global entry, and the purge never touches a scoped one.
+- **Nothing left behind.** Audio is never kept. The purge overwrites the freed database pages
+  (`secure_delete`) and truncates the write-ahead log, so a purged document is not left in the
+  database files. A job row that ended on a purged analysis keeps its id and answers `404` when
+  the analysis is fetched; the same request analyses again. Job rows are per-scope run records (they hold the video id,
+  not the analysis) and go with their scope, not with a takedown.
+- **Backups** are outside this service: a takedown does not reach a copy of `service.db` made
+  earlier, so the operator rotates those by their own schedule.
 
 ### Lookups
 
@@ -245,7 +271,7 @@ Both are limited to the caller's scope and return `{"schema_version": "lookup-v1
 
 Delete everything held for the scope: analyses, source-reference links, uploads, jobs, run records and
 idempotency records. Idempotent: `204` whether or not the scope existed. Global (public) entries are not
-touched.
+touched (see "Retention of global analyses" for their own lifetime).
 
 ## Schemas
 

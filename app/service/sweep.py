@@ -5,8 +5,9 @@ audio) stayed on disk.
 A job ``running`` for longer than its lease (``dispatch.job_lease_s``: RQ's job timeout plus a
 margin) is failed as ``processing_failed`` / ``timeout`` (the caller may retry a timeout once), its
 ``fetch_url`` is cleared and its upload removed. Work directories of jobs that are not running are
-removed. The worker sweeps before each job; ``GET /v2/jobs/{id}`` expires a stale job it is
-asked about, so a poller is answered even when no other job runs.
+removed. The global analyses unused for the retention period or of an old analyzer version are
+purged (``retention_policy``). The worker sweeps before each job; ``GET /v2/jobs/{id}`` expires
+a stale job it is asked about, so a poller is answered even when no other job runs.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import time
 from typing import Optional
 
 from ..config import Settings
+from .analysis_doc import ANALYZER_VERSION_V2
 from .dispatch import job_lease_s
 from .failure_policy import Reason, outcome_for
 from .store import Store
@@ -59,3 +61,4 @@ def sweep(settings: Settings, store: Store, now: Optional[float] = None) -> None
     expire_stale_jobs(settings, store, now)
     remove_orphan_work_dirs(settings, store)
     store.purge_global_references(now)
+    store.purge_unused_analyses(now, ANALYZER_VERSION_V2, settings.global_analysis_ttl_s)
