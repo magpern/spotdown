@@ -13,6 +13,10 @@ does not earn:
   when the document carries an alignment, its offset is within ``OFFSET_TOL_S`` of the true offset
   (the 50 ms of the plan's beat-level equivalence test).
 
+The offset test is weaker than ADR 0040 path (b) (median beat error <= 20 ms and >= 95 % of
+beats within 50 ms): one offset within 50 ms. That is acceptable only while spotdown never emits
+``exact``; tighten it to the beat-level test before any claim can appear.
+
 Anything else, including an unknown corpus, is a false exact. Overreach on a reference that is not
 the same recording is reported separately: durations cannot tell two recordings apart, so spotdown
 never promotes an alignment on its own.

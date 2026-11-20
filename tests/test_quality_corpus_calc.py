@@ -90,3 +90,10 @@ def test_coverage_counts_tracks_annotated_and_sufficiency() -> None:
     cov = cc.coverage(tracks, rule, [True, False])
     assert (cov["tracks"], cov["annotated"], cov["jobs_ok"], cov["sufficient"]) == (2, 1, 1, False)
     assert cc.coverage(tracks[:1] * 2, rule, [True, True])["sufficient"]
+
+
+@pytest.mark.parametrize("value", ["0.1", None, True, float("nan"), float("inf")])
+def test_true_offset_must_be_a_finite_number(value: Any) -> None:
+    with pytest.raises(CorpusError):
+        cc.validate_index(index(true_offset_s=value))
+    assert cc.validate_index(index(true_offset_s=-2.5))["tracks"][0]["true_offset_s"] == -2.5

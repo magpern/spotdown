@@ -63,8 +63,13 @@ def build(
     metrics["robustness_fraction"] = round(sum(r["ok"] for r in results) / n, 4) if n else None
     metrics.update(measure_calc.measure(results, ext["measurement"]))
     cases = _exact_cases(corpus, tracks, results)
-    metrics["false_exact"] = float(exact_calc.false_exact(cases))
-    metrics["audio_kept_after_job"] = float(sum(r["audio_left"] for r in results))
+    # No document examined, or no job run, is no measurement: a hard gate is never read as 0.
+    metrics["false_exact"] = float(exact_calc.false_exact(cases)) if cases else None
+    metrics["n_false_exact"] = float(len(cases))
+    metrics["audio_kept_after_job"] = (
+        float(sum(r["audio_left"] for r in results)) if results else None
+    )
+    metrics["n_audio_kept_after_job"] = float(len(results))
     metrics["alignment_overreach_reported"] = float(exact_calc.alignment_overreach(cases))
     coverage = corpus_calc.coverage(tracks, ext["corpora"][corpus], [r["ok"] for r in results])
     verdict = corpus_gates_calc.evaluate_corpus(gates, corpus, metrics, coverage)

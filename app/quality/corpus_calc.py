@@ -48,6 +48,12 @@ def _number(value: Any, where: str, *, positive: bool = False) -> float:
     return float(value)
 
 
+def _signed(value: Any, where: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise CorpusError(f"{where}: not a finite number")
+    return float(value)
+
+
 def validate_truth(truth: Dict[str, Any], where: str) -> Dict[str, Any]:
     """The truth record with every time list sorted and numbers as floats."""
     if not isinstance(truth, dict):
@@ -121,6 +127,8 @@ def validate_index(index: Dict[str, Any]) -> Dict[str, Any]:
             _check_cc(track, where)
         if "same_recording" in track and not isinstance(track["same_recording"], bool):
             raise CorpusError(f"{where}.same_recording: must be true or false")
+        if "true_offset_s" in track:
+            track["true_offset_s"] = _signed(track["true_offset_s"], f"{where}.true_offset_s")
         tracks.append(track)
     return {"corpus_version": CORPUS_VERSION, "corpus": corpus, "tracks": tracks}
 

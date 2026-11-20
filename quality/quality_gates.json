@@ -86,7 +86,7 @@
     }
   },
   "per_source": {
-    "note": "Plan section 7, computed by app.quality.baseline_calc from derived baseline results (baseline-v1) over the tracks where both have a value. A row passes when spotdown is not worse than the baseline by more than the tolerance. spotify is judged against MOWL sections, studio against mowl.music.analyze_track, mix against design/mixanalysis.py. The mix absolute gates (>= 95 %) are in external.gate_sets.",
+    "note": "Plan section 7, computed by app.quality.baseline_calc from derived baseline results (baseline-v1) over the tracks where both sides have that metric (paired per metric, not per track). warning_fraction 'lower, tolerance 0.05' means at most the baseline plus 5 percentage points (absolute), the reading of plan section 7's 'warnings <= baseline + 5 %'. A row passes when spotdown is not worse than the baseline by more than the tolerance. spotify is judged against MOWL sections, studio against mowl.music.analyze_track, mix against design/mixanalysis.py. The mix absolute gates (>= 95 %) are in external.gate_sets.",
     "spotify": {"baseline": "mowl_sections", "rows": [
       {"metric": "bpm_within_2pct_fraction", "direction": "higher", "tolerance": 0.02},
       {"metric": "boundary_f_3s", "direction": "higher", "tolerance": 0.02},

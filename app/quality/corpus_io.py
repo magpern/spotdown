@@ -38,12 +38,13 @@ def load_corpus(directory: Path) -> Tuple[Dict[str, Any], Dict[str, Path]]:
     return index, audio
 
 
-def load_baseline(path: Path) -> Dict[str, Dict[str, Any]]:
+def load_baseline(path: Path) -> Tuple[str, Dict[str, Dict[str, Any]]]:
+    """The path the file describes and its per-track entries."""
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise CorpusError(f"{path}: cannot read the baseline results ({exc})") from None
-    return baseline_calc.validate_baseline(doc)
+    return doc.get("source", ""), baseline_calc.validate_baseline(doc)
 
 
 def ids(index: Dict[str, Any]) -> List[str]:

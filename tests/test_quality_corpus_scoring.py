@@ -40,6 +40,15 @@ def test_an_empty_annotation_is_an_annotation() -> None:
     assert sc.aggregate([noisy])["drop_precision"] == 0.0
 
 
+def test_no_drop_claimed_is_no_precision_not_a_perfect_one() -> None:
+    silent = rec(truth_for(beats(), drops=[40.0]), make_doc(drops=[]))
+    agg = sc.aggregate([silent])
+    assert agg["drop_precision"] is None and agg["n_drop_precision"] == 0.0
+    assert agg["drop_recall"] == 0.0  # the gate that can still fail
+    claimed = sc.aggregate([rec(truth_for(beats(), drops=[]), make_doc(drops=[40.0]))])
+    assert claimed["n_drop_precision"] == 1.0
+
+
 def test_octave_errors_pass_the_octave_gate_but_not_the_exact_one() -> None:
     r = rec(truth_for(beats(), bpm=120.0), make_doc(bpm=60.0))
     assert r["bpm_octave_ok"] and not r["bpm_exact_ok"]

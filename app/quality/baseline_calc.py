@@ -56,18 +56,21 @@ def compare(
     """Rows for one source. ``spotdown`` maps id to its estimate (only jobs that produced a
     document), ``baseline`` maps id to a baseline entry."""
     common = [t for t in tracks if t["id"] in spotdown and t["id"] in baseline]
-    side_a, side_b = [], []
+    pairs = []
     agree: List[bool] = []
     for t in common:
         base_est = sc.estimate_from_baseline(baseline[t["id"]])
-        side_a.append(sc.score_track(t["truth"], spotdown[t["id"]], tol))
-        side_b.append(sc.score_track(t["truth"], base_est, tol))
+        pairs.append(
+            (
+                sc.score_track(t["truth"], spotdown[t["id"]], tol),
+                sc.score_track(t["truth"], base_est, tol),
+            )
+        )
         if base_est.get("bpm") and spotdown[t["id"]].get("bpm"):
             agree.append(
                 m.bpm_errors(base_est["bpm"], spotdown[t["id"]]["bpm"], tol["bpm_tolerance"])[0]
             )
-    mine, theirs = sc.aggregate(side_a), sc.aggregate(side_b)
-    rows = [_row(spec, mine, theirs, tol["baseline_min_tracks"]) for spec in rule["rows"]]
+    rows = [_row(spec, pairs, tol["baseline_min_tracks"]) for spec in rule["rows"]]
     return {
         "baseline": rule["baseline"],
         "common_tracks": len(common),
@@ -81,10 +84,17 @@ def compare(
     }
 
 
-def _row(
-    spec: Dict[str, Any], mine: Dict[str, Any], theirs: Dict[str, Any], min_n: float
-) -> Dict[str, Any]:
+def _row(spec: Dict[str, Any], pairs: Sequence[Any], min_n: float) -> Dict[str, Any]:
+    """One row, scored over the tracks where BOTH sides have this metric (not merely a track):
+    a baseline missing a key must not leave spotdown's own, different pool in the comparison."""
     name, tol_v = spec["metric"], spec["tolerance"]
+    both = [
+        (x, y)
+        for x, y in pairs
+        if sc.aggregate([x])[name] is not None and sc.aggregate([y])[name] is not None
+    ]
+    mine = sc.aggregate([x for x, _ in both])
+    theirs = sc.aggregate([y for _, y in both])
     a, b = mine.get(name), theirs.get(name)
     n = min(mine.get(f"n_{name}") or 0, theirs.get(f"n_{name}") or 0)
     if a is None or b is None or n < min_n:
@@ -100,5 +110,6 @@ def _row(
         "spotdown": a,
         "baseline": b,
         "n": n,
+        "tracks": len(both),
         "status": status,
     }

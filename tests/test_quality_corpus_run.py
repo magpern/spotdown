@@ -151,7 +151,11 @@ def test_a_baseline_comparison_failure_fails_the_corpus(
         "drops": [150],
     }
     b = tmp_path / "base.json"
-    doc = {"baseline_version": 1, "source": "x", "tracks": {f"t{i}": entry for i in range(20)}}
+    doc = {
+        "baseline_version": 1,
+        "source": "mowl.music.analyze_track",
+        "tracks": {f"t{i}": entry for i in range(20)},
+    }
     b.write_text(json.dumps(doc), encoding="utf-8")
     args = ["--corpus", str(d), "--baseline", str(b)]
     assert run_main(monkeypatch, args, lambda _: good_doc()) == 0
@@ -244,3 +248,78 @@ def test_one_real_track_runs_isolated_with_its_memory_measured_and_the_file_left
     assert rep["metrics"]["p95_seconds_per_5min"] is None  # 36 s is not a five-minute track
     assert "p95_seconds_per_5min" in rep["result"]["not_measured"]
     assert rep["result"]["verdict"] != "pass"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="a shell script stands in for the job process")
+def test_a_killed_job_that_left_its_audio_copy_is_counted_and_fails_the_hard_gate(
+    tmp_path: Path,
+) -> None:
+    fake_job = tmp_path / "fake_job.sh"
+    fake_job.write_text(
+        "#!/bin/sh\n"
+        'mkdir -p "$TMPDIR/quality-x/data/uploads"\n'
+        'echo audio > "$TMPDIR/quality-x/data/uploads/up_job_1"\n'
+        "sleep 30\n",
+        encoding="utf-8",
+    )
+    fake_job.chmod(0o755)
+    res = corpus.run_isolated({"id": "t0"}, tmp_path / "a.wav", 1.5, python=str(fake_job))
+    assert res["ok"] is False and res["audio_left"] == 1
+    d = write_corpus(tmp_path, "cc", 1)
+    index, _ = corpus_io.load_corpus(d)
+    rep = corpus_report.build(GATES, index, [res], None)
+    assert rep["metrics"]["audio_kept_after_job"] == 1.0
+    assert "audio_kept_after_job" in rep["result"]["failed"]
+    assert rep["result"]["verdict"] == "FAIL"
+
+
+def test_the_hard_gates_are_not_measured_when_nothing_was_examined(tmp_path: Path) -> None:
+    d = write_corpus(tmp_path, "cc", 2)
+    index, _ = corpus_io.load_corpus(d)
+    rep = corpus_report.build(GATES, index, [result(None), result(None)], None)
+    rows = {r["gate"]: r for r in rep["result"]["gates"]}
+    assert rows["false_exact"]["status"] == "not_measured" and rows["false_exact"]["n"] == 0
+    assert rows["audio_kept_after_job"]["status"] == "pass"  # 2 jobs ran, nothing left
+    assert rows["audio_kept_after_job"]["n"] == 2
+    none = corpus_report.build(GATES, dict(index, tracks=[]), [], None)
+    rows = {r["gate"]: r for r in none["result"]["gates"]}
+    assert rows["audio_kept_after_job"]["status"] == "not_measured"
+    assert rows["false_exact"]["status"] == "not_measured"
+
+
+def test_baseline_files_are_tied_to_their_source_and_ids_are_not_overwritten(
+    tmp_path: Path,
+) -> None:
+    def write(name: str, source: str, ids: List[str]) -> Path:
+        path = tmp_path / name
+        doc = {"baseline_version": 1, "source": source, "tracks": {i: {"bpm": 120} for i in ids}}
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        return path
+
+    ok = corpus.load_baselines([write("a.json", "mowl_sections", ["x"])], GATES)
+    assert list(ok["mowl_sections"]) == ["x"]
+    with pytest.raises(CorpusError):
+        corpus.load_baselines([write("b.json", "somewhere.else", ["x"])], GATES)
+    twice = [write("c.json", "mowl_sections", ["x"]), write("d.json", "mowl_sections", ["x"])]
+    with pytest.raises(CorpusError):
+        corpus.load_baselines(twice, GATES)
+    other = [
+        write("e.json", "mowl_sections", ["x"]),
+        write("f.json", "design/mixanalysis.py", ["x"]),
+    ]
+    assert set(corpus.load_baselines(other, GATES)) == {"mowl_sections", "design/mixanalysis.py"}
+
+
+def test_a_studio_corpus_is_not_judged_against_a_spotify_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    d = write_corpus(tmp_path, "studio", 20, "studio")
+    b = tmp_path / "base.json"
+    doc = {
+        "baseline_version": 1,
+        "source": "mowl_sections",
+        "tracks": {f"t{i}": {"bpm": 120.0} for i in range(20)},
+    }
+    b.write_text(json.dumps(doc), encoding="utf-8")
+    args = ["--corpus", str(d), "--baseline", str(b)]
+    assert run_main(monkeypatch, args, lambda _: good_doc()) == 2  # no studio baseline: incomplete

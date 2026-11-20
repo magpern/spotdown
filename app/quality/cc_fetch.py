@@ -38,6 +38,8 @@ class HttpsOnly(urllib.request.HTTPRedirectHandler):
 
 
 def download(url: str, limit: int) -> bytes:  # pragma: no cover - the owner's network call
+    if not url.lower().startswith("https://"):
+        raise CorpusError(f"{url}: only https downloads are allowed")
     opener = urllib.request.build_opener(HttpsOnly)
     with opener.open(url, timeout=60) as resp:
         data = resp.read(limit + 1)

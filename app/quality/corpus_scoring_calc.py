@@ -168,7 +168,8 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, Optional[float]]:
         "boundary_f_3s": _frac(_pool(records, "boundary_f")),
         "edge_within_0_25s_fraction": _frac(edge),
         # Nothing to find and nothing claimed is not a measurement: no truth drop, no recall.
-        "drop_precision": tp / (tp + fp) if tp + fp else (1.0 if tp + fn else None),
+        # No claimed drop is no precision (recall fails the gate when truth drops exist).
+        "drop_precision": tp / (tp + fp) if tp + fp else None,
         "drop_recall": tp / (tp + fn) if tp + fn else None,
         "ece_bpm": m.ece([r["bpm_confidence"] for r in rated], [r["bpm_exact_ok"] for r in rated])
         if rated
@@ -185,6 +186,7 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, Optional[float]]:
         "boundary_f_3s": len(_pool(records, "boundary_f")),
         "edge_within_0_25s_fraction": len(edge),
         "drop_recall": tp + fn,
+        "drop_precision": tp + fp,
         "ece_bpm": len(rated),
         "ece_boundaries": len(conf),
         "song_start_end_within_2s_fraction": len(song_edges),

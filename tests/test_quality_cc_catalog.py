@@ -92,6 +92,30 @@ def test_a_download_that_does_not_match_is_refused_and_not_kept(tmp_path: Path) 
     assert not list((tmp_path / "audio").iterdir())
 
 
+def test_a_same_size_download_with_other_content_is_refused_and_not_kept(tmp_path: Path) -> None:
+    tracks = cc_catalog.validate(catalog(entry()))
+    other = bytes(b ^ 1 for b in DATA)
+    assert len(other) == len(DATA) and other != DATA
+    with pytest.raises(CorpusError):
+        cc_fetch.fetch(tracks, tmp_path, lambda url, limit: other)
+    assert not list((tmp_path / "audio").iterdir())
+
+
+def test_a_same_size_wrong_file_already_there_is_fetched_again(tmp_path: Path) -> None:
+    tracks = cc_catalog.validate(catalog(entry()))
+    (tmp_path / "audio").mkdir()
+    target = tmp_path / "audio" / "song-1.wav"
+    target.write_bytes(bytes(b ^ 1 for b in DATA))
+    assert cc_fetch.fetch(tracks, tmp_path, lambda url, limit: DATA) == ["song-1"]
+    assert target.read_bytes() == DATA
+
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "http://example.org/a.mp3", "ftp://x/a"])
+def test_download_itself_refuses_a_non_https_url(url: str) -> None:
+    with pytest.raises(CorpusError):
+        cc_fetch.download(url, 10)
+
+
 def test_fetch_refuses_a_destination_inside_the_repository() -> None:
     tracks = cc_catalog.validate(catalog(entry()))
     with pytest.raises(CorpusError):

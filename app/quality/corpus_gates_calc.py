@@ -58,7 +58,7 @@ def evaluate_corpus(
                 "op": "==",
                 "threshold": 0,
                 "value": value,
-                "n": None,
+                "n": metrics.get(f"n_{name}"),
                 "status": NOT_MEASURED if value is None else (PASS if value == 0 else FAIL),
             }
         )

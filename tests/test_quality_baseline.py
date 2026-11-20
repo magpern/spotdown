@@ -157,3 +157,24 @@ def test_a_baseline_file_is_validated() -> None:
     for key, value in bad:
         with pytest.raises(CorpusError):
             bc.validate_baseline(dict(valid(), **{key: value}))
+
+
+def test_a_row_pairs_per_metric_so_a_baseline_missing_a_key_cannot_hide_a_worse_spotdown() -> None:
+    # t0-t9: spotdown beat F 0; the baseline has beats there (right on t5-t9, so 0.5).
+    # t10-t19: spotdown beat F 1; the baseline has no beats at all. Over the tracks both
+    # measured, spotdown 0.0 is worse than the baseline's 0.5: the row must FAIL.
+    mine = sd(20, off=range(10))
+    theirs = {
+        tid: ({k: v for k, v in e.items() if k != "beats"} if int(tid[1:]) >= 10 else e)
+        for tid, e in base(20, off=range(5)).items()
+    }
+    cmp = bc.compare(STUDIO, tracks(20), mine, theirs, TOL)
+    r = row(cmp, "beat_f_overall")
+    assert (r["spotdown"], r["baseline"], r["n"], r["tracks"]) == (0.0, 0.5, 10, 10)
+    assert r["status"] == "FAIL"
+
+
+def test_a_row_with_no_track_where_both_have_the_metric_is_not_measured() -> None:
+    theirs = {tid: {"bpm": 120.0} for tid in base(10)}
+    r = row(bc.compare(STUDIO, tracks(10), sd(10), theirs, TOL), "beat_f_overall")
+    assert r["status"] == "not_measured" and r["n"] == 0

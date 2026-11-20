@@ -38,6 +38,8 @@ differs from what the code generates.
 | `robustness_fraction`, `p95_seconds_per_5min`, `peak_memory_gib` | jobs that finish, time per 5 minutes of audio, peak child memory |
 | `false_exact`, `audio_kept_after_job` | **hard gates**, always 0 (`false_exact` is defined below) |
 
+In the external runner a hard gate is `not_measured` (with its `n`) when nothing was examined: no document for `false_exact`, no job for `audio_kept_after_job`; a job process that was killed (timeout, out of memory) has its leftover upload and work files counted, then removed.
+
 The hard gates are never relaxed: `gates_calc.validate` refuses a file where either is not 0, and
 an unmeasured gate fails.
 
@@ -277,15 +279,15 @@ studio tracks, `design/mixanalysis.py` for mixes) and keeps only this file:
                     "songs": [{"start_s": 0.0, "end_s": 200.0, "bpm": 128.0}]}}}
 ```
 
-Every field is optional and a field the baseline does not provide is never compared. Both sides are
-scored with the same metrics against the same truth, over the tracks where **both have a value**, and
+The `source` must be one a rule names (`mowl_sections`, `mowl.music.analyze_track` or `design/mixanalysis.py`); a file only feeds the corpus whose rule names it, and a track id in two files of one source is refused. Every field is optional and a field the baseline does not provide is never compared. Both sides are
+scored with the same metrics against the same truth, over the tracks where **both sides have that metric** (paired per metric: a baseline missing a key drops that track from that row on both sides), and
 a row passes when spotdown is at most the plan's tolerance worse: Spotify BPM agreement and boundary
-F within 0.02 of MOWL, warning share at most 5 points above; studio beat F within 0.02, BPM agreement
+F within 0.02 of MOWL, warning share at most 5 percentage points above (absolute); studio beat F within 0.02, BPM agreement
 within 1 point, boundary F within 0.03; mix song start and end and BPM per song at least the
 baseline (and the absolute 95 % above). A row on fewer than five tracks is `not_measured`; a source
 that has a baseline rule and no baseline file is `incomplete`. For tracks without truth the report
 gives `bpm_agreement_with_baseline_reported` (the plan compares the unannotated rest with the
-baseline only). **Reading decisions** (Architect to confirm): the mix gate reads the structure
+baseline only). **Reading decisions** (accepted by the Architect): the mix gate reads the structure
 boundaries and the content ends as the estimated song starts and ends and takes the tempo at a
 song's midpoint from the tempo and its change points, because spotdown has no notion of a song; the
 spotdown side of "quality-report warnings" is counted from the document (a tempo confidence below

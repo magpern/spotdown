@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
-from . import corpus_io, corpus_report
+from . import corpus_io, corpus_report, track_job
 from .corpus_calc import CorpusError
 from .runner import GATES
 
@@ -49,19 +50,34 @@ def run_isolated(
         cmd = [python, "-m", "app.quality.track_job", str(audio), str(out), track["id"]]
         if track.get("reference"):
             cmd.append(json.dumps(track["reference"]))
+        # The child's temp root is ours: whatever it leaves after a kill (timeout, OOM) is
+        # counted here and removed with this directory, never reported as "nothing kept".
+        env = dict(os.environ, TMPDIR=tmp)
+        res = failed
         try:
             subprocess.run(
                 cmd,
                 cwd=str(PROJECT_ROOT),
+                env=env,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=timeout_s,
                 check=True,
             )
-            return json.loads(out.read_text(encoding="utf-8"))
+            res = json.loads(out.read_text(encoding="utf-8"))
         except (subprocess.SubprocessError, OSError, ValueError):
-            return failed
+            pass
+        res["audio_left"] = int(res.get("audio_left") or 0) + leftovers(Path(tmp))
+        return res
+
+
+def leftovers(tmp: Path) -> int:
+    """Files a dead job left in its upload and work stores under ``tmp``."""
+    return sum(
+        len(track_job.files_under(d / "data" / "uploads", d / "data" / "work"))
+        for d in tmp.glob("quality-*")
+    )
 
 
 def run_corpus(
@@ -118,6 +134,23 @@ def exit_code(reports: List[Dict[str, Any]]) -> int:
     return 1 if "FAIL" in states else (2 if "incomplete" in states or not states else 0)
 
 
+def load_baselines(paths: List[Path], gates: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Baseline files keyed by the path they describe (``source``); a source no rule uses, or
+    an id present in two files of the same source, is refused rather than merged."""
+    known = {r["baseline"] for r in gates["per_source"].values() if isinstance(r, dict)}
+    out: Dict[str, Dict[str, Any]] = {}
+    for path in paths:
+        source, entries = corpus_io.load_baseline(path)
+        if source not in known:
+            raise CorpusError(f"{path}: baseline source {source!r} is not one of {sorted(known)}")
+        bucket = out.setdefault(source, {})
+        dup = sorted(set(bucket) & set(entries))
+        if dup:
+            raise CorpusError(f"{path}: ids already in another {source} file: {dup[:5]}")
+        bucket.update(entries)
+    return out
+
+
 def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("--corpus", type=Path, action="append", required=True)
@@ -127,15 +160,15 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--timeout", type=float, default=900.0)
     args = ap.parse_args(argv)
     gates = json.loads(GATES.read_text(encoding="utf-8"))
-    baselines: Dict[str, Dict[str, Any]] = {}
-    for path in args.baseline:
-        baselines.update(corpus_io.load_baseline(path))
     reports: List[Dict[str, Any]] = []
     try:
+        baselines = load_baselines(args.baseline, gates)
         for directory in args.corpus:
             index, audio = corpus_io.load_corpus(directory)
             run = run_corpus(index, audio, args.only, args.timeout)
-            report = corpus_report.build(gates, run["index"], run["results"], baselines or None)
+            rule = gates["per_source"].get(index["corpus"])
+            base = baselines.get(rule["baseline"]) if rule else None
+            report = corpus_report.build(gates, run["index"], run["results"], base)
             reports.append(report)
             print(format_report(report))
     except CorpusError as exc:
