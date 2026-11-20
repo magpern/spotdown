@@ -22,14 +22,18 @@ _RULES: Tuple[Tuple[re.Pattern[str], Reason], ...] = tuple(
             r"video unavailable|private video|has been removed|no longer available|"
             r"available in your country|geo.?restrict|blocked it in your country|"
             r"confirm your age|age.?restrict|inappropriate for some users|members.only|"
-            r"requested format is not available|this live event|premieres? in|"
+            r"this live event|premieres? in|"
             r"copyright claim|account associated with this video has been terminated|"
             r"http error 404|http error 410",
             Reason.SOURCE_MISSING,
         ),
         (
-            # A 403 on YouTube media is usually throttling or a bot measure: retryable.
-            r"http error 403|http error 5\d\d|unable to download|timed out|connection|network|"
+            # A 403 on YouTube media is usually throttling or a bot measure: retryable. With the
+            # https-only audio format, "requested format is not available" means the provider
+            # served no such format (an HLS- or SABR-only response after a client change), not
+            # that the video is gone: an outage, so alternates are not tried in vain.
+            r"requested format is not available|http error 403|http error 5\d\d|"
+            r"unable to download|timed out|connection|network|"
             r"temporary failure|name resolution|ssl|eof occurred",
             Reason.PROVIDER_ERROR,
         ),

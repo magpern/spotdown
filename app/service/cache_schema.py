@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+import time
+
+from . import cache_policy
 
 CACHE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS analyses (
@@ -49,12 +53,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS alignments_by_id ON alignments (analysis_id);
 """
 
 _ANALYSES_COLUMNS = ("sha256", "fingerprint", "analyzer_version")
+# PRAGMA user_version once the backfill of spotdown#4 analyses has run.
+SCHEMA_VERSION = 1
 
 
 def create(conn: sqlite3.Connection) -> None:
     """Creates the tables and adds the columns an older table lacks: the index columns of an
-    ``analyses`` table of the first service-mode release (spotdown#4), and the aligned analysis
-    id of an ``alignments`` table of spotdown#5."""
+    ``analyses`` table of the first service-mode release (spotdown#4), backfilled from each
+    document, and the aligned analysis id of an ``alignments`` table of spotdown#5."""
     conn.executescript(CACHE_SCHEMA)
     have = {row[1] for row in conn.execute("PRAGMA table_info(analyses)")}
     for column in _ANALYSES_COLUMNS:
@@ -64,3 +70,37 @@ def create(conn: sqlite3.Connection) -> None:
     if "analysis_id" not in {row[1] for row in conn.execute("PRAGMA table_info(alignments)")}:
         conn.execute("ALTER TABLE alignments ADD COLUMN analysis_id TEXT")
     conn.executescript(_INDEXES)
+    if conn.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+        _backfill(conn)  # once per database, not on every store construction
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+
+def _backfill(conn: sqlite3.Connection) -> None:
+    """Fills the index columns, and the source link, of analyses stored before they existed
+    (spotdown#4), so they are cache hits and lookup results. A row whose document cannot be
+    read is left as it is (it stays a miss, never a wrong hit)."""
+    rows = conn.execute(
+        "SELECT analysis_id, cache_scope, doc FROM analyses WHERE sha256 IS NULL"
+    ).fetchall()
+    now = time.time()
+    for analysis_id, scope, doc in rows:
+        try:
+            fields = cache_policy.index_fields(json.loads(doc))
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+        conn.execute(
+            "UPDATE analyses SET sha256 = ?, fingerprint = ?, analyzer_version = ?"
+            " WHERE analysis_id = ?",
+            (fields.sha256, fields.fingerprint, fields.analyzer_version, analysis_id),
+        )
+        # A url ref of that release is host and path; lookups now use the digest form, so such
+        # a link could never match: the analysis is found by its sha256 only.
+        if fields.source_ref is not None and not (
+            fields.source_kind == "url" and not fields.source_ref.startswith("sha256:")
+        ):
+            key = cache_policy.scope_key(cache_policy.link_scope(fields.source_kind, scope))
+            conn.execute(
+                "INSERT OR IGNORE INTO source_links (source_kind, source_ref, scope_key,"
+                " analysis_id, created_at) VALUES (?, ?, ?, ?, ?)",
+                (fields.source_kind, fields.source_ref, key, analysis_id, now),
+            )

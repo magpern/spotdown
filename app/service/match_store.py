@@ -1,6 +1,10 @@
 """Storage of the global matcher state: the source-match cache, the provider backoff and the
 match record of each chosen video. All of it is global (public search results, no scope): it is
 never keyed on, and never holds, a ``cache_scope``, a ``client_ref`` or a job id.
+
+A match record holds the requested (Spotify-catalogue) title, artists and duration, so it lives
+``GLOBAL_REFERENCE_TTL_S`` (ADR 0040 §7): an expired record is never read and is purged when a
+record is next stored. Within its lifetime the latest match that chose a video wins.
 """
 
 from __future__ import annotations
@@ -79,15 +83,21 @@ class MatchStore(SqliteBase):
     ) -> None:
         with self._conn() as conn:
             conn.execute(
+                "DELETE FROM match_choices WHERE created_at <= ?", (now - self.global_ttl_s,)
+            )
+            conn.execute(
                 "INSERT OR REPLACE INTO match_choices (video_id, record, duration_s, created_at)"
                 " VALUES (?, ?, ?, ?)",
                 (video_id, json.dumps(record, separators=(",", ":")), duration_s, now),
             )
 
-    def get_choice(self, video_id: str) -> Optional[Tuple[Dict[str, Any], float]]:
-        """The latest match record that chose ``video_id``, with the requested duration."""
+    def get_choice(self, video_id: str, now: float) -> Optional[Tuple[Dict[str, Any], float]]:
+        """The latest unexpired match record that chose ``video_id``, with the requested
+        duration."""
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT record, duration_s FROM match_choices WHERE video_id = ?", (video_id,)
+                "SELECT record, duration_s FROM match_choices"
+                " WHERE video_id = ? AND created_at > ?",
+                (video_id, now - self.global_ttl_s),
             ).fetchone()
         return (json.loads(row["record"]), float(row["duration_s"])) if row else None

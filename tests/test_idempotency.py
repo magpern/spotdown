@@ -133,3 +133,68 @@ def test_expired_records_are_purged_on_the_next_insert(stack: Stack) -> None:
     with stack.store._conn() as conn:
         keys = [r["idem_key"] for r in conn.execute("SELECT idem_key FROM idempotency")]
     assert keys == ["new"]
+
+
+def lose_the_race_once(stack: Stack, monkeypatch) -> None:
+    """The next request's first read of its key sees nothing, as when a concurrent request with
+    the same key records its response just after that read."""
+    store = stack.client.app.state.store  # type: ignore[attr-defined]
+    real = store.idem_get
+    calls = {"n": 0}
+
+    def first_sees_nothing(scope: str, key: str):
+        calls["n"] += 1
+        return None if calls["n"] == 1 else real(scope, key)
+
+    monkeypatch.setattr(store, "idem_get", first_sees_nothing)
+
+
+def test_a_concurrent_other_request_with_the_key_is_409_and_frees_its_upload(
+    stack: Stack, monkeypatch
+) -> None:
+    up1 = stack.upload(stack.audio("a.wav", 2.0)).json()["upload_id"]
+    up2 = stack.upload(stack.audio("b.wav", 3.0)).json()["upload_id"]
+    assert stack.analyse(up1, key="race").status_code == 202
+    lose_the_race_once(stack, monkeypatch)
+    res = stack.analyse(up2, key="race")
+    assert res.status_code == 409 and res.json()["error"]["code"] == "idempotency_conflict"
+    assert len(stack.dispatch.job_ids) == 1 and len(stack.rows("jobs")) == 1
+    assert stack.store.claim_upload(up2, SCOPE) is not None  # released, not left consumed
+
+
+def test_a_concurrent_same_request_replays_instead_of_404(stack: Stack, monkeypatch) -> None:
+    up1 = stack.upload(stack.audio("a.wav")).json()["upload_id"]
+    first = stack.analyse(up1, key="race")
+    lose_the_race_once(stack, monkeypatch)
+    again = stack.analyse(up1, key="race")  # its claim fails: the winner holds the upload
+    assert again.status_code == 202 and again.json() == first.json()
+    assert len(stack.dispatch.job_ids) == 1
+
+
+def test_a_concurrent_other_cache_hit_with_the_key_is_409_and_keeps_its_upload(
+    stack: Stack, monkeypatch
+) -> None:
+    data = stack.audio("a.wav")
+    up1 = stack.upload(data).json()["upload_id"]
+    assert stack.analyse(up1, key="race").status_code == 202
+    stack.analysis_id(stack.analyse(up1, key="race"))
+    up2 = stack.upload(data).json()["upload_id"]  # the same bytes: a cache hit
+    lose_the_race_once(stack, monkeypatch)
+    res = stack.post({"cache_scope": SCOPE, "upload_id": up2, "client_ref": "x"}, key="race")
+    assert res.status_code == 409
+    assert stack.store.claim_upload(up2, SCOPE) is not None
+    assert (stack.settings.uploads_dir / up2).exists()
+    assert len(stack.rows("jobs")) == 1
+
+
+def test_a_concurrent_upload_with_the_key_replays_or_is_409(stack: Stack, monkeypatch) -> None:
+    data = stack.audio("a.wav", 2.0)
+    first = stack.upload(data, key="race-up")
+    lose_the_race_once(stack, monkeypatch)
+    again = stack.upload(data, key="race-up")
+    assert again.status_code == 201 and again.json() == first.json()
+    lose_the_race_once(stack, monkeypatch)
+    other = stack.upload(stack.audio("b.wav", 3.0), key="race-up")
+    assert other.status_code == 409
+    assert [p.name for p in stack.settings.uploads_dir.iterdir()] == [first.json()["upload_id"]]
+    assert len(stack.rows("uploads")) == 1

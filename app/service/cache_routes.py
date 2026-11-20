@@ -23,6 +23,7 @@ router = APIRouter(prefix="/v2", dependencies=[Depends(require_key)])
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_URL_DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 
 
 def _checked_scope(value: Optional[str]) -> Optional[str]:
@@ -43,12 +44,16 @@ def _lookup_ok(analysis_id: str) -> JSONResponse:
 
 
 def _normal_ref(kind: str, ref: str, allowed: frozenset) -> str:
-    """The reference as provenance stores it; a URL is normalised like a submitted one."""
+    """The reference as provenance stores it. A ``url`` source is looked up by its digest
+    (``sha256:<hex>``, the stored form, so a signed URL never travels in a query string); a
+    raw URL is still normalised like a submitted one."""
     if kind == "url":
+        if _URL_DIGEST.fullmatch(ref):
+            return ref
         try:
             return url_policy.check_url(ref, allowed).ref
         except url_policy.UrlRefused:
-            return ref  # never stored in this form, so it simply misses
+            return ref  # neither a digest nor an allowed URL: never stored, so it misses
     if not _YOUTUBE_ID.fullmatch(ref):
         raise ApiError(422, "invalid_request", "invalid source")
     return ref

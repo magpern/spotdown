@@ -50,7 +50,7 @@ def create_service_app(
 ) -> FastAPI:
     """Service mode: ``/v2`` behind the service key, and ``/healthz``. No UI, no ``/files``,
     no ``/api/v1``, no Spotify resolution, no CORS and no API docs."""
-    from .service import cache_routes, errors, match_routes, routes, url_policy
+    from .service import access_log, cache_routes, errors, match_routes, routes, url_policy
     from .service.dispatch import rq_dispatcher
     from .service.service_key import ServiceKeyMiddleware, load_service_key
     from .service.store import Store
@@ -59,12 +59,13 @@ def create_service_app(
     key = load_service_key(settings.service_key_file)  # fails closed without a key
     url_policy.parse_allowlist(settings.url_allowed_hosts)  # fails on a bad entry
     settings.ensure_dirs()
+    access_log.install()  # no query string (a lookup's url) in the access log
     app = FastAPI(
         title="spotdown", version="0.2.0", docs_url=None, redoc_url=None, openapi_url=None
     )
     app.state.settings = settings
     app.state.service_key = key
-    app.state.store = Store(settings.service_db_path)
+    app.state.store = Store(settings.service_db_path, settings.global_reference_ttl_s)
     app.state.dispatch = dispatch or rq_dispatcher(settings)
     app.state.youtube = YtDlpClient()  # used only when ALLOW_YTDLP_SOURCING=true
     errors.install_handlers(app)

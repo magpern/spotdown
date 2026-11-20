@@ -11,6 +11,9 @@ import hmac
 from pathlib import Path
 from typing import Optional
 
+# Starlette's own helper, the one its router matches on. It is private: an upgrade that moves it
+# fails at import (loudly), never by opening the guard; tests pin its root_path behaviour.
+from starlette._utils import get_route_path
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .errors import error_response
@@ -74,7 +77,9 @@ class ServiceKeyMiddleware:
         self.key = key
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http" and is_v2_path(scope.get("path", "")):
+        # The path the router matches (``root_path`` stripped), so a deployment behind a path
+        # prefix (``uvicorn --root-path``) is guarded the same way.
+        if scope["type"] == "http" and is_v2_path(get_route_path(scope)):
             values = [v for k, v in scope.get("headers", []) if k.lower() == b"authorization"]
             header = values[0].decode("latin-1") if len(values) == 1 else None
             if not self.key.matches_authorization(header):

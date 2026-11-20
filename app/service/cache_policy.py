@@ -16,6 +16,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 GLOBAL_SOURCE_KINDS = frozenset({"youtube"})
+# The default lifetime of the global rows that hold Spotify-catalogue-derived references (the
+# match record of a chosen video, the reference of a global alignment): ADR 0040 §7. The
+# ``GLOBAL_REFERENCE_TTL_S`` setting overrides it; the same as the source-match cache's hits.
+GLOBAL_REFERENCE_TTL_S = 3 * 24 * 3600.0
 LOOKUP_SOURCE_KINDS = frozenset({"youtube", "url"})
 
 
@@ -84,6 +88,11 @@ def source_hit(
     if entry is None:
         return None
     return entry if usable(entry, link_scope(kind, cache_scope), analyzer_version) else None
+
+
+def expired_global(created_at: float, now: float, ttl_s: float) -> bool:
+    """A global reference row past its lifetime: never served, and purged."""
+    return created_at <= now - ttl_s
 
 
 def readable_in(entry_scope: Optional[str], caller_scope: Optional[str]) -> bool:

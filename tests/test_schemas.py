@@ -90,9 +90,46 @@ def test_analysis_optional_parts_may_be_absent() -> None:
     doc = copy.deepcopy(_full())
     for key in ("labels", "alignment"):
         del doc[key]
+    del doc["provenance"]["alignment"]  # no alignment at all: neither part
     for key in ("downbeats", "phrases", "meter"):
         del doc["grid"][key]
     _validator("analysis-v1").validate(doc)
+
+
+def _failed_alignment(doc: Any) -> Any:
+    doc = copy.deepcopy(doc)
+    del doc["alignment"]
+    doc["provenance"]["alignment"]["result"] = "failed"
+    for key in ("chosen", "offset_s", "residual_s", "confidence"):
+        doc["provenance"]["alignment"].pop(key, None)
+    doc["provenance"]["run"]["failure_kind"] = "alignment_failed"
+    return doc
+
+
+def test_analysis_alignment_parts_agree() -> None:
+    """The two alignment parts and the run's failure kind tell one story (#15 review)."""
+    validator = _validator("analysis-v1")
+    validator.validate(_full())
+    validator.validate(_failed_alignment(_full()))
+    broken = []
+    doc = _failed_alignment(_full())
+    doc["alignment"] = _full()["alignment"]  # a top-level alignment next to a failed record
+    broken.append(doc)
+    doc = _failed_alignment(_full())
+    doc["provenance"]["run"]["failure_kind"] = None  # failed, but the run says nothing
+    broken.append(doc)
+    doc = copy.deepcopy(_full())
+    doc["provenance"]["run"]["failure_kind"] = "alignment_failed"  # the record says ok
+    broken.append(doc)
+    doc = copy.deepcopy(_full())
+    del doc["alignment"]  # ok record without the top-level alignment
+    broken.append(doc)
+    doc = copy.deepcopy(_full())
+    del doc["provenance"]["alignment"]  # a top-level alignment without its record
+    broken.append(doc)
+    for doc in broken:
+        with pytest.raises(ValidationError):
+            validator.validate(doc)
 
 
 def test_match_rate_limited_needs_retry_after() -> None:
@@ -285,3 +322,13 @@ def test_job_conditionals() -> None:
     doc = _ex("job-v1.done.json")
     doc["outcome"] = "not_found"
     _bad("job-v1", doc)
+
+
+@pytest.mark.parametrize("kind", ["alignment_failed", None, "other"])
+def test_job_processing_failed_needs_a_processing_failure_kind(kind: Any) -> None:
+    doc = _load(SCHEMA_DIR / "examples" / "job-v1.failed.json")
+    doc.update(status="failed", outcome="processing_failed", failure_kind="timeout")
+    _validator("job-v1").validate(doc)
+    doc["failure_kind"] = kind
+    with pytest.raises(ValidationError):
+        _validator("job-v1").validate(doc)

@@ -25,11 +25,11 @@ from fastapi.responses import JSONResponse
 from ..youtube.normalise_policy import VIDEO_ID
 from . import analysis_doc, url_policy
 from . import idempotency_policy as idem
-from .alignment_store import aligning_for
 from .api_models import ID_PATTERN, AnalysisRequest, scope_problem
 from .deps import require_key, settings_of, store_of
 from .dispatch import Dispatch
 from .errors import ApiError
+from .sweep import expire_stale_jobs
 from .uploads import purge_expired_uploads, receive_upload, upload_path
 
 router = APIRouter(prefix="/v2", dependencies=[Depends(require_key)])
@@ -124,32 +124,39 @@ def post_analysis(
         assert body.upload_id is not None and scope is not None
         claimed = store.claim_upload(body.upload_id, scope)
         if claimed is None:
+            # A concurrent request with the same key and body may have claimed it first.
+            replayed = replay(store, idem_scope, key, req_hash)
+            if replayed is not None:
+                return replayed
             raise ApiError(404, "upload_not_found", "no such upload in this scope")
         job.update(source_kind="upload", upload_id=body.upload_id)
         hit = store.find_by_sha(scope, claimed["sha256"], version)
 
-    reference = job["reference"]
-    base = store.get_analysis(hit.analysis_id) if hit is not None and reference else None
-    if hit is not None and reference and base is None:
-        hit = None  # deleted meanwhile: analyse again
-    if hit is not None:  # a cache hit: no analysis, and the audio is not needed any more
-        job.pop("fetch_url", None)
-        used_upload = job.pop("upload_id", None)
-        aligning = aligning_for(base, hit.scope, reference) if base and reference else None
-        analysis_id = store.add_job_done(job, hit.analysis_id, aligning)
-        if used_upload:
-            upload_path(settings, used_upload).unlink(missing_ok=True)
-            store.delete_upload(used_upload)
-        answer: Dict[str, Any] = {
-            "job_id": job["job_id"],
-            "status": "done",
-            "analysis_id": analysis_id,
-        }
-        return _record(store, idem_scope, key, req_hash, 200, answer, job["job_id"])[0]
+    if hit is not None:
+        # The cached analysis is read in the transaction that stores its alignment; None when
+        # it was deleted meanwhile, and the request is analysed again.
+        cached = {k: v for k, v in job.items() if k not in ("fetch_url", "upload_id")}
+        analysis_id = store.add_job_done(cached, hit.analysis_id, hit.scope)
+        if analysis_id is not None:  # a cache hit: no analysis, the audio is not needed
+            used_upload = job.get("upload_id")
+            answer: Dict[str, Any] = {
+                "job_id": job["job_id"],
+                "status": "done",
+                "analysis_id": analysis_id,
+            }
+            response, won = _record(
+                store, idem_scope, key, req_hash, 200, answer, job["job_id"], used_upload
+            )
+            if won and used_upload:
+                upload_path(settings, used_upload).unlink(missing_ok=True)
+                store.delete_upload(used_upload)
+            return response
 
     store.add_job(job)
     answer = {"job_id": job["job_id"], "status": "queued"}
-    response, won = _record(store, idem_scope, key, req_hash, 202, answer, job["job_id"])
+    response, won = _record(
+        store, idem_scope, key, req_hash, 202, answer, job["job_id"], job.get("upload_id")
+    )
     if not won:
         return response
     dispatch: Dispatch = request.app.state.dispatch
@@ -172,14 +179,21 @@ def _record(
     status: int,
     answer: Dict[str, Any],
     job_id: str,
+    upload_id: Optional[str] = None,
 ) -> Tuple[JSONResponse, bool]:
     """Remembers the first response for the key. If a concurrent request with the same key won,
-    this job is dropped and the winner's response is returned instead."""
+    this job is dropped, its upload released, and the winner's response returned for the same
+    request (``409`` for another one)."""
     if store.idem_put(scope, key, req_hash, status, answer):
         return JSONResponse(answer, status_code=status), True
     store.delete_job(job_id)
+    if upload_id:
+        store.release_upload(upload_id)
     winner = store.idem_get(scope, key)
-    assert winner is not None
+    if winner is None or idem.decide(winner, req_hash) == "conflict":
+        raise ApiError(
+            409, "idempotency_conflict", "this Idempotency-Key was used for another request"
+        )
     return JSONResponse(winner.body, status_code=winner.status), False
 
 
@@ -211,9 +225,16 @@ def get_job(
     cache_scope: Optional[str] = Query(default=None, max_length=128),
 ) -> JSONResponse:
     found = None
+    store = store_of(request)
     if re.fullmatch(ID_PATTERN, job_id):
         # Jobs are visible only in the scope that created them; a miss reveals nothing.
-        found = store_of(request).get_job_in_scope(job_id, cache_scope)
+        found = store.get_job_in_scope(job_id, cache_scope)
+    if (
+        found is not None
+        and found["status"] == "running"
+        and expire_stale_jobs(settings_of(request), store)
+    ):
+        found = store.get_job_in_scope(job_id, cache_scope)  # its worker may have been killed
     if found is None:
         raise ApiError(404, "not_found", "no such job in this scope")
     return JSONResponse(job_view(found))

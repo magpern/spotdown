@@ -91,7 +91,14 @@ async def receive_upload(
         part.rename(final)
         store.add_upload(upload_id, scope, digest.hexdigest(), size, media, settings.upload_ttl_s)
         if not store.idem_put(scope, idem_key, req_hash, 201, answer):
-            raise ApiError(409, "idempotency_conflict", "this Idempotency-Key is in use")
+            # A concurrent upload with the same key won: its response for the same bytes (this
+            # one's file and row are dropped), 409 for other bytes.
+            winner = store.idem_get(scope, idem_key)
+            if winner is None or idem.decide(winner, req_hash) == "conflict":
+                raise ApiError(409, "idempotency_conflict", "this Idempotency-Key is in use")
+            final.unlink(missing_ok=True)
+            store.delete_upload(upload_id)
+            return JSONResponse(winner.body, status_code=winner.status)
     except BaseException:
         part.unlink(missing_ok=True)
         final.unlink(missing_ok=True)

@@ -230,3 +230,71 @@ def test_a_worker_reuse_is_aligned_too(stack: Stack) -> None:
     doc = stack.get_analysis(view["analysis_id"]).json()
     assert doc["alignment"]["offset_s"] == -0.4
     assert_valid("analysis-v1", doc)
+
+
+def _second_analysis_of_the_same_bytes(stack: Stack, base_id: str, new_id: str) -> None:
+    """A second file-clock analysis of the same bytes in the scope, as two concurrent jobs
+    leave: same sha256 and analyzer version, another id."""
+    from app.service.cache_store import insert_analysis
+
+    doc = stack.store.get_analysis(base_id)
+    assert doc is not None
+    doc["analysis_id"] = new_id
+    with stack.store._conn() as conn:
+        insert_analysis(conn, new_id, SCOPE, doc, 2.0)
+
+
+def test_two_analyses_of_the_same_bytes_never_flip_the_alignment(stack: Stack) -> None:
+    """The row for (key, scope) is kept while its analysis exists at the same analyzer version:
+    an aligned id a job ended on stays readable, whichever analysis a later job used."""
+    from app.service.alignment_store import aligning_for, store_aligned
+
+    data = stack.audio("a.wav")
+    aligned = job(stack, analyse(stack, data, REF))["analysis_id"]
+    (row,) = stack.rows("alignments")
+    first_base = json.loads(row["doc"])["base_analysis_id"]
+    _second_analysis_of_the_same_bytes(stack, first_base, "an_second")
+    second = stack.store.get_analysis("an_second")
+    assert second is not None
+    with stack.store._conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        kept = store_aligned(conn, aligning_for(second, SCOPE, REF), 3.0, 1e9)
+        conn.execute("COMMIT")
+    assert kept.analysis_id == aligned and kept.base_analysis_id == first_base
+    assert stack.get_analysis(aligned).status_code == 200
+    again = analyse(stack, data, REF)  # a later hit, whichever analysis find_by_sha returns
+    assert again.json()["analysis_id"] == aligned
+    with stack.store._conn() as conn:  # the first analysis at another analyzer version
+        conn.execute(
+            "UPDATE analyses SET analyzer_version = 'old' WHERE analysis_id = ?", (first_base,)
+        )
+        conn.execute("BEGIN IMMEDIATE")
+        replaced = store_aligned(conn, aligning_for(second, SCOPE, REF), 4.0, 1e9)
+        conn.execute("COMMIT")
+    assert replaced.base_analysis_id == "an_second" and replaced.analysis_id != aligned
+
+
+def test_a_cache_hit_whose_analysis_is_deleted_meanwhile_is_analysed_again(
+    stack: Stack, monkeypatch
+) -> None:
+    """The cached analysis is read inside the transaction that stores the alignment, so a scope
+    deletion between the lookup and that read never leaves an alignment of a deleted base."""
+    data = stack.audio("a.wav")
+    stack.analysis_id(analyse(stack, data))
+    app_store = stack.client.app.state.store  # type: ignore[attr-defined]
+    real = app_store.find_by_sha
+
+    def then_deleted(scope, sha256, version):
+        hit = real(scope, sha256, version)
+        with app_store._conn() as conn:
+            conn.execute("DELETE FROM analyses WHERE cache_scope = ?", (scope,))
+        return hit
+
+    monkeypatch.setattr(app_store, "find_by_sha", then_deleted)
+    res = analyse(stack, data, REF)
+    monkeypatch.setattr(app_store, "find_by_sha", real)
+    assert res.status_code == 202  # queued: analysed again, not answered from a deleted base
+    view = job(stack, res)
+    assert view["status"] == "done"
+    assert stack.get_analysis(view["analysis_id"]).status_code == 200
+    assert len(stack.analysed) == 2

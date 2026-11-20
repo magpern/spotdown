@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from app.service import url_policy
 from app.service.store import Store
 from app.service.worker import execute_job
 
@@ -97,7 +98,9 @@ def test_a_url_analysis_is_queued_without_keeping_the_query(settings) -> None:
     assert res.status_code == 202
     job = Store(settings.service_db_path).get_job(res.json()["job_id"])
     assert job is not None
-    assert job["source_kind"] == "url" and job["source_ref"] == "https://media.example.com/a/b.mp3"
+    ref = url_policy.url_ref("media.example.com", "/a/b.mp3?X-Signature=secret")
+    assert job["source_kind"] == "url" and job["source_ref"] == ref
+    assert "secret" not in job["source_ref"]
     view = client.get(f"/v2/jobs/{job['job_id']}?cache_scope={SCOPE}", headers=AUTH)
     assert "secret" not in view.text
 

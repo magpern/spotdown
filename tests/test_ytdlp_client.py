@@ -130,7 +130,9 @@ FAILURES = [
      "source_unavailable"),
     ("ERROR: [youtube] x: Sign in to confirm your age. This video may be inappropriate",
      "source_unavailable"),
-    ("ERROR: [youtube] x: Requested format is not available", "source_unavailable"),
+    # An HLS- or SABR-only response leaves no https audio format: an outage, not a gone video.
+    ("ERROR: [youtube] x: Requested format is not available. Use --list-formats",
+     "provider_error"),
     ("ERROR: [youtube] x: Sign in to confirm you’re not a bot. Use --cookies", "provider_error"),
     ("ERROR: [youtube] x: Sign in to confirm you're not a bot", "provider_error"),
     ("ERROR: unable to download video data: HTTP Error 403: Forbidden", "provider_error"),

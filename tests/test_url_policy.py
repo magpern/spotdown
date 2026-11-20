@@ -3,6 +3,8 @@ userinfo, public addresses only, no redirect to another host."""
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 from app.service import url_policy
@@ -55,24 +57,52 @@ def test_refused_urls(url: str, reason: str) -> None:
     assert url not in str(caught.value) or url == ""
 
 
+def digest(text: str) -> str:
+    return "sha256:" + hashlib.sha256(text.encode()).hexdigest()
+
+
 @pytest.mark.parametrize(
-    "url,target,ref",
+    "url,target,normalised",
     [
         (
             "https://media.example.com/a/b.mp3?sig=secret#frag",
             "/a/b.mp3?sig=secret",
-            "https://media.example.com/a/b.mp3",
+            "https://media.example.com/a/b.mp3?sig=secret",
         ),
         ("https://MEDIA.example.com:443/x.wav", "/x.wav", "https://media.example.com/x.wav"),
-        ("https://cdn.example.org", "/", "https://cdn.example.org"),
-        ("https://cdn.example.org/", "/", "https://cdn.example.org"),
+        ("https://cdn.example.org", "/", "https://cdn.example.org/"),
+        ("https://cdn.example.org/", "/", "https://cdn.example.org/"),
     ],
 )
-def test_accepted_urls_keep_only_host_and_path_in_the_ref(url, target, ref) -> None:
+def test_accepted_urls_keep_only_a_digest_in_the_ref(url, target, normalised) -> None:
     checked = check_url(url, ALLOW)
     assert checked.target == target
-    assert checked.ref == ref
-    assert "secret" not in checked.ref
+    assert checked.ref == digest(normalised)
+    assert "secret" not in checked.ref and "/" not in checked.ref
+
+
+def test_urls_that_differ_only_in_their_query_have_different_refs() -> None:
+    one = check_url("https://media.example.com/dl?id=1", ALLOW).ref
+    two = check_url("https://media.example.com/dl?id=2", ALLOW).ref
+    assert one != two
+    assert check_url("https://media.example.com/dl?id=1#x", ALLOW).ref == one
+
+
+@pytest.mark.parametrize(
+    "host", ["127.0.0.0x1", "10.1", "a.b.0x", "media.example.123", "x.0xff", "1.2.3.4.5"]
+)
+def test_a_numeric_final_label_is_not_a_dns_name(host: str) -> None:
+    assert not url_policy.is_dns_name(host)
+    with pytest.raises(ValueError):
+        url_policy.parse_allowlist(host)
+    with pytest.raises(UrlRefused) as caught:
+        check_url(f"https://{host}/a.mp3", frozenset({host}))
+    assert caught.value.reason == "host_not_allowed"
+
+
+@pytest.mark.parametrize("host", ["media.example.com", "x.example.co", "1.2.3.example", "a.x0"])
+def test_names_with_a_lettered_final_label_stay_dns_names(host: str) -> None:
+    assert url_policy.is_dns_name(host)
 
 
 def test_an_empty_allowlist_allows_nothing() -> None:

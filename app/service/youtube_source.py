@@ -76,7 +76,7 @@ def fetch_youtube(
     if media is None:
         raise JobFailure(Reason.UNSUPPORTED_MEDIA)
     source: Dict[str, Any] = {"kind": "youtube", "ref": video_id}
-    choice = store.get_choice(video_id)
+    choice = store.get_choice(video_id, clock())
     if choice is not None:
         source["match"] = choice[0]
         expected = (choice[1], "match")

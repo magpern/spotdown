@@ -29,7 +29,12 @@ never logged. The standalone UI and downloads are not served in service mode.
 
 - **`Idempotency-Key`** (header): required on `POST /v2/analyses` and `PUT /v2/uploads`, optional
   on `POST /v2/match`. The same key with the same body returns the first response; the same key
-  with a different body is `409`. Keys are remembered per scope for 24 hours.
+  with a different body is `409`. This holds for concurrent requests too: the one that records
+  first wins, a concurrent copy of it gets the winner's response, and a concurrent different
+  request gets `409` (an upload it claimed is released). One narrow window remains: a concurrent
+  copy whose upload claim fails before the winner has recorded its response gets `404
+  upload_not_found`; retrying with the same key then replays. Keys are remembered per scope for
+  24 hours.
 - **`cache_scope`** is the one name for the scope, in bodies, query strings and the `DELETE` path
   (`/v2/scopes/{scope}` takes a `cache_scope` value). It is an opaque string of 1 to 128 characters
   `[A-Za-z0-9_-]`. It is **required** for `upload` and `url` sources, for the sha256 lookup and for
@@ -38,8 +43,10 @@ never logged. The standalone UI and downloads are not served in service mode.
   omitting it only means no private source can be used. All lookups and writes are limited to the
   caller's scope; a lookup never crosses scopes, and a cross-scope miss never reveals that another
   scope holds the same bytes.
-- **Errors.** Request errors are `4xx` with `{"error": {"code", "message"}}`. Per-track outcomes
-  are not HTTP errors; they are the statuses below.
+- **Errors.** Request errors are `4xx` with `{"error": {"code", "message"}}`, an unknown route or
+  method included (`404 not_found`, `405 method_not_allowed`). A message never echoes input: a
+  `422` names only the request's known fields, never an unknown one. Per-track outcomes are not
+  HTTP errors; they are the statuses below.
 - Times are seconds (float). Confidences are 0 to 1.
 
 ## Per-track statuses
@@ -84,7 +91,9 @@ the best candidate with its recording-match confidence, band and duration check,
 alternates. **Every candidate** (best and alternates) carries `cached_analysis_id` and a small
 `cached_summary` (`analyzer_version`, `bpm`, `bpm_confidence`, `duration_s`, `has_beats`, and
 optionally `has_downbeats`, `has_events`) when an analysis for it is already cached in the caller's
-scope, and neither otherwise. This is free and is how a cached analysis is found without bytes. A
+scope, and neither otherwise. spotdown always sends the two together. The schema requires
+`cached_analysis_id` with a `cached_summary` but not the reverse, so a consumer treats an id
+without a summary as a cached analysis to read (`GET /v2/analyses/{id}`), never as an error. This is free and is how a cached analysis is found without bytes. A
 miss never starts an analysis.
 
 Recording-match bands: `confident` >= 0.85, `uncertain` 0.6 to 0.85, below 0.6 `not_same`
@@ -123,7 +132,9 @@ The matcher is the `youtube` source's (spotdown#10):
   download that is not answered from a cache is `rate_limited` with the seconds left in
   `retry_after_s`, without calling the provider.
 - A bot challenge, a 5xx or a network failure is `provider_error`; a removed, private,
-  region-blocked or age-gated video is `source_unavailable`.
+  region-blocked or age-gated video is `source_unavailable`. yt-dlp's "Requested format is not
+  available" is `provider_error`: with the https-only audio format it means the provider served
+  no such format (an HLS- or SABR-only response after a client change), not that the video is gone.
 
 ### `PUT /v2/uploads`
 
@@ -198,12 +209,34 @@ Poll a job. Response `200`, validated by `schema/job-v1.json`:
 (`schema/analysis-v1.json`) for an id in the caller's scope or a global (public `youtube`) analysis; any other id is `404`. Jobs are visible only in the scope
 that created them. Callers poll with a backoff; no callback is made.
 
+A job that stays `running` longer than its lease (the queue's job timeout, the fetch and analysis
+limits plus a minute, and 4 more minutes) lost its worker (killed, out of memory, redeployed): it is
+failed as `processing_failed` with `failure_kind` `timeout` (so the caller may retry it once), its
+URL and upload are removed and its temporary audio is deleted. Polling such a job reports it.
+
+### Retention of global references
+
+Global rows hold no caller, but two kinds hold a reference derived from the caller's catalogue
+(classbeat ADR 0040 §7): the match record of a chosen video (the requested title, artists and
+duration) and a global (`youtube`) alignment (the reference kind, id and duration). No scope
+deletion removes them, so they have a bounded lifetime, the operator setting
+`GLOBAL_REFERENCE_TTL_S` (default 3 days, the source-match cache's hit lifetime). An expired row is
+never served and is purged (when one of its kind is next stored, and by the worker before each job).
+An expired aligned analysis id is `404`; the same request then aligns again at once under a new id.
+This lifetime does not cover the global analyses, their source links or the match record copied
+into a global analysis' `provenance.source.match`: whether those get a lifetime or a
+reference-driven purge is the owner's decision recorded in ADR 0040 §7.
+
 ### Lookups
 
 Both are limited to the caller's scope and return `{"schema_version": "lookup-v1", "analysis_id": "..."}` (`schema/lookup-v1.json`) or `404`:
 
 - **By source reference:** `GET /v2/analyses/lookup?source=<kind>:<ref>&cache_scope=...`. For sources
-  whose bytes the caller never holds, for example `youtube:<video id>`.
+  whose bytes the caller never holds, for example `youtube:<video id>`. A `url` source is looked
+  up by its digest, `url:sha256:<hex>` (the stored ref, see `provenance.source.ref`; the caller
+  computes it from the URL it submitted). **A signed URL is never sent in a lookup:** a query
+  string travels in request lines and logs. spotdown still normalises a raw `url:<https URL>`, and
+  drops every query string from its access log, but callers must not rely on that.
 - **By content:** `GET /v2/analyses/lookup?sha256=<hex>&cache_scope=...`. For audio the caller holds.
   Run it **before** any upload. A cached analysis is reused only on an equal sha256 (or through the
   source-reference link to the same audio identity), never on the decoded-audio fingerprint alone.
@@ -238,9 +271,12 @@ and treat `heuristic` ones as hints.
 Baseline fields are those the integration depends on; labels, phrases, downbeats and meter are
 incremental enhancements and are never blocking. Until an enhancement passes its gate the field is
 absent or `heuristic` with a low confidence. `alignment.offset_s` means
-`reference_time = file_time + offset_s`. There are no `*_spotify` fields.
+`reference_time = file_time + offset_s`. There are no `*_spotify` fields. The schema checks that the alignment
+parts agree: an `ok` record comes with the top-level `alignment` and the reverse; a `failed` record
+has no top-level `alignment` and `provenance.run.failure_kind` `alignment_failed`, which appears
+only then.
 
-**`provenance.source.ref`** never holds a file name or a signed URL: absent for `upload` (the sha256 identifies the audio), the video id for `youtube`, and for `url` a normalised https URL with host and path only (no userinfo, query or fragment) or `sha256:<hex digest of it>`.
+**`provenance.source.ref`** never holds a file name or a signed URL: absent for `upload` (the sha256 identifies the audio), the video id for `youtube`, and for `url` `sha256:<hex digest>` of the normalised URL (`https://` plus the lower-case host, the path (`/` when empty) and `?query` when there is one; no userinfo, port or fragment), as lower-case hex. It is a digest because a signature can sit in the path as well as in the query, and because two URLs that differ only in their query may be different audio: each is its own source reference, so a cache hit by source needs the same URL, query included, and a `url` lookup gives the digest of that URL (`url:sha256:<hex>`, never the URL itself; the same bytes behind another URL are still reused through their sha256 after the fetch). The schema also accepts the older form (`https://` host and path only) that analyses stored before this rule carry; such an analysis is found by its sha256, not by a `url` lookup.
 
 **Provenance of a global (`youtube`) analysis** names no caller, because every scope reads it:
 `run.job_id` is an opaque run id (not the id of the job that produced it), `run.timings_s` is empty,
@@ -249,10 +285,12 @@ latest `/v2/match` that chose this video (normalised query, candidates with scor
 deltas, choice, `matcher_version`): global public metadata, absent when the video was never
 matched. `source.decoded_duration_check` (an optional field added to analysis-v1; a consumer
 validating against an older copy of the schema rejects it) records the second duration check.
-Known gaps, to be closed before the source is enabled: the latest match wins for `source.match` and
-the expected duration (`match_choices` has no lifetime yet), and a job that reuses a global analysis
-of equal bytes under another video id skips the decoded check. The job record of the
-caller who started it stays in that caller's scope.
+Within the match record's lifetime (see "Retention of global references" below) the latest match
+that chose a video wins for `source.match` and for the expected duration; an expired record is not
+used (the check then uses the video's metadata duration). A job that reuses a global analysis of
+equal bytes under another video id checks the reused analysis' measured `signal` durations
+against that id's expected duration; above 5 s it ends `failed` with outcome `uncertain` and no
+link is made. The job record of the caller who started it stays in that caller's scope.
 
 **Provenance** is kept after the audio is deleted, so a decision can be reproduced, caches
 invalidated, analyser versions compared and alignment problems diagnosed. It never holds audio,
