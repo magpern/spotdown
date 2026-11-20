@@ -49,7 +49,7 @@
         "string",
         "null"
       ],
-      "description": "Analysis already cached for the best candidate within the caller's scope, if any."
+      "description": "Analysis already cached for best within the caller's scope, if any. The only place a cached id is reported."
     },
     "matcher_version": {
       "type": "string"
@@ -65,13 +65,23 @@
               "uncertain"
             ]
           }
-        }
+        },
+        "required": [
+          "status"
+        ]
       },
       "then": {
         "required": [
           "best",
           "matcher_version"
         ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "best"
+          ]
+        }
       }
     },
     {
@@ -80,12 +90,22 @@
           "status": {
             "const": "rate_limited"
           }
-        }
+        },
+        "required": [
+          "status"
+        ]
       },
       "then": {
         "required": [
           "retry_after_s"
         ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "retry_after_s"
+          ]
+        }
       }
     }
   ],
@@ -135,14 +155,68 @@
             "rejected"
           ],
           "description": "abs delta <= 2 s ok, <= 5 s tolerable, above 5 s rejected."
-        },
-        "analysis_id": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "band": {
+                "const": "confident"
+              }
+            },
+            "required": [
+              "band"
+            ]
+          },
+          "then": {
+            "properties": {
+              "recording_match_confidence": {
+                "minimum": 0.85
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "band": {
+                "const": "uncertain"
+              }
+            },
+            "required": [
+              "band"
+            ]
+          },
+          "then": {
+            "properties": {
+              "recording_match_confidence": {
+                "minimum": 0.6,
+                "exclusiveMaximum": 0.85
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "band": {
+                "const": "not_same"
+              }
+            },
+            "required": [
+              "band"
+            ]
+          },
+          "then": {
+            "properties": {
+              "recording_match_confidence": {
+                "exclusiveMaximum": 0.6
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

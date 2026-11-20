@@ -9,8 +9,7 @@
     "band": "confident",
     "duration_s": 213.8,
     "duration_delta_s": 0.8,
-    "duration_check": "ok",
-    "analysis_id": "an_01example"
+    "duration_check": "ok"
   },
   "alternates": [
     {
@@ -19,8 +18,7 @@
       "band": "uncertain",
       "duration_s": 216.0,
       "duration_delta_s": 3.0,
-      "duration_check": "tolerable",
-      "analysis_id": null
+      "duration_check": "tolerable"
     }
   ],
   "cached_analysis_id": "an_01example"

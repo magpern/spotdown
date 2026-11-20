@@ -46,13 +46,17 @@
     "silence_regions": [
       {
         "start_s": 0.0,
-        "end_s": 0.4
+        "end_s": 0.4,
+        "confidence": 0.9,
+        "method": "measured"
       }
     ],
     "fade_in": null,
     "fade_out": {
       "start_s": 10.0,
-      "end_s": 11.5
+      "end_s": 11.5,
+      "confidence": 0.8,
+      "method": "measured"
     },
     "energy": {
       "full": {
@@ -121,11 +125,13 @@
     "half_double_candidates": [
       {
         "bpm": 64.0,
-        "confidence": 0.2
+        "confidence": 0.2,
+        "method": "estimated"
       },
       {
         "bpm": 256.0,
-        "confidence": 0.05
+        "confidence": 0.05,
+        "method": "estimated"
       }
     ],
     "stability": 0.97,

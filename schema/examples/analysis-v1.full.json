@@ -57,7 +57,16 @@
           "residual_s": 1.9
         }
       ],
-      "anchor_agreement": 0.8
+      "anchor_agreement": 0.8,
+      "reference": {
+        "kind": "spotify",
+        "id": "4uLU6hMCjMI75M1A2tKUQC",
+        "duration_s": 11.9
+      },
+      "result": "ok",
+      "offset_s": -0.4,
+      "residual_s": 0.3,
+      "confidence": 0.8
     },
     "run": {
       "job_id": "job_01example",
@@ -79,13 +88,17 @@
     "silence_regions": [
       {
         "start_s": 0.0,
-        "end_s": 0.4
+        "end_s": 0.4,
+        "confidence": 0.9,
+        "method": "measured"
       }
     ],
     "fade_in": null,
     "fade_out": {
       "start_s": 10.0,
-      "end_s": 11.5
+      "end_s": 11.5,
+      "confidence": 0.8,
+      "method": "measured"
     },
     "energy": {
       "full": {
@@ -154,11 +167,13 @@
     "half_double_candidates": [
       {
         "bpm": 64.0,
-        "confidence": 0.2
+        "confidence": 0.2,
+        "method": "estimated"
       },
       {
         "bpm": 256.0,
-        "confidence": 0.05
+        "confidence": 0.05,
+        "method": "estimated"
       }
     ],
     "stability": 0.97,
@@ -178,7 +193,7 @@
     "meter": {
       "beats_per_bar": 4,
       "confidence": 0.7,
-      "method": "estimated"
+      "method": "heuristic"
     },
     "downbeats": {
       "times_s": [

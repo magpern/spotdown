@@ -6,7 +6,7 @@ app. It is written together with classbeat ADR 0040; where they differ, the clas
 §3 to §6) wins and this file is corrected. Summary of the plan: [integration-plan.md](integration-plan.md).
 
 Machine-readable parts: [`schema/analysis-v1.json`](../schema/analysis-v1.json) and
-[`schema/match-v1.json`](../schema/match-v1.json), with examples in `schema/examples/`. CI
+[`schema/match-v1.json`](../schema/match-v1.json), [`schema/job-v1.json`](../schema/job-v1.json) and [`schema/lookup-v1.json`](../schema/lookup-v1.json), with examples in `schema/examples/`. CI
 validates the examples against the schemas (`tests/test_schemas.py`).
 
 ## Principles
@@ -14,7 +14,7 @@ validates the examples against the schemas (`tests/test_schemas.py`).
 - **Audio in, analysis out.** spotdown never returns audio, never receives a user token and never
   writes to any account. Audio is deleted at the end of every job.
 - **Generic.** The contract and schemas know no consumer, user, workout or catalogue. Callers pass
-  an opaque `client_ref` and, for private sources, an opaque `cache_scope`.
+  an opaque `client_ref` and an opaque `cache_scope` (see Common rules).
 - **File clock.** Every time in an analysis is seconds from the start of the decoded file. A
   reference clock appears only as the optional `alignment` object, which the caller applies.
 - **Metadata only.** A response carries derived metadata, never audio or a signed URL.
@@ -30,9 +30,14 @@ never logged. The standalone UI and downloads are not served in service mode.
 - **`Idempotency-Key`** (header): required on `POST /v2/analyses` and `PUT /v2/uploads`, optional
   on `POST /v2/match`. The same key with the same body returns the first response; the same key
   with a different body is `409`. Keys are remembered per scope for 24 hours.
-- **Scope.** `cache_scope` is an opaque string of 1 to 128 characters `[A-Za-z0-9_-]`. All lookups
-  and writes are limited to the caller's scope; a lookup never crosses scopes. Global (public)
-  sources, such as `youtube`, are shared across scopes; `upload` and `url` are not.
+- **`cache_scope`** is the one name for the scope, in bodies, query strings and the `DELETE` path
+  (`/v2/scopes/{scope}` takes a `cache_scope` value). It is an opaque string of 1 to 128 characters
+  `[A-Za-z0-9_-]`. It is **required** for `upload` and `url` sources, for the sha256 lookup and for
+  uploads (a missing one is `422 scope_required`), and **optional** for `youtube`-only requests and
+  the source lookup of a global source: global (public) sources are shared across scopes, so
+  omitting it only means no private source can be used. All lookups and writes are limited to the
+  caller's scope; a lookup never crosses scopes, and a cross-scope miss never reveals that another
+  scope holds the same bytes.
 - **Errors.** Request errors are `4xx` with `{"error": {"code", "message"}}`. Per-track outcomes
   are not HTTP errors; they are the statuses below.
 - Times are seconds (float). Confidences are 0 to 1.
@@ -48,10 +53,10 @@ Used in `/v2/match` results and in a job's per-track outcome.
 | `source_unavailable` | removed, region-blocked or age-gated | – |
 | `provider_error` | bot challenge, 5xx or network failure at the provider | – |
 | `rate_limited` | provider or service limit hit | `retry_after_s` (required) |
-| `processing_failed` | decode error, timeout or out of memory; deterministic, so not retried on the same audio (one retry after a timeout) | `failure_kind` |
-| `alignment_failed` | analysed, but the timeline could not be mapped to the reference | – |
+| `processing_failed` | decode error, timeout or out of memory; deterministic, so not retried on the same audio (one retry after a timeout) | `failure_kind`: `decode_error`, `timeout`, `out_of_memory` or `analysis_error`. No analysis exists; the run record is read from the job. |
+| `alignment_failed` | analysed, but the timeline could not be mapped to the reference | The file-clock analysis **is** produced and cached: the job is `done` with an `analysis_id`, `outcome` `alignment_failed` and `failure_kind` `alignment_failed`. The analysis has no top-level `alignment`; `provenance.alignment` has `result: failed` with the reference and the hypotheses tried. |
 
-`/v2/match` returns the first six plus `matched`; `processing_failed` and `alignment_failed` appear
+`/v2/match` returns the first five plus `matched`; `processing_failed` and `alignment_failed` appear
 only on jobs. The caller's reaction to each status (spare, alternate, replacement, fallback) is the
 caller's policy and not part of this contract. A `rate_limited` response is not an attempt: the
 caller retries at `retry_after_s`.
@@ -66,7 +71,7 @@ Request:
 
 ```json
 {
-  "scope": "<cache_scope>",
+  "cache_scope": "<cache_scope>",
   "tracks": [
     {"client_ref": "track-7", "title": "...", "artists": ["..."], "duration_s": 213.0, "isrc": "..."}
   ]
@@ -85,7 +90,7 @@ Recording-match bands: `confident` >= 0.85, `uncertain` 0.6 to 0.85, below 0.6 `
 
 ### `PUT /v2/uploads`
 
-Push audio bytes (`Content-Type: application/octet-stream`; query `scope`). Returns `201`
+Push audio bytes (`Content-Type: application/octet-stream`; query `cache_scope`). Returns `201`
 `{"upload_id", "sha256", "bytes"}`. Uploads are temporary (deleted after the job that uses them or
 after 1 hour) and no file name is kept. Callers first try the sha256 lookup below, so unchanged
 audio is never uploaded twice.
@@ -97,7 +102,7 @@ Start an analysis. Exactly one of `upload_id`, `source_ref` (`<kind>:<ref>`, for
 
 ```json
 {
-  "scope": "<cache_scope>",
+  "cache_scope": "<cache_scope>",
   "client_ref": "track-7",
   "upload_id": "...",
   "reference": {"kind": "spotify", "id": "...", "duration_s": 213.0}
@@ -105,16 +110,16 @@ Start an analysis. Exactly one of `upload_id`, `source_ref` (`<kind>:<ref>`, for
 ```
 
 `reference` is optional and requests an `alignment` object; `kind` is an open set. A cache hit
-(equal sha256 and `analyzer_version`, or the same source reference in the same scope) returns `200`
+(equal sha256 and `analyzer_version` **in the caller's scope**, or the same source reference in that scope; a global `youtube` analysis is reused in any scope) returns `200`
 `{"job_id", "status": "done", "analysis_id"}` at once. Otherwise `202` `{"job_id", "status":
 "queued"}`. A source that is disabled in this deployment is `422 source_disabled`.
 
 ### `GET /v2/jobs/{id}`
 
-Poll a job. Response `200`:
+Poll a job. Response `200`, validated by `schema/job-v1.json`:
 
 ```json
-{"job_id": "...", "status": "queued|running|done|failed", "client_ref": "...",
+{"schema_version": "job-v1", "job_id": "...", "status": "queued|running|done|failed", "client_ref": "...",
  "outcome": "<per-track status or null while running>", "retry_after_s": null,
  "analysis_id": "...", "failure_kind": null}
 ```
@@ -125,18 +130,18 @@ that created them. Callers poll with a backoff; no callback is made.
 
 ### Lookups
 
-Both are limited to the caller's scope and return `{"analysis_id": "..."}` or `404`:
+Both are limited to the caller's scope and return `{"schema_version": "lookup-v1", "analysis_id": "..."}` (`schema/lookup-v1.json`) or `404`:
 
-- **By source reference:** `GET /v2/analyses/lookup?source=<kind>:<ref>&scope=...`. For sources
+- **By source reference:** `GET /v2/analyses/lookup?source=<kind>:<ref>&cache_scope=...`. For sources
   whose bytes the caller never holds, for example `youtube:<video id>`.
-- **By content:** `GET /v2/analyses/lookup?sha256=<hex>&scope=...`. For audio the caller holds.
+- **By content:** `GET /v2/analyses/lookup?sha256=<hex>&cache_scope=...`. For audio the caller holds.
   Run it **before** any upload. A cached analysis is reused only on an equal sha256 (or through the
   source-reference link to the same audio identity), never on the decoded-audio fingerprint alone.
 
 ### `DELETE /v2/scopes/{scope}`
 
-Delete everything held for the scope: analyses, source-reference links, uploads and idempotency
-records. Idempotent: `204` whether or not the scope existed. Global (public) entries are not
+Delete everything held for the scope: analyses, source-reference links, uploads, jobs, run records and
+idempotency records. Idempotent: `204` whether or not the scope existed. Global (public) entries are not
 touched.
 
 ## Schemas
@@ -150,11 +155,11 @@ and treat `heuristic` ones as hints.
 
 | Group | Fields | Required |
 |---|---|---|
-| `provenance` | analyzer (name, `analyzer_version`, component versions, config hash), audio identity (sha256, decoded-audio fingerprint, codec, bitrate, sample rate, channels, file and content durations), source (kind, ref, match record with `matcher_version`), alignment record (hypotheses, `alignment_version`, anchor agreement), run (job id, timings, status, failure kind), `created_at` | yes |
-| `signal` | duration, content start and end, silence regions, fade-in and fade-out, energy curves (full, percussive, low band) at 1 s | yes |
+| `provenance` | analyzer (name, `analyzer_version`, component versions, config hash), audio identity (sha256, decoded-audio fingerprint, codec, bitrate, sample rate, channels, file and content durations), source (kind, ref, match record with `matcher_version`), alignment record (reference, result `ok` or `failed`, the hypotheses tried, chosen offset, residual, confidence, `alignment_version`, anchor agreement), run (job id, timings, status, failure kind), `created_at` | yes |
+| `signal` | duration, content start and end (one `confidence` and `method` for the group), silence regions and fades (each with its own), energy curves (full, percussive, low band) at 1 s | yes |
 | `tempo` | BPM, half and double candidates, stability, change points | yes |
 | `grid` | `beats` | yes |
-| `grid` | `meter` (estimated, never assumed 4/4), `downbeats`, `phrases` (8 and 16 bars) | optional |
+| `grid` | `meter` (estimated or heuristic, never assumed 4/4), `downbeats`, `phrases` (8 and 16 bars) | optional |
 | `structure` | segments with boundary confidence, repetition groups | yes |
 | `events` | build-ups, drops, breakdowns and transitions (hard stop, fade, tempo change), each with strength and confidence | yes |
 | `labels` | intro, verse, chorus, bridge, outro, breakdown per segment; always `heuristic` | optional |
@@ -165,6 +170,8 @@ incremental enhancements and are never blocking. Until an enhancement passes its
 absent or `heuristic` with a low confidence. `alignment.offset_s` means
 `reference_time = file_time + offset_s`. There are no `*_spotify` fields.
 
+**`provenance.source.ref`** never holds a file name or a signed URL: absent for `upload` (the sha256 identifies the audio), the video id for `youtube`, and for `url` a normalised https URL with host and path only (no userinfo, query or fragment) or `sha256:<hex digest of it>`.
+
 **Provenance** is kept after the audio is deleted, so a decision can be reproduced, caches
 invalidated, analyser versions compared and alignment problems diagnosed. It never holds audio,
 user tokens, signed URLs or upload file names.
@@ -173,11 +180,11 @@ user tokens, signed URLs or upload file names.
 
 One track's match result (see `POST /v2/match`): `status`, `best` and up to 2 `alternates` (each
 with `source`, `recording_match_confidence`, `band`, `duration_s`, `duration_delta_s`,
-`duration_check`, `analysis_id`), `cached_analysis_id` and `matcher_version`.
+`duration_check`, `analysis_id`), `cached_analysis_id` (the only place a cached id is reported) and `matcher_version`. `band` must agree with `recording_match_confidence`; `retry_after_s` appears only for `rate_limited` and `best` only for `matched` and `uncertain`.
 
 ### Versioning
 
-`schema_version` is `analysis-v1` or `match-v1`. A change that adds an optional field keeps v1; any
+`schema_version` is `analysis-v1`, `match-v1`, `job-v1` or `lookup-v1`. A change that adds an optional field keeps v1; any
 other change is a new version served beside the old one. `analyzer_version` changes invalidate
 cached analyses but not the schema.
 
