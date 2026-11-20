@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 from ..core import label_calc, phrase_calc
 
+END_CONFIDENCE = 0.5  # the content end is a measured edge, not a novelty peak
+
 
 def clip(x: float) -> float:
     return round(min(1.0, max(0.0, float(x))), 3)
@@ -76,9 +78,11 @@ def phrases(core: Dict[str, Any]) -> List[Dict[str, Any]]:
         )
         for n, i in enumerate(inside)
     ]
-    found = phrase_calc.phrases(
-        cands, 240.0 / core["bpm"], [b["start"] for b in core.get("bars", [])]
-    )
+    end = core["content_end_s"]
+    bar_s = 240.0 / core["bpm"]
+    if cands and end - cands[-1][0] > bar_s / 2:
+        cands.append((end, END_CONFIDENCE))
+    found = phrase_calc.phrases(cands, bar_s, [b["start"] for b in core.get("bars", [])])
     return [
         {
             "start_s": p["start"],

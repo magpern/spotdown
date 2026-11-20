@@ -39,7 +39,12 @@
     "ece_labels_reported",
     "downbeats",
     "phrase_precision",
-    "phrase_recall"
+    "phrase_recall",
+    "baseline_tracks",
+    "phrase_f_baseline_reported",
+    "phrase_f_pickup_reported",
+    "phrase_overconfidence_pickup_reported",
+    "boundary_f_3s_all_reported"
   ],
   "per_source": {
     "status": "not evaluated here: needs the baseline path and the owner corpus (classbeat#1298)",

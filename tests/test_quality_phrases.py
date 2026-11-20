@@ -65,3 +65,41 @@ def test_the_phrases_of_a_document_are_read_through_the_contract() -> None:
     doc = {"grid": {"phrases": [{"start_s": 1.0, "end_s": 9.0, "bars": 8, "confidence": 0.3}]}}
     assert ph.estimated(doc) == [{"start": 1.0, "end": 9.0, "bars": 8, "confidence": 0.3}]
     assert ph.estimated({"grid": {}}) == []
+
+
+def _record(corpus: str, hits: List[Any], truth: int) -> Dict[str, Any]:
+    return {
+        "corpus": corpus,
+        "phrase_hits": hits,
+        "phrase_truth": truth,
+        "boundary_f": 1.0,
+        "beat_f": 1.0,
+        "bpm_octave_ok": True,
+        "bpm_exact_ok": True,
+        "bpm_confidence": 0.9,
+        "four_on_the_floor": False,
+        "drops": [0, 0, 0],
+        "edge_hits": [],
+        "boundary_conf": [],
+        "boundary_correct": [],
+        "boundary_f_report": 1.0,
+        "label_frames": [0, 0],
+        "label_segments": [],
+    }
+
+
+def test_aggregate_pools_phrases_over_every_corpus_and_reports_each_corpus_apart() -> None:
+    from app.quality.scoring_calc import aggregate
+
+    base = _record("baseline", [(0.4, True), (0.4, True)], 2)
+    pick = _record("phrases", [(0.4, False)], 3)  # one wrong phrase, three truth phrases missed
+    out = aggregate([base, pick])
+    # pooled (the gate): 2 right of 3 claimed, 2 of 5 true
+    assert (out["phrase_precision"], out["phrase_recall"]) == (0.6667, 0.4)
+    assert out["tracks"] == 2 and out["baseline_tracks"] == 1
+    assert out["phrase_recall_baseline_reported"] == 1.0
+    assert (out["phrase_f_pickup_reported"], out["phrase_overconfidence_pickup_reported"]) == (
+        0.0,
+        0.4,
+    )
+    assert out["phrase_recall_all_reported"] == out["phrase_recall"]

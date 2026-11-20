@@ -24,6 +24,11 @@ ACHIEVED_FLOORS: Dict[str, float] = {
     "robustness_fraction": 1.0,
     "label_accuracy": 0.85,
     "phrase_f": 0.80,
+    # Reported-only per-corpus phrase results, pinned so they cannot get worse unseen. The pickup
+    # fixtures (2 tracks, 9 truth phrases) are the case the structure analysis is weak on.
+    "phrase_f_baseline_reported": 0.85,
+    "phrase_f_pickup_reported": 0.45,
+    "boundary_f_3s_all_reported": 0.95,
 }
 ACHIEVED_CEILINGS: Dict[str, float] = {
     "ece_bpm": 0.08,

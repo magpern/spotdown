@@ -48,7 +48,7 @@ as `labels`): intro, verse, chorus, bridge, outro, breakdown. Convention: a buil
 `verse` (pre-chorus), a drop a `chorus`, a pulse-free pad section a `breakdown`, the thinner middle
 section between two choruses of a groove track a `bridge`. The thresholds (accuracy >= 0.70,
 overconfidence <= 0.10) are set by this enhancement, are not in plan section 7 and are to be recorded in classbeat ADR 0040. Achieved on the
-26 fixtures: accuracy 0.914, overconfidence 0.0 with the 0.4 cap (the two-sided calibration error, 0.53, is reported only: the confidences are deliberately low). Failures are visible, not tuned away: the labels
+24 baseline fixtures: accuracy 0.914, overconfidence 0.0 with the 0.4 cap (the two-sided calibration error, 0.53, is reported only: the confidences are deliberately low). Failures are visible, not tuned away: the labels
 mistake a thin breakdown for a bridge (slow-drop-80), end on a verse when the outro is a fade
 (fade-out-108) and miss the chorus on noisy-break-98.
 
@@ -67,23 +67,46 @@ records both the core analyzer version and the document version (`5.1`) that pro
 Truth phrases come from the arrangement by arithmetic (`synth._phrases`): consecutive sections
 are grouped until they add up to exactly 8 or 16 bars; a group that skips past both starts over at
 the section that overshot (a 4-bar pickup, then 8-bar sections, puts the first phrase after the
-pickup; 3-bar sections never make one). Two extra fixtures, `pickup-edm-140` and
-`pickup-groove-118` (`corpus: phrases`), test the pickup case. They enter only the phrase gate:
-the baseline and label metrics are computed on the original 24 fixtures, so the committed floors
-measure the same set (with them included, `boundary_f_3s` falls to 0.964, below its floor of
-0.975: the structure analysis misses the first boundary after a 4-bar pickup, a known limit).
+pickup; 3-bar sections never make one). Two extra fixtures, `pickup-edm-140` and `pickup-groove-118` (`corpus: phrases`), put a 4-bar
+pickup before the first phrase. They enter only the phrase gate: the baseline and label metrics
+are computed on the original 24 fixtures (`baseline_tracks`), so the committed floors measure the
+same set. With them included `boundary_f_3s` is 0.964 (reported as `boundary_f_3s_all_reported`,
+with the beat and BPM equivalents), below its floor of 0.975: the structure analysis misses the
+first boundary after a 4-bar pickup.
 
 Thresholds set by this enhancement, to be recorded in classbeat ADR 0040: `phrase_f` >= 0.70
-(achieved 0.842: precision 0.889, recall 0.800) and `phrase_overconfidence` <= 0.03 (achieved 0.004).
-Mutation checks done for the PR: inflating the confidences (cap 0.99, scale 1.2) gives 0.099 and
-fails the overconfidence gate; an empty detector fails `phrase_f`. **Blind tiling (8-bar phrases
-from the first boundary, no structure) scores 0.807, so `phrase_f` cannot tell the detector from
-tiling**; the pickup unit test (`tests/test_phrase_calc.py`) is what pins the structural
-behaviour. Like the labels, the rules and the truth convention come from one author, the corpus is
-small (26 tracks, 5 phrase shapes), so the gates are regression checks and the 0.4 cap
-(`phrase_calc.CAP`, pinned by a test) is not raised until held-out evidence exists (spotdown#20).
-Phrases also depend on the downbeat grid and a 4/4 assumption; #9 (downbeats and meter) should
-improve them and may let the meter claim be made.
+and `phrase_overconfidence` <= 0.03, pooled over all 26 fixtures (achieved 0.864: precision 0.884,
+recall 0.844; overconfidence 0.0). A mutation that inflates the confidences (cap 0.99, scale 1.2)
+gives 0.097 and fails the overconfidence gate; an empty detector fails `phrase_f`.
+
+**What the numbers show, per corpus (reported only, and pinned by achieved floors):**
+
+| phrases | F | precision | recall | overconfidence |
+|---|---|---|---|---|
+| pooled, 26 fixtures (the gate) | 0.864 | 0.884 | 0.844 | 0.0 |
+| the 24 baseline fixtures | 0.900 | 0.911 | 0.889 | 0.0 |
+| the 2 pickup fixtures (9 truth phrases) | 0.500 | 0.571 | 0.444 | 0.0 |
+
+The pickup fixtures do not show that the detector handles a pickup; they show that it does not,
+on audio. The cause is the missed first boundary after the pickup (boundary F 0.92 and 0.60 on the
+two tracks), so the phrase chain has no boundary to start from. Before the content end became a
+candidate boundary the same two tracks scored F 0.40 with overconfidence 0.059, above the 0.03
+threshold; the pooled gate hid that. **Blind 8-bar tiling from the first boundary (no structure)
+scores at least as well as the detector on the baseline fixtures** (0.917 against 0.885 measured
+at the first review of this PR), because those arrangements are built from 8-bar blocks. So the
+pooled `phrase_f` gate cannot tell the detector from tiling and is a regression check only, not
+evidence of phrase quality. `tests/test_phrase_calc.py` pins the pure function on hand-made
+boundaries (a pickup moves the first phrase); it does not show that the pipeline finds the
+boundary that function needs.
+
+The content end counts as a closing boundary (with a fixed 0.5 boundary confidence, below the
+cap): it adds the last phrase of tracks that end on a phrase boundary, raising recall from 0.800
+to 0.844 and F from 0.842 to 0.864 with no threshold changed.
+
+Like the labels, the rules and the truth convention come from one author and the corpus is small
+(26 tracks, 5 phrase shapes), so the 0.4 cap (`phrase_calc.CAP`, pinned by a test) is not raised
+until held-out evidence exists (spotdown#20). Phrases also depend on the downbeat grid and a 4/4
+assumption; #9 (downbeats and meter) should improve them and may let the meter claim be made.
 
 ## Changing a threshold
 

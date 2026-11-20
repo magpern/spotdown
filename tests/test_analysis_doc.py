@@ -139,3 +139,13 @@ def test_phrases_are_absent_when_no_section_is_a_whole_phrase() -> None:
     core["segments"][0]["end"] = core["segments"][1]["start"] = 13.0
     core["segments"][1]["end"] = core["segments"][2]["start"] = 27.0
     assert "phrases" not in build(core, {"kind": "upload"})["grid"]
+
+
+def test_the_content_end_closes_a_last_phrase_when_no_boundary_is_there() -> None:
+    core = canned_core(50)
+    core["content_end_s"] = 48.4  # 16 s (8 bars) after the last section starts
+    core["segments"] = _phrase_core()["segments"]
+    core["segments"][2]["end"] = 50.0
+    found = build(core, {"kind": "upload"})["grid"]["phrases"]
+    assert [(p["start_s"], p["end_s"], p["bars"]) for p in found][-1] == (32.4, 48.4, 8)
+    assert max(p["confidence"] for p in found) <= 0.4
