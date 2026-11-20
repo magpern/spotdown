@@ -45,13 +45,15 @@ PLAN_SECTION_7 = {
 ENHANCEMENT_GATES = {
     "label_accuracy": (">=", 0.70),
     "label_overconfidence": ("<=", 0.10),
+    "phrase_f": (">=", 0.70),
+    "phrase_overconfidence": ("<=", 0.03),
 }
 
 
 def test_the_committed_gates_are_valid_and_carry_every_plan_threshold() -> None:
     g = _gates()
     gates_calc.validate(g)
-    assert g["version"] == 2
+    assert g["version"] == 3
     assert g["hard"] == {"false_exact": 0, "audio_kept_after_job": 0}
     committed = {k: (v["op"], v["value"]) for k, v in g["signal"].items()}
     assert {k: v for k, v in committed.items() if k in PLAN_SECTION_7} == PLAN_SECTION_7

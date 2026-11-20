@@ -2,7 +2,7 @@
 
 Times stay on the file's own clock. The confidences are first, documented estimates (beat
 regularity, energy contrast); the quality harness (spotdown#6) calibrates them. Optional groups
-(meter, downbeats, phrases, alignment) are left out until their gates pass: the meter is never
+(meter, downbeats, alignment) are left out until their gates pass: the meter is never
 assumed to be 4/4. Section labels are always ``heuristic`` and, until their gate passes
 (``label_calc.GATE_PASSED``, held-out evidence), capped at 0.4.
 """
@@ -11,14 +11,15 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 from typing import Any, Dict, List, Optional, Sequence
 
-from ..core import ANALYZER_VERSION, HOP, SR, label_calc
+from ..core import ANALYZER_VERSION, HOP, SR
+from .structure_doc import clip as _clip
+from .structure_doc import labels, phrases, structure
 
 ANALYZER_NAME = "spotdown"
-# The core analyser's version, then this document mapping's version (1: section labels).
-ANALYZER_VERSION_V2 = f"{ANALYZER_VERSION}.1"
+# The core analyser's version, then this document mapping's version (1: section labels, 2: phrases).
+ANALYZER_VERSION_V2 = f"{ANALYZER_VERSION}.2"
 MEASURED_CONFIDENCE = 0.9
 
 
@@ -34,10 +35,6 @@ def fingerprint(energy_full: Sequence[float]) -> str:
     """
     levels = bytes(min(15, max(0, int(v * 16))) for v in energy_full)
     return "energy16-v1:" + hashlib.sha256(levels).hexdigest()[:32]
-
-
-def _clip(x: float) -> float:
-    return round(min(1.0, max(0.0, float(x))), 3)
 
 
 def beat_stability(beats: Sequence[float]) -> float:
@@ -99,54 +96,6 @@ def _silences(duration: float, start: float, end: float) -> List[Dict[str, Any]]
     return [
         {"start_s": round(a, 3), "end_s": round(b, 3), "confidence": 0.8, "method": "measured"}
         for a, b in regions
-    ]
-
-
-NOVELTY_SCALE = 0.08  # the novelty at which a boundary is trusted about 63 % (calibration)
-
-
-def boundary_confidence(novelty: Optional[float], first: bool) -> float:
-    """From the self-similarity novelty at the boundary: a saturating curve, capped below 1.
-    The first segment starts the file, so nothing is claimed about it beyond a measured start."""
-    if first or novelty is None:
-        return 0.9 if first else 0.3
-    return _clip(0.95 * (1.0 - math.exp(-max(0.0, novelty) / NOVELTY_SCALE)))
-
-
-def _structure(core: Dict[str, Any]) -> Dict[str, Any]:
-    segments, groups = [], {}
-    for i, seg in enumerate(core["segments"]):
-        sid = f"s{i + 1}"
-        segments.append(
-            {
-                "id": sid,
-                "start_s": seg["start"],
-                "end_s": seg["end"],
-                "boundary_confidence": boundary_confidence(seg.get("boundary_novelty"), i == 0),
-                "method": "estimated",
-            }
-        )
-        groups.setdefault(seg.get("group", 0), []).append(sid)
-    repetition = [
-        {"segment_ids": ids, "confidence": 0.5, "method": "estimated"}
-        for _, ids in sorted(groups.items())
-        if len(ids) >= 2
-    ]
-    return {"segments": segments, "repetition_groups": repetition}
-
-
-def _labels(core: Dict[str, Any]) -> List[Dict[str, Any]]:
-    found = label_calc.label_segments(
-        core["segments"], core["drops"], core["content_start_s"], core["content_end_s"]
-    )
-    return [
-        {
-            "segment_id": f"s{x['index'] + 1}",
-            "label": x["label"],
-            "confidence": _clip(x["confidence"]),
-            "method": "heuristic",
-        }
-        for x in found
     ]
 
 
@@ -234,6 +183,11 @@ def build(
         "stability": stability,
         "change_points": [],
     }
+    grid: Dict[str, Any] = {
+        "beats": {"times_s": beats, "confidence": stability, "method": "estimated"}
+    }
+    if found := phrases(core):
+        grid["phrases"] = found
     doc: Dict[str, Any] = {
         "schema_version": "analysis-v1",
         "analysis_id": analysis_id,
@@ -270,11 +224,10 @@ def build(
             },
         },
         "tempo": tempo,
-        "grid": {"beats": {"times_s": beats, "confidence": stability, "method": "estimated"}},
-        "structure": _structure(core),
+        "grid": grid,
+        "structure": structure(core),
         "events": _events(core),
     }
-    labels = _labels(core)
-    if labels:
-        doc["labels"] = labels
+    if found := labels(core):
+        doc["labels"] = found
     return doc

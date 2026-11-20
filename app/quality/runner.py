@@ -127,7 +127,15 @@ def build_report(
     for entry, res in zip(entries, results):
         if res["doc"] is not None:
             records.append(
-                scoring_calc.score_track(dict(entry["truth"], id=entry["id"]), res["doc"], tol)
+                scoring_calc.score_track(
+                    dict(
+                        entry["truth"],
+                        id=entry["id"],
+                        corpus=entry["spec"].get("corpus", "baseline"),
+                    ),
+                    res["doc"],
+                    tol,
+                )
             )
     metrics = scoring_calc.aggregate(records) if records else {}
     n = len(results)
@@ -162,7 +170,7 @@ def format_table(report: Dict[str, Any]) -> str:
     lines = [
         f"quality gates v{report['gates_version']}, analyzer {report['analyzer_version']} "
         f"(document {report['document_version']}), "
-        f"{report['tracks']} tracks",
+        f"{report['tracks']} tracks ({int(report['metrics'].get('baseline_tracks', 0))} baseline)",
         f"{'gate':32} {'rule':>10} {'value':>9}  result",
     ]
     for r in report["gates"]:
@@ -173,6 +181,20 @@ def format_table(report: Dict[str, Any]) -> str:
     m = report["metrics"]
     lines.append(f"(reported only) boundary F at 1.5 s: {m.get('boundary_f_1_5s_reported')}")
     lines.append(f"(reported only) label ECE: {m.get('ece_labels_reported')}")
+    lines.append(
+        f"(reported only) phrase precision {m.get('phrase_precision')}, "
+        f"recall {m.get('phrase_recall')}"
+    )
+    for part in ("baseline", "pickup"):
+        lines.append(
+            f"(reported only) phrases on the {part} fixtures: "
+            f"F {m.get(f'phrase_f_{part}_reported')}, "
+            f"overconfidence {m.get(f'phrase_overconfidence_{part}_reported')}"
+        )
+    lines.append(
+        f"(reported only) all fixtures: boundary F {m.get('boundary_f_3s_all_reported')}, "
+        f"beat F {m.get('beat_f_overall_all_reported')}"
+    )
     return "\n".join(lines)
 
 
