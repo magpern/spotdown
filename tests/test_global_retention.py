@@ -276,9 +276,9 @@ def test_a_purge_overwrites_the_freed_pages(store: Store, clock: Clock) -> None:
     probe: List[int] = []
 
     class Spy(Store):
-        def _end_purge(self, conn: Any) -> None:
+        def _end_purge(self, conn: Any, deleted: int) -> None:
             probe.append(conn.execute("PRAGMA secure_delete").fetchone()[0])
-            super()._end_purge(conn)
+            super()._end_purge(conn, deleted)
 
     spy = Spy(store.path, clock=clock)
     put(spy, clock, "p")
@@ -376,3 +376,137 @@ def test_the_takedown_is_not_reachable_over_http(tmp_path: Path) -> None:
     for method in ("post", "delete", "put"):
         res = getattr(client, method)("/v2/takedown", headers=AUTH)
         assert res.status_code in (404, 405)
+
+
+def scoped_rows(store: Store) -> List[Any]:
+    """Every row that belongs to a scope, in every table the retention code deletes from."""
+    queries = [
+        "SELECT * FROM analyses WHERE cache_scope IS NOT NULL",
+        "SELECT * FROM source_links WHERE scope_key != ''",
+        "SELECT * FROM alignments WHERE cache_scope != ''",
+    ]
+    with store._conn() as conn:
+        return [tuple(r) for q in queries for r in conn.execute(q).fetchall()]
+
+
+def put_scoped(store: Store, clock: Clock, ref: str = "mine") -> None:
+    """A scoped `url` analysis of an old analyzer version with its scoped link and alignment,
+    and one of each that is also scoped but named like a global source."""
+    with store._conn() as conn:
+        insert_analysis(conn, "an_url", "scope_a", doc(ref, "old", kind="url"), clock())
+        insert_analysis(conn, "an_yt", "scope_b", doc("scopedyt", "old", kind="youtube"), clock())
+        # a scoped link that names a global source, and one whose analysis is gone
+        conn.execute(
+            "INSERT INTO source_links VALUES ('youtube', 'target', 'scope_c', 'an_yt', 1.0)"
+        )
+        conn.execute("INSERT INTO source_links VALUES ('url', 'dang', 'scope_a', 'an_none', 1.0)")
+        for scope, base, key in (("scope_a", "an_url", "ku"), ("scope_b", "an_yt", "ky")):
+            conn.execute(
+                "INSERT INTO alignments (cache_scope, align_key, doc, created_at, analysis_id)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    scope,
+                    key,
+                    json.dumps({"analysis_id": "al_" + key, "base_analysis_id": base}),
+                    1.0,
+                    "al_" + key,
+                ),
+            )
+
+
+def test_a_purge_and_a_takedown_leave_every_scoped_row(store: Store, clock: Clock) -> None:
+    put_scoped(store, clock)
+    put(store, clock, "target")  # a global entry the takedown does remove
+    before = scoped_rows(store)
+    assert len(before) == 7  # 2 analyses, 3 links, 2 alignments
+    clock.advance(400)  # far past the period, and at an old analyzer version
+    assert purge(store, clock)["analyses"] == 1  # only the global one
+    assert scoped_rows(store) == before
+    assert store.takedown("youtube", "target")["analyses"] == 0
+    assert scoped_rows(store) == before
+
+
+def test_the_victims_of_a_purge_are_global_only(store: Store, clock: Clock) -> None:
+    from app.service.retention_store import _unused_global_ids
+
+    put_scoped(store, clock)
+    put(store, clock, "g")
+    clock.advance(400)
+    with store._conn() as conn:
+        assert _unused_global_ids(conn, clock(), TTL, ANALYZER_VERSION_V2) == ["an_g"]
+
+
+def test_deleting_by_id_never_reaches_a_scoped_analysis_link_or_alignment(
+    store: Store, clock: Clock
+) -> None:
+    from app.service.retention_store import _delete_entries
+
+    put_scoped(store, clock)
+    with store._conn() as conn:
+        # a global-keyed link and a scoped link both pointing at the scoped analyses
+        conn.execute("INSERT INTO source_links VALUES ('url', 'x', 'scope_a', 'an_url', 1.0)")
+        before = scoped_rows(store)
+        counts = _delete_entries(conn, ["an_url", "an_yt"])
+    assert counts["analyses"] == 0 and counts["alignments"] == 0
+    assert scoped_rows(store) == before and len(before) == 8
+
+
+class Tracing(Store):
+    """A store that records the SQL of every connection."""
+
+    def __init__(self, *a: Any, **kw: Any) -> None:
+        self.sql: List[str] = []
+        super().__init__(*a, **kw)
+
+    def _conn(self) -> Any:
+        import contextlib
+
+        @contextlib.contextmanager
+        def traced() -> Any:
+            with super(Tracing, self)._conn() as conn:
+                conn.set_trace_callback(self.sql.append)
+                yield conn
+
+        return traced()
+
+
+def test_the_log_is_truncated_only_when_something_was_deleted(tmp_path: Path, clock: Clock) -> None:
+    store = Tracing(tmp_path / "t.db", clock=clock)
+    assert purge(store, clock) == {"analyses": 0, "links": 0, "alignments": 0}
+    store.takedown("youtube", "nothing")
+    assert not any("wal_checkpoint" in q for q in store.sql)
+    put(store, clock, "t")
+    store.takedown("youtube", "t")
+    assert any("wal_checkpoint" in q for q in store.sql)
+
+
+def test_a_busy_log_is_logged_not_raised_and_not_waited_for(
+    store: Store, clock: Clock, caplog: pytest.LogCaptureFixture
+) -> None:
+    import sqlite3
+    import time
+
+    put(store, clock, "b")
+    reader = sqlite3.connect(store.path)
+    reader.execute("BEGIN")
+    reader.execute("SELECT COUNT(*) FROM analyses").fetchone()  # a read transaction on the log
+    started = time.monotonic()
+    with caplog.at_level("WARNING", logger="spotdown.service.retention"):
+        assert store.takedown("youtube", "b")["analyses"] == 1
+    assert time.monotonic() - started < 5  # the connection's wait is 30 s
+    assert "could not be truncated" in caplog.text
+    reader.close()
+    assert gone(store, "b")
+
+
+def test_a_touch_inside_the_interval_writes_nothing(store: Store, clock: Clock) -> None:
+    put(store, clock, "w")
+    clock.advance(1 / 24 / 2)  # half an hour: inside the interval
+    store.find_by_source("youtube", "w", None, ANALYZER_VERSION_V2)
+    with store._conn() as conn:
+        first = conn.execute("SELECT last_read_at FROM analyses").fetchone()[0]
+    assert first == 1_000_000.0
+    clock.advance(1 / 24)
+    store.find_by_source("youtube", "w", None, ANALYZER_VERSION_V2)
+    with store._conn() as conn:
+        assert conn.execute("SELECT last_read_at FROM analyses").fetchone()[0] == clock()

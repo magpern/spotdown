@@ -248,8 +248,10 @@ removes them, so they are purged too (classbeat ADR 0040 §7):
 - **Nothing left behind.** Audio is never kept. The purge overwrites the freed database pages
   (`secure_delete`) and truncates the write-ahead log, so a purged document is not left in the
   database files. A job row that ended on a purged analysis keeps its id and answers `404` when
-  the analysis is fetched; the same request analyses again. Job rows are per-scope run records (they hold the video id,
-  not the analysis) and go with their scope, not with a takedown.
+  the analysis is fetched; the same request analyses again. Job rows (they hold the video id and
+  the analysis id, not the analysis) and idempotency records are not part of a takedown or of this
+  purge: those of a scope go with it, but a scope-less `youtube` job and the `/v2/match`
+  idempotency records (scope `""`) persist. A lifetime for them is a known follow-up.
 - **Backups** are outside this service: a takedown does not reach a copy of `service.db` made
   earlier, so the operator rotates those by their own schedule.
 
