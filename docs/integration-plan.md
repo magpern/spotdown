@@ -88,14 +88,16 @@ This repository uses classbeat's workflow unchanged:
 - Opus is the Architect and Orchestrator;
 - Sonnet is the Developer;
 - Haiku is the Explorer;
-- **Opus reviews every PR except a docs-only one**; a docs-only PR (every file of its whole diff is a `*.md` file outside `.claude/` and `.github/`, AGENTS.md review gate item 2) may be reviewed by Sonnet (owner, 2026-11-20);
+- **Opus reviews every PR except a docs-only one** (owner, 2026-11-20); "docs-only" is defined only
+  in AGENTS.md review gate item 2, and a PR that fails any of its conditions is reviewed by Opus;
 - after a second `FAIL` on a PR, an Opus Developer does the next fix round, and every Developer runs
   a class-wide self-check before handing back.
 
 **Review gate**
 - a fresh reviewer for the first review, the same reviewer resumed for later rounds;
-- `Agent review (opus): PASS <exact head SHA>` recorded on the PR (`Agent review (sonnet): PASS <exact
-  head SHA>` with `docs-only: yes` is accepted only for a docs-only PR).
+- `Agent review (opus): PASS <exact head SHA>` recorded on the PR; an `Agent review (sonnet): PASS
+  <exact head SHA>` with `docs-only: yes` counts only for a PR that is docs-only by AGENTS.md review
+  gate item 2.
 
 **Merge controls**
 - green `ci` and `pr-title`;
