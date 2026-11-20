@@ -1,19 +1,22 @@
-"""Whether a file is a well-formed MP4/M4A with an AAC audio track (pure; see ``container_policy``).
+"""Whether a file is a well-formed MP4/M4A whose audio is AAC (pure; see ``container_policy``).
 
 Every top-level box must fit in the file and be of a known kind, so nothing else hides behind the
-``ftyp``; ``ftyp`` comes first and names an MP4 brand (no QuickTime, no 3GP). The ``moov`` box is
-walked through ``trak/mdia/minf/stbl``: the first sound track must carry an unencrypted ``mp4a``
-sample entry with a sane rate and channel count. Every sample table (and every fragment's
-``trun``) must hold the entries it declares, so the decoder never sizes an index by a count the
-file merely claims. Tag boxes (``udta``, ``meta``) are skipped unread.
+``ftyp``; ``ftyp`` comes first and its major brand is an MP4 one (no QuickTime, no 3GP). The
+``moov`` box is walked through every ``trak/mdia/minf/stbl``: every track is a sound track carrying
+only AAC or a video track (``mp4_entry_policy``), and there is at least one sound track. Every
+sample table (and every fragment's ``trun``) must hold the entries it declares, so the decoder
+never sizes an index by a count the file merely claims. Tag boxes (``udta``, ``meta``) are skipped
+unread here (the probe's stream-info reader walks their headers, not their values).
 """
 
 from __future__ import annotations
 
 import struct
-from typing import Iterator, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
-from .container_policy import Container, InvalidMedia, Read, check_stream, exact
+from .container_policy import Container, InvalidMedia, Read, exact
+from .mp4_boxes import Box, boxes, child, need
+from .mp4_entry_policy import check_entries
 
 _MAX_BOXES = 8192
 _MAX_MOOV = 32 * 1024 * 1024
@@ -53,44 +56,6 @@ _TOP = {
 # Full-box tables (version and flags, then an entry count): bytes per entry.
 _TABLES = {b"stts": 8, b"ctts": 8, b"stsc": 12, b"stss": 4, b"stco": 4, b"co64": 8}
 
-Box = Tuple[bytes, int, int]  # (type, payload offset, end offset)
-
-
-def boxes(read: Read, start: int, end: int, budget: List[int]) -> Iterator[Box]:
-    """The boxes laid out in ``[start, end)``; each must fit, and the whole range must be boxes."""
-    pos = start
-    while pos < end:
-        budget[0] -= 1
-        if budget[0] < 0:
-            raise InvalidMedia("too many boxes")
-        head = exact(read, pos, 8) if end - pos >= 8 else b""
-        if not head:
-            raise InvalidMedia("truncated box")
-        size, kind = struct.unpack(">I4s", head)
-        payload = pos + 8
-        if size == 1:
-            size = struct.unpack(">Q", exact(read, pos + 8, 8))[0]
-            payload = pos + 16
-        elif size == 0:
-            size = end - pos  # to the end of its parent
-        if size < payload - pos or pos + size > end:
-            raise InvalidMedia("truncated box")
-        yield kind, payload, pos + size
-        pos += size
-
-
-def _child(read: Read, parent: Box, kind: bytes, budget: List[int]) -> Optional[Box]:
-    for box in boxes(read, parent[1], parent[2], budget):
-        if box[0] == kind:
-            return box
-    return None
-
-
-def _need(box: Optional[Box]) -> Box:
-    if box is None:
-        raise InvalidMedia("incomplete track")
-    return box
-
 
 def _check_table(read: Read, box: Box) -> None:
     kind, at, end = box
@@ -114,38 +79,23 @@ def _check_trun(read: Read, box: Box, size: int) -> None:
         raise InvalidMedia("fragment table larger than its box")
 
 
-def _sound_entry(read: Read, stsd: Box) -> Tuple[int, int]:
-    count = struct.unpack(">I", exact(read, stsd[1] + 4, 4))[0]
-    if count < 1:
-        raise InvalidMedia("no sample entry")
-    entry = exact(read, stsd[1] + 8, 36)
-    if entry[4:8] != b"mp4a":
-        raise InvalidMedia("not an aac track")
-    version, channels = struct.unpack(">HH", entry[16:18] + entry[24:26])
-    if version not in (0, 1):
-        raise InvalidMedia("unsupported sample entry")
-    rate = struct.unpack(">I", entry[32:36])[0] >> 16
-    check_stream(rate, channels)
-    return rate, channels
-
-
 def _track(read: Read, trak: Box, budget: List[int]) -> Optional[Tuple[int, int, Optional[float]]]:
-    """``(rate, channels, duration)`` of a sound track (None for any other track), after checking
-    every sample table of the track."""
-    mdia = _need(_child(read, trak, b"mdia", budget))
-    stbl = _need(_child(read, _need(_child(read, mdia, b"minf", budget)), b"stbl", budget))
-    hdlr = _need(_child(read, mdia, b"hdlr", budget))
-    mdhd = _need(_child(read, mdia, b"mdhd", budget))
+    """``(rate, channels, duration)`` of a sound track (None for a video track), after checking
+    every sample table and every sample entry of the track (``mp4_entry_policy``)."""
+    mdia = need(child(read, trak, b"mdia", budget))
+    stbl = need(child(read, need(child(read, mdia, b"minf", budget)), b"stbl", budget))
+    hdlr = need(child(read, mdia, b"hdlr", budget))
+    mdhd = need(child(read, mdia, b"mdhd", budget))
     stsd: Optional[Box] = None
     for box in boxes(read, stbl[1], stbl[2], budget):
         if box[0] == b"stsd":
             stsd = box
         elif box[0] in _TABLES or box[0] == b"stsz":
             _check_table(read, box)
-    stsd = _need(stsd)
-    if exact(read, hdlr[1] + 8, 4) != b"soun":
+    stream = check_entries(read, need(stsd), exact(read, hdlr[1] + 8, 4), budget)
+    if stream is None:  # a video track (never decoded: only the first audio stream is mapped)
         return None
-    rate, channels = _sound_entry(read, stsd)
+    rate, channels = stream
     version = exact(read, mdhd[1], 1)[0]
     if version == 1:
         scale, duration = struct.unpack(">IQ", exact(read, mdhd[1] + 20, 12))
@@ -176,9 +126,9 @@ def inspect_mp4(read: Read, size: int) -> Container:
     if kinds.count(b"moov") != 1 or b"mdat" not in kinds:
         raise InvalidMedia("incomplete mp4 file")
     ftyp = top[0]
-    brands = exact(read, ftyp[1], min(ftyp[2] - ftyp[1], 64))
-    named = [brands[0:4]] + [brands[i : i + 4] for i in range(8, len(brands) - 3, 4)]
-    if not any(b in _BRANDS for b in named):
+    # The major brand decides: a QuickTime or 3GP file that lists an MP4 brand as compatible is
+    # still refused.
+    if exact(read, ftyp[1], 4) not in _BRANDS:
         raise InvalidMedia("not an mp4 brand")
     moov = top[kinds.index(b"moov")]
     if moov[2] - moov[1] > _MAX_MOOV:

@@ -85,10 +85,74 @@ def full(kind: bytes, payload: bytes) -> bytes:
     return box(kind, b"\x00\x00\x00\x00" + payload)
 
 
-def mp4a(rate: int = 44100, channels: int = 2, kind: bytes = b"mp4a", version: int = 0) -> bytes:
+def esds(oti: int = 0x40, aot: int = 2, url: bool = False, asc: Optional[bytes] = None) -> bytes:
+    """An esds box: ES_Descriptor > DecoderConfigDescriptor (object type) > AudioSpecificConfig."""
+    if asc is not None:
+        pass
+    elif aot < 31:
+        asc = bytes([(aot << 3) | 0x2, 0x10])
+    else:  # escaped: 31, then six bits of aot - 32
+        asc = bytes([0xF8 | ((aot - 32) >> 3), ((aot - 32) & 0x7) << 5])
+    dsi = b"\x05" + bytes([len(asc)]) + asc
+    dcd_body = bytes([oti, 0x15]) + b"\x00" * 11 + dsi
+    dcd = b"\x04" + bytes([len(dcd_body)]) + dcd_body
+    # With ``url`` the flag is set and the bytes after it are a valid DecoderConfigDescriptor, so
+    # only the URL rule refuses it.
+    es_body = b"\x00\x01" + (b"\x40" if url else b"\x00") + dcd
+    return full(b"esds", b"\x03" + bytes([len(es_body)]) + es_body)
+
+
+def mp4a(
+    rate: int = 44100,
+    channels: int = 2,
+    kind: bytes = b"mp4a",
+    version: int = 0,
+    config: Optional[bytes] = None,
+) -> bytes:
     entry = b"\x00" * 6 + b"\x00\x01" + struct.pack(">HH4s", version, 0, b"\x00" * 4)
     entry += struct.pack(">HHHHI", channels, 16, 0, 0, (rate & 0xFFFF) << 16)
-    return box(kind, entry)
+    if version >= 1:  # QuickTime v1 layout (v2 is refused, laid out like v1 here)
+        entry += b"\x00" * 16
+    return box(kind, entry + (esds() if config is None else config))
+
+
+def stbl_table(kind: bytes, count: int, per: int, present: int) -> bytes:
+    """A sample table declaring ``count`` entries while holding ``present``."""
+    return full(kind, struct.pack(">I", count) + b"\x00" * (per * present))
+
+
+def trak(
+    rate: int = 44100,
+    channels: int = 2,
+    entry: Optional[bytes] = None,
+    handler: bytes = b"soun",
+    duration: int = 441000,
+    stsz: Optional[bytes] = None,
+    tables: bytes = b"",
+    entries: int = 1,
+    timescale: Optional[int] = None,
+    mdhd_v1: bool = False,
+) -> bytes:
+    """One track; ``entry`` is the whole stsd content (several entries if wanted) and ``entries``
+    the count stsd declares."""
+    stsd = full(
+        b"stsd", struct.pack(">I", entries) + (mp4a(rate, channels) if entry is None else entry)
+    )
+    tabs = full(b"stts", struct.pack(">III", 1, 10, 1024))
+    tabs += full(b"stsc", struct.pack(">IIII", 1, 1, 10, 1))
+    tabs += stsz if stsz is not None else full(b"stsz", struct.pack(">II", 0, 10) + b"\x00" * 40)
+    tabs += full(b"stco", struct.pack(">II", 1, 0)) + tables
+    stbl = box(b"stbl", stsd + tabs)
+    minf = box(b"minf", full(b"smhd", b"\x00" * 4) + stbl)
+    hdlr = full(b"hdlr", b"\x00" * 4 + handler + b"\x00" * 12 + b"\x00")
+    scale = rate if timescale is None else timescale
+    if mdhd_v1:
+        mdhd = box(
+            b"mdhd", b"\x01\x00\x00\x00" + struct.pack(">QQIQHH", 0, 0, scale, duration, 0, 0)
+        )
+    else:
+        mdhd = full(b"mdhd", struct.pack(">IIIIHH", 0, 0, scale, duration, 0, 0))
+    return box(b"trak", box(b"mdia", mdhd + hdlr + minf))
 
 
 def mp4(
@@ -103,19 +167,16 @@ def mp4(
     tail: bytes = b"",
     extra_top: Optional[Dict[str, bytes]] = None,
     moov_count: int = 1,
+    tables: bytes = b"",
+    before: bytes = b"",
+    after: bytes = b"",
+    track: Optional[bytes] = None,
 ) -> bytes:
-    stsd = full(b"stsd", struct.pack(">I", 1) + (entry or mp4a(rate, channels)))
-    tables = full(b"stts", struct.pack(">III", 1, 10, 1024))
-    tables += full(b"stsc", struct.pack(">IIII", 1, 1, 10, 1))
-    tables += stsz if stsz is not None else full(b"stsz", struct.pack(">II", 0, 10) + b"\x00" * 40)
-    tables += full(b"stco", struct.pack(">II", 1, 0))
-    stbl = box(b"stbl", stsd + tables)
-    minf = box(b"minf", full(b"smhd", b"\x00" * 4) + stbl)
-    hdlr = full(b"hdlr", b"\x00" * 4 + handler + b"\x00" * 12 + b"\x00")
-    mdhd = full(b"mdhd", struct.pack(">IIIIHH", 0, 0, rate, duration, 0, 0))
-    trak = box(b"trak", box(b"mdia", mdhd + hdlr + minf))
+    """A minimal M4A; ``before``/``after`` are other boxes in ``moov`` around the sound track,
+    ``track`` replaces that track."""
+    track = track or trak(rate, channels, entry, handler, duration, stsz, tables)
     udta = box(b"udta", box(b"\xa9nam", MARKER.encode()))
-    moov = box(b"moov", full(b"mvhd", b"\x00" * 96) + trak + udta) * moov_count
+    moov = box(b"moov", full(b"mvhd", b"\x00" * 96) + before + track + after + udta) * moov_count
     ftyp = box(b"ftyp", brand + b"\x00\x00\x02\x00" + brand + compat)
     tops = b"".join((extra_top or {}).values())
     return ftyp + moov + tops + box(b"mdat", b"\x00" * 64) + tail

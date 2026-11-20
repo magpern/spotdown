@@ -82,6 +82,7 @@ def run(audio: Path, result: Path, max_decoded_s: float, media: str, decode_s: f
     # decoder; the parent reads the signal as a timeout.
     signal.signal(signal.SIGALRM, signal.SIG_DFL)
     signal.setitimer(signal.ITIMER_REAL, decode_s)
+    deadline = time.monotonic() + decode_s
     try:
         # The whole structure is checked before any decoder sees a byte (every source).
         container = container_io.inspect_file(audio, media, max_decoded_s)
@@ -92,7 +93,7 @@ def run(audio: Path, result: Path, max_decoded_s: float, media: str, decode_s: f
 
         # Decode at most a second past the cap, so an overlong file is refused without ever
         # holding more than the cap in memory.
-        y, sr = decode.decode(audio, container, SR, max_decoded_s, decode_s)
+        y, sr = decode.decode(audio, container, SR, max_decoded_s, deadline)
     except InvalidMedia:
         return EXIT_INVALID_MEDIA
     except decode.DecodeTimeout:

@@ -155,9 +155,30 @@ already shows more than the decoded-length cap is accepted here and refused by i
 (`processing_failed`, `out_of_memory`) before it is decoded.
 
 The job checks every source (upload, `url`, `youtube`) the same way in the analysis sandbox before
-decoding, and decodes with a decoder pinned to that container (no format guessing). A file refused
-there is `processing_failed` with `decode_error`; a decode past the operator's decode deadline
+decoding, and decodes with a decoder pinned to that container (no format guessing): libsndfile for
+wav and mp3, which must report the same container and stream; ffmpeg for mp4 with the `mov`
+demuxer, the AAC decoder, local files only and no data references. A file refused there is
+`processing_failed` with `decode_error`; a check and decode past the operator's decode deadline
 (`ANALYSIS_MAX_DECODE_S`, 120 s by default) is `processing_failed` with `timeout`.
+
+In an mp4, every track is checked, whatever its handler (a demuxer decides the stream type from
+the sample entry): sound tracks carry only AAC (`mp4a` naming MPEG-4 AAC main, LC, SSR, LTP, HE or
+HE v2, or MPEG-2 AAC), video tracks only a video entry, and any other track is refused.
+
+Refused on purpose (a safe default; expect some real-library files among them):
+- ALAC (Apple Lossless) m4a, mp3 inside mp4, QuickTime `.mov` and 3GP (by major brand), encrypted
+  tracks, and m4a with a chapter (`text`) or timed-metadata track;
+- AAC above 65535 Hz (the 16-bit `mp4a` rate field holds 0, as ffmpeg writes for 96 kHz);
+- mp3 with anything between or after the frames other than an APEv2 and/or ID3v1 tag at the end
+  (a Lyrics3v2 tag, junk, two files concatenated at another rate), a free-format bitrate, or an
+  ID3v2 tag header whose size is not synchsafe;
+- wav that is compressed (ADPCM and others), has more than 64 chunks, or has bytes after its RIFF
+  chunk.
+
+What the decoders still parse is accepted surface, inside the sandbox's rlimits and deadline:
+libsndfile reads the wav chunks the check only bounds (`LIST`, `cue `, `smpl` and others), mpg123
+reads the ID3v2 tag the check skips, and the probe's mutagen stream-info readers walk the mp3 frame
+headers and the mp4 atom headers (including `udta`/`meta`, never their values).
 
 ### `POST /v2/analyses`
 

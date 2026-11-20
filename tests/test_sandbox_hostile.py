@@ -238,3 +238,30 @@ def test_each_step_raising_ends_as_its_exit(
     audio = write_wav(tmp_path / "in.wav", 1.0)
     assert child.run(audio, tmp_path / "r.json", 60.0, "wav", 60.0) == code
     assert alarm[-1] == 0  # disarmed on every path
+
+
+def test_an_ffmpeg_overrun_is_a_decode_timeout_not_the_alarm(tmp_path, alarm, monkeypatch) -> None:
+    """The child's ffmpeg is stopped just before the alarm, so the timeout exit is reachable."""
+    script = tmp_path / "ffmpeg"
+    script.write_text("#!/bin/sh\nsleep 5\n", encoding="utf-8")
+    script.chmod(0o755)
+    monkeypatch.setattr(child.decode.shutil, "which", lambda name: str(script))
+    audio = tmp_path / "in"
+    audio.write_bytes(mf.mp4())
+    code = child.run(audio, tmp_path / "r.json", 60.0, "mp4", 1.5)
+    assert code == child.EXIT_DECODE_TIMEOUT
+
+
+@pytest.mark.parametrize(
+    "code,reason",
+    [
+        (child.EXIT_INVALID_MEDIA, "unsupported_media"),
+        (child.EXIT_DECODE_TIMEOUT, "deadline"),
+        (-14, "deadline"),  # SIGALRM: the child's decode alarm
+        (child.EXIT_TOO_LONG, "too_long"),
+        (child.EXIT_DECODE, "decode"),
+    ],
+)
+def test_the_childs_exits_map_to_their_reasons(code: int, reason: str) -> None:
+    limits = sandbox.Limits(memory_bytes=1, cpu_s=10, wall_s=10.0, decoded_s=60.0, decode_s=5.0)
+    assert sandbox._reason_for(code, 0.0, limits).value == reason

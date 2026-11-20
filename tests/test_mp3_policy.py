@@ -94,3 +94,68 @@ def test_the_frame_header_table() -> None:
     assert frame_header(mf.mp3_header()) == (3, 44100, 1, 417, 1152)
     assert frame_header(mf.mp3_header(version=2, br=8, sr=0, mode=0)) == (2, 22050, 2, 208, 576)
     assert frame_header(b"\xff\xfb") is None
+
+
+# ---- one case per rule, built so that rule alone decides ----
+
+
+@pytest.mark.parametrize(
+    "head",
+    [
+        b"\x7f\xfb\x90\x64",  # no sync byte
+        b"\xff\x1b\x90\x64",  # the sync bits cut short
+        bytes([0xFF, 0xE0 | (1 << 3) | (1 << 1) | 1, 0x90, 0xC0]),  # reserved MPEG version
+        bytes([0xFF, 0xE0 | (3 << 3) | (2 << 1) | 1, 0x90, 0xC0]),  # Layer II
+        bytes([0xFF, 0xE0 | (3 << 3) | (3 << 1) | 1, 0x90, 0xC0]),  # Layer I
+        mf.mp3_header(br=0),  # free format
+        mf.mp3_header(br=15),
+        mf.mp3_header(sr=3),
+    ],
+)
+def test_frame_headers_that_are_not_layer_iii(head: bytes) -> None:
+    assert frame_header(head) is None
+
+
+def _id3(size_bytes: bytes, version: int = 3, flags: int = 0, footer: bool = False) -> bytes:
+    size = (size_bytes[0] << 21) | (size_bytes[1] << 14) | (size_bytes[2] << 7) | size_bytes[3]
+    tag = b"ID3" + bytes([version, 0, flags]) + size_bytes + b"\x00" * (size & 0xFFFFFFF)
+    return tag + (b"3DI" + bytes([version, 0, flags]) + size_bytes if footer else b"")
+
+
+def test_an_id3_size_that_is_not_synchsafe_is_refused() -> None:
+    assert inspect(_id3(b"\x00\x00\x01\x00") + FRAMES).audio_offset == 10 + 128
+    with pytest.raises(InvalidMedia):
+        inspect(_id3(b"\x00\x00\x00\x80") + b"\x00" * 128 + FRAMES)  # 0x80: not synchsafe
+
+
+def test_an_id3v24_footer_is_skipped() -> None:
+    tag = _id3(b"\x00\x00\x00\x10", version=4, flags=0x10, footer=True)
+    assert inspect(tag + FRAMES).audio_offset == len(tag)
+
+
+def test_at_most_four_id3_tags_are_skipped() -> None:
+    tag = _id3(b"\x00\x00\x00\x10")
+    assert inspect(tag * 4 + FRAMES).audio_offset == 4 * len(tag)
+    with pytest.raises(InvalidMedia):
+        inspect(tag * 5 + FRAMES)
+
+
+def test_at_most_64_kib_of_padding_before_the_first_frame() -> None:
+    assert inspect(mf.id3v2() + b"\x00" * (64 * 1024 - 1) + FRAMES).channels == 1
+    with pytest.raises(InvalidMedia):
+        inspect(mf.id3v2() + b"\x00" * (64 * 1024 + 1) + FRAMES)
+
+
+def test_an_apev2_tag_with_a_header_is_accepted() -> None:
+    items = b"\x00" * 40
+    size = len(items) + 32  # the items and the footer, not the header
+    flags = struct.pack("<I", 0x80000000)
+    header = b"APETAGEX" + struct.pack("<III", 2000, size, 0) + flags + b"\x00" * 8
+    footer = b"APETAGEX" + struct.pack("<III", 2000, size, 0) + flags + b"\x00" * 8
+    assert inspect(FRAMES + header + items + footer).channels == 1
+
+
+def test_an_id3_tag_reaching_the_end_is_truncated() -> None:
+    with pytest.raises(InvalidMedia) as exc:
+        inspect(mf.id3v2(declared=50_000_000) + FRAMES)
+    assert exc.value.detail == "truncated"

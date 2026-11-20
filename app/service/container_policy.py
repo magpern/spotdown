@@ -111,10 +111,11 @@ def inspect_wav(read: Read, size: int) -> Container:
         raise InvalidMedia("data after the wav chunk")
     fmt: Optional[Tuple[int, int, int, int]] = None
     data_size: Optional[int] = None
-    pos = 12
-    for _ in range(_WAV_MAX_CHUNKS):
-        if pos + 8 > riff_end:
-            break
+    pos, chunks = 12, 0
+    while pos + 8 <= riff_end:
+        chunks += 1
+        if chunks > _WAV_MAX_CHUNKS:
+            raise InvalidMedia("too many chunks")
         cid = exact(read, pos, 8)
         name, length = cid[:4], struct.unpack("<I", cid[4:8])[0]
         body_at = pos + 8
@@ -129,8 +130,6 @@ def inspect_wav(read: Read, size: int) -> Container:
                 raise InvalidMedia("data chunk out of order")
             data_size = length
         pos = body_at + length + (length & 1)
-    else:
-        raise InvalidMedia("too many chunks")
     if fmt is None or data_size is None:
         raise InvalidMedia("no audio data")
     rate, channels, bits, align = fmt

@@ -139,3 +139,82 @@ def test_fuzzed_containers_only_raise_invalid_media(media: str) -> None:
             continue
         assert got.media == media and 1 <= got.channels <= 8
         assert 8000 <= got.sample_rate_hz <= 192000
+
+
+def test_exactly_64_chunks_are_allowed_and_65_are_not() -> None:
+    junk = b"junk" + struct.pack("<I", 0)
+    assert wav_of(mf.wav(chunks=[junk] * 62)).channels == 1  # fmt + 62 + data = 64
+    with pytest.raises(InvalidMedia):
+        wav_of(mf.wav(chunks=[junk] * 63))
+
+
+# ---- one case per rule, built so that rule alone refuses it ----
+
+
+def chunk(name: bytes, body: bytes) -> bytes:
+    return name + struct.pack("<I", len(body)) + body + b"\x00" * (len(body) & 1)
+
+
+def riff(*chunks: bytes) -> bytes:
+    body = b"WAVE" + b"".join(chunks)
+    return b"RIFF" + struct.pack("<I", len(body)) + body
+
+
+FMT = struct.pack("<HHIIHH", 1, 1, 8000, 16000, 2, 16)
+DATA = chunk(b"data", b"\x00" * 800)
+
+
+def test_the_rule_cases_are_valid_without_the_fault() -> None:
+    assert wav_of(riff(chunk(b"fmt ", FMT), DATA)).duration_s == pytest.approx(0.05)
+    assert wav_of(riff(chunk(b"fmt ", FMT + b"\x00" * 2), DATA)).channels == 1  # cbSize
+
+
+@pytest.mark.parametrize(
+    "name,data",
+    [
+        ("fmt_shorter_than_16", riff(chunk(b"fmt ", FMT[:14]), DATA)),
+        ("fmt_longer_than_256", riff(chunk(b"fmt ", FMT + b"\x00" * 290), DATA)),
+        ("a_second_valid_fmt", riff(chunk(b"fmt ", FMT), chunk(b"fmt ", FMT), DATA)),
+        ("data_before_fmt", riff(DATA, chunk(b"fmt ", FMT))),
+        ("two_data_chunks", riff(chunk(b"fmt ", FMT), DATA, DATA)),
+        ("fmt_without_data", riff(chunk(b"fmt ", FMT), chunk(b"junk", b"\x00" * 8))),
+    ],
+)
+def test_each_wav_layout_rule(name: str, data: bytes) -> None:
+    with pytest.raises(InvalidMedia):
+        wav_of(data)
+
+
+def test_an_extensible_fmt_needs_the_pcm_or_float_guid() -> None:
+    def ext(tail: bytes) -> bytes:
+        fmt = struct.pack("<HHIIHH", 0xFFFE, 1, 8000, 16000, 2, 16)
+        fmt += struct.pack("<HHI", 22, 16, 0x4) + struct.pack("<H", 1) + tail
+        return riff(chunk(b"fmt ", fmt), DATA)
+
+    guid = b"\x00\x00\x00\x00\x10\x00\x80\x00\x00\xaa\x00\x38\x9b\x71"
+    assert wav_of(ext(guid)).channels == 1
+    with pytest.raises(InvalidMedia):  # the same sub-format code under another GUID
+        wav_of(ext(b"\x11" + guid[1:]))
+
+
+def test_exact_refuses_a_short_read() -> None:
+    from app.service.container_policy import exact
+
+    assert exact(reader(b"abcd"), 1, 3) == b"bcd"
+    with pytest.raises(InvalidMedia):
+        exact(reader(b"abcd"), 2, 3)
+
+
+def test_an_empty_file_is_refused_as_empty() -> None:
+    for media in ("wav", "mp3", "mp4"):
+        with pytest.raises(InvalidMedia) as exc:
+            container_io.inspect(media, reader(b""), 0, 1200.0)
+        assert exc.value.detail == "empty file"
+
+
+def test_a_decoders_stream_must_be_riff_and_name_fmt_first() -> None:
+    head = mf.wav(rate=44100, channels=2, seconds=0, data_size=0xFFFFFFFF, riff_size=0)
+    with pytest.raises(InvalidMedia):
+        stream_wav_header(b"RIFX" + head[4:])
+    with pytest.raises(InvalidMedia):
+        stream_wav_header(head[:12] + chunk(b"data", b"") + head[12:36])

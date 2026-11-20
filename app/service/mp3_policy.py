@@ -49,10 +49,12 @@ def frame_header(b: bytes) -> Optional[Tuple[int, int, int, int, int]]:
 
 def _skip_id3v2(read: Read, size: int) -> int:
     pos = 0
-    for _ in range(_MAX_ID3_TAGS):
+    for seen in range(_MAX_ID3_TAGS + 1):
         head = read(pos, 10)
         if head[:3] != b"ID3":
             return pos
+        if seen == _MAX_ID3_TAGS:
+            break
         if len(head) < 10 or head[3] not in (2, 3, 4) or any(x & 0x80 for x in head[6:10]):
             raise InvalidMedia("bad id3 tag")
         tag = (head[6] << 21) | (head[7] << 14) | (head[8] << 7) | head[9]
@@ -94,14 +96,14 @@ def inspect_mp3(read: Read, size: int, max_decoded_s: float) -> Container:
     first = frame_header(read(start, 4))
     if first is None:
         raise InvalidMedia("no mpeg frame")
-    version, rate, channels = first[0], first[1], first[2]
+    rate, channels = first[1], first[2]  # the rate tables of the versions are disjoint
     cap = max_decoded_s + DURATION_SLACK_S
     pos, samples = start, 0
     while pos < size:
         header = frame_header(read(pos, 4))
         if header is None:
             break
-        if header[0] != version or header[1] != rate:
+        if header[1] != rate:  # also catches another MPEG version (disjoint rates)
             raise InvalidMedia("inconsistent mpeg frames")
         if pos + header[3] > size:
             raise InvalidMedia("truncated")

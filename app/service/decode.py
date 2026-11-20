@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import List, Tuple
 
@@ -22,6 +23,7 @@ from .container_policy import Container, InvalidMedia, stream_wav_header
 _SF_FORMATS = {"wav": ("WAV", "WAVEX"), "mp3": ("MP3",)}
 _PIPE_HEADER_MAX = 4096
 _EXTRA_S = 1.0
+FFMPEG_MARGIN_S = 0.5
 
 
 class DecodeTimeout(Exception):
@@ -43,8 +45,9 @@ def _soundfile(path: Path, container: Container, cap_s: float) -> np.ndarray:
 
 
 def ffmpeg_argv(ffmpeg: str, path: Path, cap_s: float) -> List[str]:
-    """Input options pin the demuxer (``-f mov``), the protocol (local file) and data references
-    (off); the output is at most ``cap_s + 1`` s of the first audio stream as 16-bit WAV."""
+    """Input options pin the demuxer (``-f mov``), the decoder (``-c:a aac``: a stream of any other
+    codec fails instead of being decoded), the protocol (local file) and data references (off); the
+    output is at most ``cap_s + 1`` s of the first audio stream as 16-bit WAV."""
     return [
         ffmpeg,
         "-nostdin",
@@ -59,6 +62,8 @@ def ffmpeg_argv(ffmpeg: str, path: Path, cap_s: float) -> List[str]:
         "0",
         "-f",
         "mov",
+        "-c:a",
+        "aac",
         "-i",
         "file:" + str(path),
         "-map",
@@ -94,10 +99,12 @@ def pcm_from_wav_stream(out: bytes) -> Tuple[np.ndarray, int]:
     return y, rate
 
 
-def _ffmpeg(path: Path, cap_s: float, timeout_s: float) -> Tuple[np.ndarray, int]:
+def _ffmpeg(path: Path, cap_s: float, deadline: float) -> Tuple[np.ndarray, int]:
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         raise InvalidMedia("no mp4 decoder")
+    # Ends ffmpeg a little before the caller's alarm would end the whole child.
+    timeout_s = deadline - time.monotonic() - FFMPEG_MARGIN_S
     try:
         done = subprocess.run(
             ffmpeg_argv(ffmpeg, path, cap_s),
@@ -115,14 +122,15 @@ def _ffmpeg(path: Path, cap_s: float, timeout_s: float) -> Tuple[np.ndarray, int
 
 
 def decode(
-    path: Path, container: Container, sr: int, cap_s: float, decode_s: float
+    path: Path, container: Container, sr: int, cap_s: float, deadline: float
 ) -> Tuple[np.ndarray, int]:
     """Mono samples at ``sr``, as ``librosa.load`` returns them; DecodeTimeout or InvalidMedia.
-    ``decode_s`` bounds the ffmpeg process; the caller's alarm bounds the whole decode."""
+    ``deadline`` (``time.monotonic``) is the caller's alarm: the ffmpeg process is stopped just
+    before it (DecodeTimeout); a libsndfile decode is ended by the alarm itself."""
     import librosa
 
     if container.media == "mp4":
-        y, native = _ffmpeg(path, cap_s, decode_s)
+        y, native = _ffmpeg(path, cap_s, deadline)
     else:
         y, native = _soundfile(path, container, cap_s), container.sample_rate_hz
     if y.size == 0:
