@@ -23,17 +23,22 @@ client → FastAPI ──enqueue──> Redis ──> RQ worker
 
 ## ⚠️ Legal — read this
 
-Spotify streams are DRM-protected; this server (like SpotMate) uses Spotify **only for
-metadata**. The actual audio would come from a third-party source via `yt-dlp`.
-**Downloading copyrighted audio you do not have the rights to infringes copyright and
-violates Spotify's and the source site's Terms of Service.** Operating such a service
-publicly carries real legal exposure.
+**The audio never comes from Spotify.** Spotify streams are DRM-protected, so this server
+(like SpotMate) uses Spotify **only for metadata** — title, artist, album, duration, ISRC.
+To get an actual file, it takes that metadata, **searches YouTube**, and downloads the
+matching audio with `yt-dlp`, then transcodes it. So a "Spotify download" is really:
+*use Spotify to identify the song → fetch the audio from YouTube.*
 
-Because of that, **`yt-dlp` sourcing from a Spotify URL is OFF by default**
-(`ALLOW_YTDLP_SOURCING=false`). The pipeline is identical for lawful inputs — content you
-own, Creative-Commons / public-domain audio, licensed material, your own uploads, podcasts
-with permission. Test it with `source_url` pointing at such content. You are responsible
-for how you use this.
+**Downloading copyrighted audio you do not have the rights to infringes copyright and
+violates YouTube's and Spotify's Terms of Service.** Operating such a service publicly
+carries real legal exposure.
+
+Because of that, the **YouTube-sourcing path is OFF by default** (`ALLOW_YTDLP_SOURCING=false`):
+with it off, a Spotify link resolves metadata only and the convert step refuses. The pipeline
+is identical for lawful inputs, which you drive through the `source_url` field instead — a
+direct URL to content you own / Creative-Commons / public-domain / licensed / your own uploads
+/ podcasts with permission. `source_url` bypasses Spotify and the YouTube search entirely and
+just downloads the URL you give it. You are responsible for how you use this.
 
 ## Run it
 
@@ -68,7 +73,8 @@ rq worker -u redis://localhost:6379/0 spotdown   # worker (separate terminal)
 curl -s -X POST localhost:8000/api/v1/convert \
   -H 'content-type: application/json' \
   -d '{"source_url":"https://example.com/my-own-audio.wav","format":"mp3","bitrate":320}'
-# -> {"status":"queued","task_id":"src_...:mp3:320", ...}
+# -> {"status":"queued","task_id":"src_...-mp3-320", ...}
+# (source_url is an API-only path; the web UI exposes only the Spotify-link flow.)
 
 # 2) poll until done
 curl -s localhost:8000/api/v1/tasks/<task_id>
