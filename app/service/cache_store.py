@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 from . import cache_policy as policy
 from . import idempotency_policy as idem
 from .cache_policy import CacheEntry
+from .retention_store import touch_global
 from .sqlite_base import SqliteBase
 
 _ENTRY_COLUMNS = "a.analysis_id, a.cache_scope, a.sha256, a.analyzer_version, a.fingerprint"
@@ -42,7 +43,7 @@ def insert_analysis(
     fields = policy.index_fields(doc)
     conn.execute(
         "INSERT INTO analyses (analysis_id, cache_scope, doc, created_at, sha256, fingerprint,"
-        " analyzer_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        " analyzer_version, last_read_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             analysis_id,
             scope,
@@ -51,6 +52,7 @@ def insert_analysis(
             fields.sha256,
             fields.fingerprint,
             fields.analyzer_version,
+            now,
         ),
     )
     put_link(conn, fields.source_kind, fields.source_ref, scope, analysis_id, now)
@@ -97,7 +99,9 @@ class CacheStore(SqliteBase):
                 " WHERE a.cache_scope IS NULL AND a.sha256 = ?",
                 (sha256,),
             ).fetchall()
-        hits = [e for e in map(_entry, rows) if policy.usable(e, None, version)]
+            hits = [e for e in map(_entry, rows) if policy.usable(e, None, version)]
+            if hits:
+                touch_global(conn, hits[0].analysis_id, self.clock())
         return hits[0] if hits else None
 
     def find_by_source(
@@ -111,16 +115,21 @@ class CacheStore(SqliteBase):
                 " WHERE l.source_kind = ? AND l.source_ref = ? AND l.scope_key = ?",
                 (kind, ref, key),
             ).fetchone()
-        found = _entry(row) if row else None
-        return policy.source_hit(found, kind=kind, cache_scope=scope, analyzer_version=version)
+            found = _entry(row) if row else None
+            hit = policy.source_hit(found, kind=kind, cache_scope=scope, analyzer_version=version)
+            if hit is not None and hit.scope is None:
+                touch_global(conn, hit.analysis_id, self.clock())
+        return hit
 
     def get_analysis_in_scope(self, analysis_id: str, scope: Optional[str]) -> Optional[Dict]:
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT cache_scope, doc FROM analyses WHERE analysis_id = ?", (analysis_id,)
             ).fetchone()
-        if row is None or not policy.readable_in(row["cache_scope"], scope):
-            return None
+            if row is None or not policy.readable_in(row["cache_scope"], scope):
+                return None
+            if row["cache_scope"] is None:
+                touch_global(conn, analysis_id, self.clock())
         return json.loads(row["doc"])
 
     # ---- idempotency ----

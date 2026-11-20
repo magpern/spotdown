@@ -8,6 +8,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .service.cache_policy import GLOBAL_REFERENCE_TTL_S
+from .service.retention_policy import ANALYSIS_UNUSED_TTL_S
 
 
 class Settings(BaseSettings):
@@ -57,6 +58,10 @@ class Settings(BaseSettings):
     # Expired rows are never served and are purged. At least a minute: a lifetime of 0 would
     # expire an alignment the moment a job ends on it.
     global_reference_ttl_s: float = Field(default=GLOBAL_REFERENCE_TTL_S, ge=60)
+
+    # A global (public-source) analysis, its source links and match record are purged after this
+    # long without a read, or when the analyzer version changes (ADR 0040 §7). At least a day.
+    global_analysis_ttl_s: float = Field(default=ANALYSIS_UNUSED_TTL_S, ge=86400)
 
     @property
     def files_dir(self) -> Path:

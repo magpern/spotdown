@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS analyses (
     created_at       REAL NOT NULL,
     sha256           TEXT,
     fingerprint      TEXT,
-    analyzer_version TEXT
+    analyzer_version TEXT,
+    last_read_at     REAL
 );
 CREATE TABLE IF NOT EXISTS source_links (
     source_kind TEXT NOT NULL,
@@ -66,6 +67,9 @@ def create(conn: sqlite3.Connection) -> None:
     for column in _ANALYSES_COLUMNS:
         if column not in have:
             conn.execute(f"ALTER TABLE analyses ADD COLUMN {column} TEXT")
+    if "last_read_at" not in have:  # retention (ADR 0040 §7): an older row counts from creation
+        conn.execute("ALTER TABLE analyses ADD COLUMN last_read_at REAL")
+        conn.execute("UPDATE analyses SET last_read_at = created_at WHERE last_read_at IS NULL")
     # The aligned analysis id (spotdown#11); an alignments table of spotdown#5 lacks it.
     if "analysis_id" not in {row[1] for row in conn.execute("PRAGMA table_info(alignments)")}:
         conn.execute("ALTER TABLE alignments ADD COLUMN analysis_id TEXT")

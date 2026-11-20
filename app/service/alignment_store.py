@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from . import cache_policy as policy
 from .alignment_doc import AlignedRow, build, cache_key, compose
+from .retention_store import touch_global
 from .sqlite_base import SqliteBase
 
 
@@ -116,7 +116,7 @@ class AlignmentStore(SqliteBase):
                 return None
             row_scope = found["cache_scope"] or None
             if row_scope is None and policy.expired_global(
-                found["created_at"], time.time(), self.global_ttl_s
+                found["created_at"], self.clock(), self.global_ttl_s
             ):
                 return None
             row = _row(found["doc"])
@@ -126,6 +126,8 @@ class AlignmentStore(SqliteBase):
                 "SELECT cache_scope, doc FROM analyses WHERE analysis_id = ?",
                 (row.base_analysis_id,),
             ).fetchone()
-        if base is None or base["cache_scope"] != row_scope:
-            return None
+            if base is None or base["cache_scope"] != row_scope:
+                return None
+            if row_scope is None:  # reading a global alignment is a read of its analysis
+                touch_global(conn, row.base_analysis_id, self.clock())
         return compose(json.loads(base["doc"]), row)

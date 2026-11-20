@@ -12,13 +12,14 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from . import cache_schema, match_store, upload_store
 from .alignment_store import Aligning, AlignmentStore, aligning_for, store_aligned
 from .cache_policy import GLOBAL_REFERENCE_TTL_S
 from .cache_store import CacheStore, insert_analysis, put_link
 from .match_store import MatchStore
+from .retention_store import RetentionStore
 from .upload_store import UploadStore
 
 _SCHEMA = """
@@ -48,9 +49,14 @@ def _reference(job: Dict[str, Any]) -> Optional[str]:
     return json.dumps(ref, sort_keys=True) if ref is not None else None
 
 
-class Store(CacheStore, AlignmentStore, MatchStore, UploadStore):
-    def __init__(self, path: Path, global_ttl_s: float = GLOBAL_REFERENCE_TTL_S) -> None:
-        super().__init__(path, global_ttl_s)
+class Store(CacheStore, AlignmentStore, MatchStore, RetentionStore, UploadStore):
+    def __init__(
+        self,
+        path: Path,
+        global_ttl_s: float = GLOBAL_REFERENCE_TTL_S,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        super().__init__(path, global_ttl_s, clock)
         with self._conn() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             upload_store.create(conn)

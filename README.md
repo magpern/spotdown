@@ -60,7 +60,10 @@ read from the file in `SERVICE_KEY_FILE` (the service refuses to start without i
   `processing_failed` and the worker carries on. Temporary audio is deleted after every job; a job
   whose worker was killed is failed (`timeout`) once past its lease and its audio swept.
 - Global rows holding a catalogue-derived reference (a chosen video's match record, a YouTube
-  alignment) expire after `GLOBAL_REFERENCE_TTL_S` (default 3 days).
+  alignment) expire after `GLOBAL_REFERENCE_TTL_S` (default 3 days). Global analyses and their links
+  are purged after `GLOBAL_ANALYSIS_TTL_S` (default 90 days) without a read or when the analyzer
+  version changes; a takedown by source is `python -m app.service.takedown youtube:<video id>`
+  (operator command, counts only; docs/contract-v2.md, "Retention of global analyses").
 - **YouTube (off by default).** With `ALLOW_YTDLP_SOURCING=true`, `POST /v2/match` turns
   `{title, artists, duration_s, isrc?}` into ranked YouTube candidates (recording-match confidence,
   band, duration check, up to 2 alternates; no download), and `POST /v2/analyses` accepts
