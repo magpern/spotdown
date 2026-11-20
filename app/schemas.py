@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class TrackMeta(BaseModel):
     """Normalized track metadata. `id` is the cache key (track_id)."""
 
-    id: str                      # e.g. spotify track id, or a hash for source_url jobs
+    id: str  # e.g. spotify track id, or a hash for source_url jobs
     title: str
     artists: List[str] = []
     album: Optional[str] = None
@@ -28,21 +28,21 @@ class TrackMeta(BaseModel):
 
 class ConvertRequest(BaseModel):
     # Provide exactly one of these:
-    spotify_url: Optional[str] = None       # resolves metadata, then sources audio (gated)
-    source_url: Optional[str] = None        # a direct URL you have the right to download
+    spotify_url: Optional[str] = None  # resolves metadata, then sources audio (gated)
+    source_url: Optional[str] = None  # a direct URL you have the right to download
 
     bitrate: Optional[int] = Field(default=None, ge=64, le=320)
     format: Optional[str] = Field(default=None, pattern="^(mp3|m4a)$")
 
 
 class ConvertResponse(BaseModel):
-    status: str                              # "done" | "queued"
+    status: str  # "done" | "queued"
     task_id: Optional[str] = None
     download_url: Optional[str] = None
     track: Optional[TrackMeta] = None
 
 
 class TaskStatus(BaseModel):
-    status: str                              # queued | processing | done | failed
+    status: str  # queued | processing | done | failed
     download_url: Optional[str] = None
     error: Optional[str] = None

@@ -1,3 +1,5 @@
+# pyright: reportPrivateImportUsage=false
+# (mutagen.id3 re-exports its frame classes without __all__; the imports are valid.)
 from __future__ import annotations
 
 import subprocess
@@ -23,9 +25,11 @@ def transcode(src: Path, dest: Path, fmt: str, bitrate: int) -> Path:
         raise TranscodeError(f"Unsupported format: {fmt}")
 
     cmd = [
-        "ffmpeg", "-y",
-        "-i", str(src),
-        "-vn",                       # drop any video stream
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(src),
+        "-vn",  # drop any video stream
         *codec_args,
         str(dest),
     ]

@@ -58,9 +58,7 @@ def get_done(vid: str) -> Optional[dict]:
     """Return a cached finished conversion for this exact variant whose file still exists."""
     settings = get_settings()
     with _conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM downloads WHERE variant_id = ?", (vid,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM downloads WHERE variant_id = ?", (vid,)).fetchone()
     if not row:
         return None
     if not (settings.files_dir / row["file_name"]).exists():

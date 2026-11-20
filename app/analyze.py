@@ -5,6 +5,7 @@ beat-synchronous structural segments with heuristic labels. Everything is on the
 *analyzed file's* timeline; the result reports how that compares to Spotify's
 duration so a downstream consumer can tell whether timestamps line up.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -50,8 +51,9 @@ def _snap(ts: float, arr: np.ndarray) -> float:
     return round(float(arr[j]), 3)
 
 
-def _rising_edges(e: np.ndarray, grid: np.ndarray, hi: float, lo: float,
-                  min_gap: float = 8.0) -> List[float]:
+def _rising_edges(
+    e: np.ndarray, grid: np.ndarray, hi: float, lo: float, min_gap: float = 8.0
+) -> List[float]:
     """Times where a (0-1) energy signal jumps from below `lo` to above `hi`."""
     es = np.convolve(e, np.ones(3) / 3.0, mode="same")
     out: List[float] = []
@@ -89,8 +91,9 @@ def _cluster_groups(seg_feats: List[np.ndarray]) -> List[int]:
         return [0] * len(seg_feats)
 
 
-def _quiet_region_edges(grid: np.ndarray, e: np.ndarray,
-                        thresh: float = 0.15, min_len: float = 3.0) -> List[float]:
+def _quiet_region_edges(
+    grid: np.ndarray, e: np.ndarray, thresh: float = 0.15, min_len: float = 3.0
+) -> List[float]:
     """Start/end times of low-energy runs — catches empty intros/breakdowns even
     where the beat tracker finds no beats (so beat-based segmentation can't resolve them)."""
     edges: List[float] = []
@@ -114,16 +117,19 @@ def _quiet_region_edges(grid: np.ndarray, e: np.ndarray,
 MIN_SEG_S = 2.0
 
 
-def _segments(y, sr, beat_frames, beat_times, duration, grid, e_full, e_struct,
-              struct_frames, drops) -> list:
+def _segments(
+    y, sr, beat_frames, beat_times, duration, grid, e_full, e_struct, struct_frames, drops
+) -> list:
     if len(beat_frames) < 6:
         return []
     chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=HOP)
     mfcc = librosa.feature.mfcc(y=y, sr=sr, hop_length=HOP, n_mfcc=13)
-    feat = np.vstack([
-        librosa.util.normalize(chroma, axis=0),
-        librosa.util.normalize(mfcc, axis=0),
-    ])
+    feat = np.vstack(
+        [
+            librosa.util.normalize(chroma, axis=0),
+            librosa.util.normalize(mfcc, axis=0),
+        ]
+    )
     fsync = librosa.util.sync(feat, beat_frames, aggregate=np.mean)
     n = fsync.shape[1]
     if n < 3:
@@ -176,10 +182,14 @@ def _segments(y, sr, beat_frames, beat_times, duration, grid, e_full, e_struct,
         cmask = (col_center >= st) & (col_center < en)
         segf = fsync[:, cmask].mean(axis=1) if cmask.any() else np.zeros(fsync.shape[0])
         seg_feats.append(segf)
-        raw.append({
-            "start": round(st, 3), "end": round(en, 3),
-            "energy_full": round(ef, 3), "energy_struct": round(es, 3),
-        })
+        raw.append(
+            {
+                "start": round(st, 3),
+                "end": round(en, 3),
+                "energy_full": round(ef, 3),
+                "energy_struct": round(es, 3),
+            }
+        )
     if not raw:
         return []
 
@@ -193,8 +203,7 @@ def _segments(y, sr, beat_frames, beat_times, duration, grid, e_full, e_struct,
     return raw
 
 
-def analyze_track(file_path: Path, track_id: str,
-                  spotify_duration_s: Optional[int] = None) -> dict:
+def analyze_track(file_path: Path, track_id: str, spotify_duration_s: Optional[int] = None) -> dict:
     y, sr = librosa.load(str(file_path), sr=SR, mono=True)
     duration = float(librosa.get_duration(y=y, sr=sr))
 
@@ -220,7 +229,7 @@ def analyze_track(file_path: Path, track_id: str,
     rms_perc = librosa.feature.rms(y=y_p, hop_length=HOP)[0]
     mel = librosa.feature.melspectrogram(y=y, sr=sr, hop_length=HOP, n_mels=64, fmax=4000)
     mel_f = librosa.mel_frequencies(n_mels=64, fmax=4000)
-    low_mask = mel_f[:mel.shape[0]] < 150
+    low_mask = mel_f[: mel.shape[0]] < 150
     low_energy = mel[low_mask, :].mean(axis=0) if low_mask.any() else rms_perc
     t_frames = librosa.times_like(rms_full, sr=sr, hop_length=HOP)
 
@@ -235,8 +244,12 @@ def analyze_track(file_path: Path, track_id: str,
     struct_frames = _norm95(0.5 * _norm95(rms_perc[:_m]) + 0.5 * _norm95(low_energy[:_m]))
 
     energy_curve = [
-        {"t": float(t), "full": round(float(a), 3),
-         "percussive": round(float(b), 3), "low": round(float(c), 3)}
+        {
+            "t": float(t),
+            "full": round(float(a), 3),
+            "percussive": round(float(b), 3),
+            "low": round(float(c), 3),
+        }
         for t, a, b, c in zip(grid, e_full, e_perc, e_low)
     ]
 
@@ -254,8 +267,7 @@ def analyze_track(file_path: Path, track_id: str,
     # Drops: rising edges detected on the LOW band (bass drops) and the PERCUSSIVE
     # band (beat drops) separately, then merged — averaging the two hides bass-only drops.
     raw_drops = sorted(
-        _rising_edges(e_low, grid, hi=0.5, lo=0.25)
-        + _rising_edges(e_perc, grid, hi=0.6, lo=0.35)
+        _rising_edges(e_low, grid, hi=0.5, lo=0.25) + _rising_edges(e_perc, grid, hi=0.6, lo=0.35)
     )
     drops: List[float] = []
     for d in raw_drops:
@@ -274,8 +286,9 @@ def analyze_track(file_path: Path, track_id: str,
         if di - s >= 3:
             build_ups.append({"start": round(float(grid[max(s, 0)]), 3), "end": round(float(d), 3)})
 
-    segments = _segments(y, sr, beat_frames, beat_times, duration, grid,
-                         e_full, e_struct, struct_frames, drops)
+    segments = _segments(
+        y, sr, beat_frames, beat_times, duration, grid, e_full, e_struct, struct_frames, drops
+    )
 
     # Alignment. Spotify may or may not keep edge silence, so try two hypotheses:
     #   1) file length already matches Spotify  -> offset 0 (common for "- Topic" masters)
@@ -294,8 +307,7 @@ def analyze_track(file_path: Path, track_id: str,
         matches, align_offset, residual = None, content_start, None
 
     # Spotify-clock cue points / segment edges — only meaningful when aligned.
-    drops_spotify = ([round(max(d - align_offset, 0.0), 3) for d in drops]
-                     if matches else None)
+    drops_spotify = [round(max(d - align_offset, 0.0), 3) for d in drops] if matches else None
     if matches:
         for s in segments:
             s["start_spotify"] = round(max(s["start"] - align_offset, 0.0), 3)

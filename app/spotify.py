@@ -86,9 +86,7 @@ def resolve(url: str) -> List[TrackMeta]:
 
     if token is None:
         if kind != "track":
-            raise SpotifyError(
-                "Set SPOTIFY_CLIENT_ID/SECRET to resolve playlists or albums"
-            )
+            raise SpotifyError("Set SPOTIFY_CLIENT_ID/SECRET to resolve playlists or albums")
         return [_oembed_fallback(url, sid)]
 
     headers = {"Authorization": f"Bearer {token}"}

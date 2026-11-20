@@ -8,12 +8,12 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 
-STATIC_DIR = Path(__file__).parent / "static"
-
 from . import db, jobs, spotify
 from .config import get_settings
 from .queue import get_queue, get_redis
 from .schemas import ConvertRequest, ConvertResponse, TaskStatus, TrackMeta
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -96,7 +96,7 @@ def convert(req: ConvertRequest) -> ConvertResponse:
         meta = tracks[0]
         source_url = ""
     else:
-        tid = "src_" + hashlib.sha1(req.source_url.encode()).hexdigest()[:16]
+        tid = "src_" + hashlib.sha1((req.source_url or "").encode()).hexdigest()[:16]
         meta = TrackMeta(id=tid, title=tid)
         source_url = req.source_url
 
@@ -105,6 +105,7 @@ def convert(req: ConvertRequest) -> ConvertResponse:
     cached = db.get_done(vid)
     if cached:
         from . import storage
+
         return ConvertResponse(
             status="done",
             download_url=storage.public_url(cached["file_name"]),
@@ -125,8 +126,8 @@ def convert(req: ConvertRequest) -> ConvertResponse:
 
 @app.get("/api/v1/tasks/{task_id}", response_model=TaskStatus)
 def task_status(task_id: str) -> TaskStatus:
-    from rq.job import Job
     from rq.exceptions import NoSuchJobError
+    from rq.job import Job
 
     try:
         job = Job.fetch(task_id, connection=get_redis())
@@ -137,7 +138,8 @@ def task_status(task_id: str) -> TaskStatus:
     if status == "finished":
         return TaskStatus(status="done", download_url=job.result)
     if status == "failed":
-        return TaskStatus(status="failed", error=(job.latest_result().exc_string if job.latest_result() else "failed"))
+        latest = job.latest_result()
+        return TaskStatus(status="failed", error=(latest.exc_string if latest else "failed"))
     if status == "started":
         return TaskStatus(status="processing")
     return TaskStatus(status="queued")
