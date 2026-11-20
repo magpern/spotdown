@@ -66,7 +66,7 @@ def _youtube_ref(source_ref: str, settings: Any) -> str:
         raise ApiError(422, "invalid_request", "source_ref must be youtube:<video id>")
     if not settings.allow_ytdlp_sourcing:
         raise ApiError(422, "source_disabled", "this source is disabled in this deployment")
-    if not VIDEO_ID.match(ref):
+    if not VIDEO_ID.fullmatch(ref):
         raise ApiError(422, "invalid_request", "a youtube reference is an 11-character video id")
     return ref
 
@@ -204,7 +204,7 @@ def get_job(
     cache_scope: Optional[str] = Query(default=None, max_length=128),
 ) -> JSONResponse:
     found = None
-    if re.match(ID_PATTERN, job_id):
+    if re.fullmatch(ID_PATTERN, job_id):
         # Jobs are visible only in the scope that created them; a miss reveals nothing.
         found = store_of(request).get_job_in_scope(job_id, cache_scope)
     if found is None:

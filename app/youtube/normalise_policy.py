@@ -12,8 +12,9 @@ import re
 import unicodedata
 from typing import Dict, List, Optional, Sequence
 
-VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
-ISRC = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$")
+# Always used with fullmatch: "$" alone also matches before a final newline.
+VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
+ISRC = re.compile(r"[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
 
 # Phrase -> marker. Multi-word phrases first, so "slowed reverb" is not also two markers' parts.
 _MARKERS: Dict[str, str] = {
@@ -37,7 +38,25 @@ _MARKERS: Dict[str, str] = {
     "bass boosted": "bass_boosted",
     "mashup": "mashup",
     "demo": "demo",
+    "re recorded": "re_recorded",
+    "rerecorded": "re_recorded",
+    "re record": "re_recorded",
+    "version": "version",
+    "mix": "mix",
+    "edit": "edit",
+    "vip": "vip",
+    "rework": "rework",
+    "bootleg": "bootleg",
+    "lo fi": "lofi",
+    "lofi": "lofi",
+    "daycore": "daycore",
+    "piano": "piano",
 }
+# Qualifiers that name the release itself, not another recording: dropped before markers count.
+_NEUTRAL = re.compile(
+    r"\b(original mix|original version|album version|single version|"
+    r"(\d{4} )?remaster(ed)?( \d{4})? version)\b"
+)
 _MARKER_RE = re.compile(r"\b(" + "|".join(re.escape(p) for p in _MARKERS) + r")\b")
 
 _NOISE = re.compile(
@@ -65,6 +84,7 @@ def clean_title(text: str) -> str:
     """The title with featured artists and upload noise removed (markers are kept)."""
     folded = fold(text)
     folded = _FEAT.sub("", folded)
+    folded = _NEUTRAL.sub(" ", folded)
     folded = _NOISE.sub(" ", folded)
     return re.sub(r"\s+", " ", folded).strip()
 
@@ -72,7 +92,7 @@ def clean_title(text: str) -> str:
 def markers(text: str) -> Dict[str, int]:
     """How often each version marker occurs in the folded text."""
     counts: Dict[str, int] = {}
-    for found in _MARKER_RE.findall(fold(text)):
+    for found in _MARKER_RE.findall(_NEUTRAL.sub(" ", fold(text))):
         name = _MARKERS[found]
         counts[name] = counts.get(name, 0) + 1
     return counts
@@ -122,7 +142,7 @@ def normal_isrc(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
     cleaned = re.sub(r"[^A-Za-z0-9]", "", value).upper()
-    return cleaned if ISRC.match(cleaned) else None
+    return cleaned if ISRC.fullmatch(cleaned) else None
 
 
 def search_query(title: str, artists: Sequence[str]) -> str:

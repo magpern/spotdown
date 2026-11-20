@@ -2,9 +2,14 @@
 
 Hardening: only the ``youtube`` (and, for search, ``youtube:search``) extractors are loaded, so a
 crafted reference cannot reach another site; the download URL is built from a validated
-11-character video id, never taken from a search entry; no playlists, no post-processors, a size
-cap and a duration cap checked before any byte is fetched. yt-dlp's own messages go to a quiet
-logger and are only classified (``error_policy``), never logged: they can quote URLs.
+11-character video id, never taken from a search entry; no playlists. yt-dlp never runs ffmpeg
+on the downloaded bytes (outside the analysis sandbox): no post-processors, no fixups (yt-dlp's
+default would run ``FFmpegFixupM4a`` on YouTube's DASH m4a), no hooks, no merge, and only plain
+https formats, so no ffmpeg downloader for HLS or DASH manifests either. The duration and
+live-stream checks use the metadata before any byte is fetched; the size cap is yt-dlp's
+``max_filesize`` (plus the metadata size when it is known), checked again on the file. yt-dlp's
+own messages go to a quiet logger and are only classified (``error_policy``), never logged: they
+can quote URLs.
 
 Tests inject a fake ``factory`` in place of ``yt_dlp.YoutubeDL``; nothing here is ever run against
 YouTube by an agent or by CI.
@@ -22,7 +27,8 @@ from . import normalise_policy as norm
 
 Factory = Callable[[Dict[str, Any]], Any]
 SOCKET_TIMEOUT_S = 30
-_DOWNLOAD_FORMAT = "bestaudio[ext=m4a]/bestaudio[ext=mp3]"
+# Single audio-only formats over plain https: no merge, no manifest download through ffmpeg.
+_DOWNLOAD_FORMAT = "bestaudio[ext=m4a][protocol=https]/bestaudio[ext=mp3][protocol=https]"
 
 
 def download_opts(outtmpl: str, fmt: str = "bestaudio/best") -> Dict[str, Any]:
@@ -69,7 +75,19 @@ def _hardened(opts: Dict[str, Any], extractors: List[str]) -> Dict[str, Any]:
         "socket_timeout": SOCKET_TIMEOUT_S,
         "cachedir": False,
         "noplaylist": True,
+        # Nothing may run ffmpeg (or any other program) on the untrusted bytes in the worker.
         "postprocessors": [],
+        "fixup": "never",
+        "postprocessor_hooks": [],
+        "post_hooks": [],
+        "progress_hooks": [],
+        "hls_prefer_native": True,
+        "external_downloader": {},
+        "writethumbnail": False,
+        "writesubtitles": False,
+        "writeautomaticsub": False,
+        "writeinfojson": False,
+        "keepvideo": False,
     }
 
 
@@ -114,7 +132,7 @@ class YtDlpClient:
     ) -> Downloaded:
         """Downloads one video's audio into ``dest_dir`` as ``source.<ext>``. Raises
         ``JobFailure``; a partial file is left for the caller's work-directory cleanup."""
-        if not norm.VIDEO_ID.match(video_id):
+        if not norm.VIDEO_ID.fullmatch(video_id):
             raise JobFailure(Reason.SOURCE_REFUSED)
         dest_dir.mkdir(parents=True, exist_ok=True)
         opts = _hardened(

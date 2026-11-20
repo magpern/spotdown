@@ -23,7 +23,7 @@ def key_problem(value: Optional[str]) -> Optional[str]:
     """The error code for a missing or malformed key, or None."""
     if value is None or value == "":
         return "idempotency_key_required"
-    return None if _KEY.match(value) else "invalid_request"
+    return None if _KEY.fullmatch(value) else "invalid_request"
 
 
 def request_hash(endpoint: str, payload: Any) -> str:

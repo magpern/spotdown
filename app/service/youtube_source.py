@@ -52,7 +52,7 @@ def fetch_youtube(
 ) -> YoutubeAudio:
     if not settings.allow_ytdlp_sourcing:
         raise JobFailure(Reason.SOURCE_REFUSED)  # switched off after the job was accepted
-    if not video_id or not norm.VIDEO_ID.match(video_id):
+    if not video_id or not norm.VIDEO_ID.fullmatch(video_id):
         raise JobFailure(Reason.SOURCE_REFUSED)
     wait = match_policy.retry_after(store.backoff_until(match_policy.PROVIDER), clock())
     if wait is not None:

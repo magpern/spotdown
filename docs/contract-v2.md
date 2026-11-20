@@ -97,13 +97,16 @@ The matcher is the `youtube` source's (spotdown#10):
   `422 source_disabled`. `cache_scope` is optional; when given it only decides which cached
   analyses a candidate reports (a `youtube` analysis is global, so every scope sees it).
 - **Signals** (`matcher_version` `youtube-1`): positive are an equal ISRC (when the source exposes
-  one), a `- Topic` release channel or a verified/VEVO artist channel, and an equal normalised
-  title and artist; negative are a version marker on one side only (live, remix, acoustic,
-  unplugged, sped up, slowed, reverb, nightcore, cover, karaoke, instrumental, extended, radio
-  edit, 8D, bass boosted, mashup, demo), a different ISRC, and the duration. A marker mismatch or a
-  `rejected` duration caps the confidence below 0.6, so a wrong version is never `confident`; a
-  different ISRC caps it below 0.85; an upload with no channel signal and no equal ISRC is at most
-  0.8 (`uncertain`).
+  one), a `- Topic` release channel or a verified artist channel (a channel name alone, VEVO
+  included, is not a signal), and an equal normalised title and artist; negative are a version
+  marker on one side only (live, remix, mix, edit, version, re-recorded, acoustic, unplugged, sped
+  up, slowed, reverb, nightcore, daycore, cover, karaoke, instrumental, piano, extended, radio edit,
+  VIP, rework, bootleg, lo-fi, 8D, bass boosted, mashup, demo; "original mix", "album version" and
+  "remastered version" name the release itself and are not markers), a different ISRC, title words
+  the request lacks, and the duration. A marker mismatch or a `rejected` duration caps the
+  confidence below 0.6, so a wrong version is never `confident`; a different ISRC or extra title
+  words cap it below 0.85; an upload with no channel signal and no equal ISRC is at most 0.8
+  (`uncertain`).
 - **Status:** `matched` when the best candidate is `confident`, `uncertain` when it is `uncertain`,
   `not_found` when there is no candidate or the best is `not_same` (no `best`, no alternates).
   Alternates are the next candidates that are not `not_same`, at most two. A search entry without
@@ -146,8 +149,11 @@ Start an analysis. Exactly one of `upload_id`, `source_ref` (`<kind>:<ref>`, for
 `reference` is optional and requests an `alignment` object; `kind` is an open set.
 `source_ref` is `youtube:<11-character video id>` (nothing else: no URL, no other kind, `422
 invalid_request` otherwise); it is `422 source_disabled` unless `ALLOW_YTDLP_SOURCING=true`, and its
-`cache_scope` is optional. The worker downloads that one video's audio (size and duration caps
-checked on the metadata before any byte), analyses it, and stores the analysis **globally** with a
+`cache_scope` is optional. The worker downloads that one video's audio (a single audio-only https
+format; the duration and live-stream checks use the metadata before any byte; the size cap is
+yt-dlp's `max_filesize`, plus the metadata size when known, checked again on the file; yt-dlp runs
+no post-processor, fixup or hook, so ffmpeg only ever sees the bytes in the analysis sandbox),
+analyses it, and stores the analysis **globally** with a
 global source link, so every scope then gets it as a cache hit. After decoding, the measured file
 and silence-trimmed content durations are checked against the requested duration of the match
 that chose the video (or, without one, the video's metadata duration); above 5 s the job ends
@@ -219,7 +225,11 @@ absent or `heuristic` with a low confidence. `alignment.offset_s` means
 and no `cache_scope` or `client_ref` appears anywhere. `source.match` is the match record of the
 latest `/v2/match` that chose this video (normalised query, candidates with scores and duration
 deltas, choice, `matcher_version`): global public metadata, absent when the video was never
-matched. `source.decoded_duration_check` records the second duration check. The job record of the
+matched. `source.decoded_duration_check` (an optional field added to analysis-v1; a consumer
+validating against an older copy of the schema rejects it) records the second duration check.
+Known gaps, to be closed before the source is enabled: the latest match wins for `source.match` and
+the expected duration (`match_choices` has no lifetime yet), and a job that reuses a global analysis
+of equal bytes under another video id skips the decoded check. The job record of the
 caller who started it stays in that caller's scope.
 
 **Provenance** is kept after the audio is deleted, so a decision can be reproduced, caches

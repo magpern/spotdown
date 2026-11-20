@@ -28,6 +28,7 @@ CAP_MARKER_MISMATCH = 0.5
 CAP_DURATION_REJECTED = 0.55
 CAP_ISRC_DIFFERS = 0.84
 CAP_TITLE_DIFFERS = 0.59
+CAP_EXTRA_WORDS = 0.84  # a candidate title with words the requested one lacks: "Hello Goodbye"
 
 
 @dataclass(frozen=True)
@@ -92,7 +93,7 @@ def candidate_from_entry(entry: Any, rank: int) -> Optional[Candidate]:
         return None
     video_id = entry.get("id")
     duration = entry.get("duration")
-    if not isinstance(video_id, str) or not norm.VIDEO_ID.match(video_id):
+    if not isinstance(video_id, str) or not norm.VIDEO_ID.fullmatch(video_id):
         return None
     if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration <= 0:
         return None
@@ -110,13 +111,17 @@ def candidate_from_entry(entry: Any, rank: int) -> Optional[Candidate]:
     )
 
 
-def _title_similarity(wanted: Wanted, cand: Candidate) -> float:
+def _title_words(wanted: Wanted, cand: Candidate) -> Tuple[set, set]:
     want = set(norm.tokens(norm.clean_title(wanted.title)))
     have = set(norm.tokens(norm.clean_title(norm.candidate_title(cand.title, wanted.artists))))
+    return want, have
+
+
+def _title_similarity(want: set, have: set) -> float:
     if not want or not have:
         return 0.0
     common = len(want & have)
-    return 0.7 * common / len(want) + 0.3 * common / len(have)
+    return 0.6 * common / len(want) + 0.4 * common / len(have)
 
 
 def _artist_score(wanted: Wanted, cand: Candidate) -> float:
@@ -135,8 +140,8 @@ def _channel_score(wanted: Wanted, cand: Candidate) -> float:
         return 0.0
     if norm.is_topic_channel(cand.channel):
         return 1.0
-    # Anyone can name a channel after an artist: only a verified or VEVO one is official.
-    return 0.9 if cand.channel_verified or cand.channel.lower().endswith("vevo") else 0.0
+    # Anyone can name a channel after an artist (or "ArtistVEVO"): only a verified one counts.
+    return 0.9 if cand.channel_verified else 0.0
 
 
 def _marker_mismatch(wanted: Wanted, cand: Candidate) -> List[str]:
@@ -148,7 +153,8 @@ def _marker_mismatch(wanted: Wanted, cand: Candidate) -> List[str]:
 def score(wanted: Wanted, cand: Candidate) -> Scored:
     delta = round(cand.duration_s - wanted.duration_s, 3)
     check = duration_check(delta)
-    title = _title_similarity(wanted, cand)
+    want_words, have_words = _title_words(wanted, cand)
+    title = _title_similarity(want_words, have_words)
     artist = _artist_score(wanted, cand)
     channel = _channel_score(wanted, cand)
     dur = {"ok": 1.0 - 0.1 * abs(delta) / OK_S, "tolerable": 0.5, "rejected": 0.0}[check]
@@ -168,6 +174,8 @@ def score(wanted: Wanted, cand: Candidate) -> Scored:
         caps.append(CAP_ISRC_DIFFERS)
     if title < 0.5:
         caps.append(CAP_TITLE_DIFFERS)
+    if have_words - want_words:
+        caps.append(CAP_EXTRA_WORDS)
     confidence = round(max(0.0, min(value, *caps)), 3)
     signals = {
         "title": round(title, 3),
@@ -175,6 +183,7 @@ def score(wanted: Wanted, cand: Candidate) -> Scored:
         "channel": channel,
         "isrc_equal": isrc,
         "version_mismatch": mismatch,
+        "extra_words": sorted(have_words - want_words),
     }
     return Scored(cand, confidence, band_for(confidence), delta, check, signals)
 

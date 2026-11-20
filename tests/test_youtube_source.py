@@ -44,6 +44,8 @@ def test_the_source_is_off_by_default(tmp_path: Path, scope) -> None:
     [
         ("youtube:short", "invalid_request"),
         ("youtube:dQw4w9WgXcQx", "invalid_request"),
+        ("youtube:dQw4w9WgXcQ\n", "invalid_request"),
+        ("youtube:dQw4w9WgXcQ\r\n", "invalid_request"),
         ("youtube:https://www.youtube.com/watch?v=dQw4w9WgXcQ", "invalid_request"),
         ("youtube:../../etc/pas", "invalid_request"),
         ("spotify:4uLU6hMCjMI75M1A2tKUQC", "invalid_request"),
@@ -186,3 +188,23 @@ def test_no_audio_is_left_after_a_youtube_job(stack: YoutubeStack) -> None:
     stack.world.download_error = "ERROR: Video unavailable"
     stack.job(analyse(stack, ref="youtube:otherid0001"))
     assert audio_files(stack.settings) == []
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        {"source": "youtube:dQw4w9WgXcQ\n"},
+        {"sha256": "a" * 64 + "\n"},
+    ],
+)
+def test_lookups_refuse_a_trailing_newline(stack: YoutubeStack, query) -> None:
+    res = stack.lookup(SCOPE, **query)
+    assert res.status_code == 422 and res.json()["error"]["code"] == "invalid_request"
+
+
+def test_scopes_and_idempotency_keys_refuse_a_trailing_newline(stack: YoutubeStack) -> None:
+    res = stack.post({"cache_scope": SCOPE + "\n", "source_ref": SOURCE})
+    assert res.status_code == 422 and res.json()["error"]["code"] == "invalid_request"
+    res = stack.post({"source_ref": SOURCE}, key="key-1\n")
+    assert res.status_code == 422 and res.json()["error"]["code"] == "invalid_request"
+    assert stack.dispatch.job_ids == []

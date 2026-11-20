@@ -16,7 +16,7 @@ def scope_problem(value: Optional[str]) -> Optional[str]:
     """The error code for a ``cache_scope`` that a source requires, or None when it is valid."""
     if value is None or value == "":
         return "scope_required"
-    if not _SCOPE.match(value):
+    if not _SCOPE.fullmatch(value):
         return "invalid_request"
     return None
 

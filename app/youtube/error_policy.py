@@ -24,11 +24,12 @@ _RULES: Tuple[Tuple[re.Pattern[str], Reason], ...] = tuple(
             r"confirm your age|age.?restrict|inappropriate for some users|members.only|"
             r"requested format is not available|this live event|premieres? in|"
             r"copyright claim|account associated with this video has been terminated|"
-            r"http error 404|http error 410|http error 403",
+            r"http error 404|http error 410",
             Reason.SOURCE_MISSING,
         ),
         (
-            r"http error 5\d\d|unable to download|timed out|connection|network|"
+            # A 403 on YouTube media is usually throttling or a bot measure: retryable.
+            r"http error 403|http error 5\d\d|unable to download|timed out|connection|network|"
             r"temporary failure|name resolution|ssl|eof occurred",
             Reason.PROVIDER_ERROR,
         ),

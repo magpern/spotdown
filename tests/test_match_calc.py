@@ -20,16 +20,47 @@ def cand(title: str, channel: str = "Some Uploader", duration: float = 200.5, **
 
 
 # (title, channel, duration, extra, wanted, expected band or "never_confident")
+HELLO = calc.Wanted("Hello", ("Adele",), 295.0)
+LOVE_STORY = calc.Wanted("Love Story", ("Taylor Swift",), 235.0)
+
 CASES = [
+    # other versions named by a qualifier, and a longer title, from the release channel
+    ("Hello (Club Mix)", "Adele - Topic", 295.0, {}, HELLO, "never_confident"),
+    ("Hello (VIP Edit)", "Adele - Topic", 295.0, {}, HELLO, "never_confident"),
+    ("Hello (Piano Version)", "Adele - Topic", 295.0, {}, HELLO, "never_confident"),
+    ("Hello (Lofi Bootleg)", "Adele - Topic", 295.0, {}, HELLO, "never_confident"),
+    ("Hello Goodbye", "Adele - Topic", 295.0, {}, HELLO, "never_confident"),
+    (
+        "Love Story (Taylor's Version)",
+        "Taylor Swift - Topic",
+        235.0,
+        {},
+        LOVE_STORY,
+        "never_confident",
+    ),
+    ("Love Story (Re-Recorded)", "Taylor Swift - Topic", 235.0, {}, LOVE_STORY, "never_confident"),
+    # qualifiers that name the release itself stay confident
+    ("Hello (Original Mix)", "Adele - Topic", 295.0, {}, HELLO, "confident"),
+    ("Hello (Remastered Version)", "Adele - Topic", 295.0, {}, HELLO, "confident"),
+    ("Hello", "Adele - Topic", 295.0, {}, HELLO, "confident"),
     # the release master and the official channel are confident
     ("Blinding Lights", "The Weeknd - Topic", 200.4, {}, WANT_NO_ISRC, "confident"),
     (
         "The Weeknd - Blinding Lights (Official Audio)",
         "TheWeekndVEVO",
         201.0,
-        {},
+        {"channel_verified": True},
         WANT_NO_ISRC,
         "confident",
+    ),
+    # a VEVO name without verification is just a name
+    (
+        "The Weeknd - Blinding Lights (Official Audio)",
+        "TheWeekndVEVO",
+        201.0,
+        {},
+        WANT_NO_ISRC,
+        "uncertain",
     ),
     (
         "The Weeknd - Blinding Lights (Official Video)",
@@ -229,6 +260,7 @@ def test_decide_statuses() -> None:
         {"id": "aaaaaaaaaaa", "duration": 0},
         {"id": "aaaaaaaaaaa", "duration": 200, "live_status": "is_live"},
         {"id": "aaaaaaaaaa/", "duration": 200},
+        {"id": "aaaaaaaaaaa\n", "duration": 200},
         {"url": "https://www.youtube.com/watch?v=aaaaaaaaaaa", "duration": 200},
     ],
 )

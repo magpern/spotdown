@@ -38,7 +38,7 @@ def is_dns_name(host: str) -> bool:
     if not host or len(host) > 253 or host.endswith(".") or _is_ip_literal(host):
         return False
     labels = host.split(".")
-    return len(labels) >= 2 and all(_LABEL.match(label) for label in labels)
+    return len(labels) >= 2 and all(_LABEL.fullmatch(label) for label in labels)
 
 
 def _is_ip_literal(host: str) -> bool:

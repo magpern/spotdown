@@ -47,12 +47,41 @@ def test_download_builds_the_url_from_the_validated_id(tmp_path: Path) -> None:
     assert opts["allowed_extractors"] == ["youtube"]
     assert opts["max_filesize"] == 10_000 and opts["noplaylist"] is True
     assert opts["outtmpl"] == str(tmp_path / "yt" / "source.%(ext)s")
-    assert opts["format"].startswith("bestaudio")
+    assert opts["format"] == (
+        "bestaudio[ext=m4a][protocol=https]/bestaudio[ext=mp3][protocol=https]"
+    )
+    assert_runs_no_program(opts)
+
+
+def assert_runs_no_program(opts) -> None:
+    """Nothing in the options lets yt-dlp run ffmpeg (or anything) on the downloaded bytes."""
+    assert opts["postprocessors"] == [] and opts["fixup"] == "never"
+    assert opts["postprocessor_hooks"] == [] and opts["post_hooks"] == []
+    assert opts["external_downloader"] == {} and opts["hls_prefer_native"] is True
+    for key in ("writethumbnail", "writesubtitles", "writeautomaticsub", "writeinfojson"):
+        assert opts[key] is False
+    for key in ("exec", "exec_cmd", "merge_output_format", "final_ext", "extractaudio"):
+        assert key not in opts
+
+
+def test_search_options_run_no_program() -> None:
+    world = FakeWorld()
+    world.client().search("q", 5)
+    assert_runs_no_program(world.opened[0])
 
 
 @pytest.mark.parametrize(
     "video_id",
-    ["", "short", "dQw4w9WgXcQx", "dQw4w9WgXc/", "../../etc/pa", "https://x.y", "dQw4w9WgXc\n"],
+    [
+        "",
+        "short",
+        "dQw4w9WgXcQx",
+        "dQw4w9WgXc/",
+        "../../etc/pa",
+        "https://x.y",
+        "dQw4w9WgXc\n",
+        "dQw4w9WgXcQ\n",  # 11 valid characters and a newline: "$" alone would accept it
+    ],
 )
 def test_download_refuses_anything_but_an_11_character_id(tmp_path: Path, video_id: str) -> None:
     world = FakeWorld()
@@ -104,6 +133,7 @@ FAILURES = [
     ("ERROR: [youtube] x: Requested format is not available", "source_unavailable"),
     ("ERROR: [youtube] x: Sign in to confirm you’re not a bot. Use --cookies", "provider_error"),
     ("ERROR: [youtube] x: Sign in to confirm you're not a bot", "provider_error"),
+    ("ERROR: unable to download video data: HTTP Error 403: Forbidden", "provider_error"),
     ("ERROR: unable to download video data: HTTP Error 503: Service Unavailable",
      "provider_error"),
     ("ERROR: [youtube] x: Unable to download API page: <urlopen error timed out>",
