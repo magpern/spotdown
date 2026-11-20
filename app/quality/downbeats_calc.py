@@ -41,6 +41,8 @@ def score(truth: Dict[str, Any], doc: Dict[str, Any], tol_s: float) -> Dict[str,
         "downbeat_outcomes": outcomes,
         "meter_true": truth["beats_per_bar"],
         "meter_ok": est["beats_per_bar"] == truth["beats_per_bar"],
+        "meter_claimed": est["beats_per_bar"] is not None,
+        "meter_conf": est["meter_confidence"],
     }
 
 
@@ -64,3 +66,15 @@ def meter_accuracy(records: Sequence[Dict[str, Any]], beats_per_bar: int) -> flo
     """The share of the tracks of one true meter whose estimated meter is right (1.0: none)."""
     of = [r for r in records if r["meter_true"] == beats_per_bar]
     return sum(1 for r in of if r["meter_ok"]) / len(of) if of else 1.0
+
+
+def meter_claims(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
+    """Reported only: how many meter claims were wrong, and the one-sided overconfidence of the
+    meter confidence over the claims made (a withheld claim is not a claim)."""
+    made = [r for r in records if r["meter_claimed"]]
+    return {
+        "wrong": float(sum(1 for r in made if not r["meter_ok"])),
+        "overconfidence": m.ece(
+            [r["meter_conf"] for r in made], [r["meter_ok"] for r in made], over_only=True
+        ),
+    }

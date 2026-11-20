@@ -69,8 +69,10 @@ def labels(core: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def phrases(core: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """8 and 16 bar phrases between structural boundaries (heuristic; bars of the estimated meter,
-    4/4 when none was claimed)."""
+    """8 and 16 bar phrases between structural boundaries (heuristic; 4/4 bars, none for a 3/4
+    meter claim: 3/4 phrases were overconfident on the only evidence, 0.090 against 0.03)."""
+    if meter_doc.beats_per_bar(core) != 4:
+        return []  # phrases are made of 4/4 bars: a 3/4 claim withholds them (see quality-harness)
     segs = core["segments"]
     inside = label_calc.content_indices(segs, core["content_start_s"], core["content_end_s"])
     cands = [

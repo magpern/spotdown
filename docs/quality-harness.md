@@ -87,10 +87,14 @@ gives 0.097 and fails the overconfidence gate; an empty detector fails `phrase_f
 | pooled, 26 fixtures (the gate) | 0.909 | 0.930 | 0.889 | 0.0 |
 | the 24 baseline fixtures | 0.950 | 0.962 | 0.938 | 0.0 |
 | the 2 pickup fixtures (9 truth phrases) | 0.500 | 0.571 | 0.444 | 0.0 |
-| the 4 waltz (3/4) fixtures, not in the gate | 0.600 | 0.750 | 0.500 | 0.090 |
+| the 4 waltz (3/4) fixtures, not in the gate | 0.000 | 1.000 | 0.000 | 0.0 |
 
-The waltz row is reported only and kept out of the gate on purpose: pooled with the others it would
-hide that phrases in 3/4 are weak (overconfidence 0.090, above the gate's 0.03).
+**3/4 phrases are withheld.** With bars of three beats the phrases of the waltz fixtures scored F 0.600
+and overconfidence 0.090, three times the gate's 0.03, so a 3/4 meter claim now yields no
+`grid.phrases` (`structure_doc.phrases`; a unit test pins it) and the waltz row is zero recall with no
+wrong phrase. The row stays out of the pooled gate, and `tests/test_quality_runner.py` pins its
+overconfidence ceiling (0.03) and precision floor (1.0), so 3/4 phrases cannot come back worse unseen.
+When no meter is claimed phrases still assume 4/4.
 
 The pickup fixtures do not show that the detector handles a pickup; they show that it does not,
 on audio. The cause is the missed first boundary after the pickup (boundary F 0.92 and 0.60 on the
@@ -157,6 +161,16 @@ Mutation checks (each fails a gate): meter forced to 4 gives `downbeat_f_3_4` 0.
 0.783 and `meter_accuracy_min` 0.692; confidences set to 0.99 give `downbeat_overconfidence`
 0.093. The 3/4 class is four fixtures (three claimed meters), so `meter_accuracy_3_4` moves in
 steps of 0.25 and `downbeat_f_3_4` rests on about 110 bars.
+
+**The refusal threshold is not protected by a gate, and removing it raises the scores here.**
+`MIN_Z = 0` and `MIN_MARGIN = 0` (always claim) pass every gate and score better (`downbeat_f_3_4`
+0.934, `meter_accuracy_min` 0.923), because the three withheld tracks then get a right claim. Only
+`test_no_accent_pattern_claims_nothing` (noise and flat accents claim nothing) keeps the threshold; it
+is a conservative choice made for tracks without an accent, which this corpus barely has. Reported
+only: `meter_wrong_claims_reported` (0 on the corpus) and `meter_overconfidence_reported` (0.0), pinned
+by achieved ceilings. `grid.meter.confidence` has no calibration gate beyond the 0.4 cap and that
+reported number (30 tracks, 27 claims), so a raise of the cap needs held-out evidence for the meter
+confidence too.
 
 These are regression checks, not evidence of quality: the 3/4 patterns and the anchors were written
 with the detector, the corpus has one author and 30 tracks, and the meter rule only separates 3

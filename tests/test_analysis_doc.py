@@ -149,3 +149,12 @@ def test_the_content_end_closes_a_last_phrase_when_no_boundary_is_there() -> Non
     found = build(core, {"kind": "upload"})["grid"]["phrases"]
     assert [(p["start_s"], p["end_s"], p["bars"]) for p in found][-1] == (32.4, 48.4, 8)
     assert max(p["confidence"] for p in found) <= 0.4
+
+
+def test_a_three_four_meter_claim_withholds_the_phrases() -> None:
+    core = _phrase_core()
+    assert "phrases" in build(core, {"kind": "upload"})["grid"]
+    core["meter"] = {"beats_per_bar": 3, "confidence": 0.3}
+    core["bars"] = [{"index": 0, "start": 0.4, "confidence": 0.3}]
+    grid = build(core, {"kind": "upload"})["grid"]
+    assert "phrases" not in grid and grid["meter"]["beats_per_bar"] == 3

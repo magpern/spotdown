@@ -69,6 +69,8 @@ def _record(bpb: int, tp: int, est: int, truth: int, ok: bool, conf: float = 0.3
         "downbeat_outcomes": [(conf, i < tp) for i in range(est)],
         "meter_true": bpb,
         "meter_ok": ok,
+        "meter_claimed": True,
+        "meter_conf": conf,
     }
 
 
@@ -104,3 +106,12 @@ def test_aggregate_reports_each_meter_apart_and_the_minimum_class_accuracy() -> 
     assert out["downbeat_f_4_4"] > 0.85 and out["downbeat_f_3_4"] == 0.5
     assert out["meter_accuracy_4_4"] == 1.0 and out["meter_accuracy_3_4"] == 0.0
     assert out["meter_accuracy_min"] == 0.0
+
+
+def test_wrong_meter_claims_and_the_meter_overconfidence_are_reported_apart() -> None:
+    wrong = _record(4, 5, 10, 10, False, conf=0.9)
+    right = _record(4, 5, 10, 10, True, conf=0.9)
+    withheld = dict(_record(3, 0, 0, 10, False), meter_claimed=False)
+    got = db.meter_claims([wrong, right, withheld])
+    assert got["wrong"] == 1.0
+    assert abs(got["overconfidence"] - 0.4) < 1e-9  # claims 0.9, right 1 in 2

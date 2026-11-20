@@ -45,6 +45,8 @@
     "downbeat_recall_4_4_reported",
     "downbeat_precision_3_4_reported",
     "downbeat_recall_3_4_reported",
+    "meter_wrong_claims_reported",
+    "meter_overconfidence_reported",
     "meter_accuracy_4_4",
     "meter_accuracy_3_4",
     "phrase_precision",

@@ -105,6 +105,9 @@ def _meter_metrics(everything: Sequence[Dict[str, Any]]) -> Dict[str, float]:
         out[f"downbeat_recall_{bpb}_4_reported"] = pooled.get("recall", 0.0)
     out["meter_accuracy_min"] = min(out["meter_accuracy_4_4"], out["meter_accuracy_3_4"])
     out["downbeat_overconfidence"] = db.pooled(everything)["overconfidence"]
+    claims = db.meter_claims(everything)
+    out["meter_wrong_claims_reported"] = claims["wrong"]
+    out["meter_overconfidence_reported"] = claims["overconfidence"]
     return out
 
 

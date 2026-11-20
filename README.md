@@ -149,8 +149,12 @@ and returns JSON you can build a cycling class (or anything beat-timed) from. Ca
 
 Fields:
 - `bpm` + `bpm_candidates` — tempo, with ½/2× alternates (beat trackers octave-error).
-- `beat_grid`, `bars`, `downbeat_phase`, `meter_assumed` — the grid to snap intervals to
-  (4/4 assumed; `downbeat_phase` is the estimated bar offset).
+- `beat_grid`, `bars`, `downbeat_phase`, `meter_assumed` — the grid to snap intervals to.
+  `meter_assumed` is the estimated meter (`"3/4"` or `"4/4"`; `"4/4"` also when no meter could be
+  claimed, then `bars` is the old 4/4 grid on the strongest beat). With a claim, `bars` has one
+  entry per bar with a `confidence` (at most 0.4) and the bars restart at the start of the music
+  and at each drop, so `downbeat_phase` (the first bar's beat index modulo the meter) no longer
+  describes one grid for the whole track; use `bars[].start`.
 - `energy_curve` — per-second `full` / `percussive` / `low`-band energy (0–1). Percussive and
   low-band expose kick/bass changes that full-band RMS misses on loud masters.
 - `drops` — energy rising-edges (breakdown → full), snapped to the beat; your sprint/accel cues.

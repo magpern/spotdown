@@ -91,6 +91,8 @@ def _record(corpus: str, hits: List[Any], truth: int) -> Dict[str, Any]:
         "downbeat_outcomes": [],
         "meter_true": 4,
         "meter_ok": True,
+        "meter_claimed": True,
+        "meter_conf": 0.3,
     }
 
 
