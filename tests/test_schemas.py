@@ -239,6 +239,25 @@ def test_match_conditionals() -> None:
     _bad("match-v1", doc)
 
 
+def test_match_cached_summary_rules() -> None:
+    doc = _ex("match-v1.matched.json")
+    assert "cached_analysis_id" in doc["alternates"][0]
+    del doc["best"]["cached_analysis_id"]
+    _bad("match-v1", doc)  # summary without id
+    doc = _ex("match-v1.matched.json")
+    doc["best"]["cached_summary"]["file_name"] = "x.mp3"
+    _bad("match-v1", doc)  # extra field
+    doc = _ex("match-v1.matched.json")
+    del doc["best"]["cached_summary"]["bpm"]
+    _bad("match-v1", doc)
+    doc = _ex("match-v1.matched.json")
+    doc["cached_analysis_id"] = "an_x"
+    _bad("match-v1", doc)  # no top-level duplicate
+    doc = _ex("match-v1.matched.json")
+    del doc["best"]["cached_summary"]
+    _validator("match-v1").validate(doc)  # id alone is fine
+
+
 @pytest.mark.parametrize(
     ("band", "conf"),
     [("confident", 0.84), ("uncertain", 0.85), ("uncertain", 0.5), ("not_same", 0.6)],

@@ -81,8 +81,11 @@ Request:
 `isrc` is optional; `1 <= len(tracks) <= 50`. Response `200`:
 `{"results": [match-v1, ...]}` in request order, validated by `schema/match-v1.json`: status,
 the best candidate with its recording-match confidence, band and duration check, up to 2
-alternates, and `cached_analysis_id` when an analysis for the best candidate is already cached in
-the caller's scope. A miss never starts an analysis.
+alternates. **Every candidate** (best and alternates) carries `cached_analysis_id` and a small
+`cached_summary` (`analyzer_version`, `bpm`, `bpm_confidence`, `duration_s`, `has_beats`, and
+optionally `has_downbeats`, `has_events`) when an analysis for it is already cached in the caller's
+scope, and neither otherwise. This is free and is how a cached analysis is found without bytes. A
+miss never starts an analysis.
 
 Recording-match bands: `confident` >= 0.85, `uncertain` 0.6 to 0.85, below 0.6 `not_same`
 (tuned on the evaluation set). Duration check against the requested duration: |delta| <= 2 s
@@ -180,7 +183,7 @@ user tokens, signed URLs or upload file names.
 
 One track's match result (see `POST /v2/match`): `status`, `best` and up to 2 `alternates` (each
 with `source`, `recording_match_confidence`, `band`, `duration_s`, `duration_delta_s`,
-`duration_check`, `analysis_id`), `cached_analysis_id` (the only place a cached id is reported) and `matcher_version`. `band` must agree with `recording_match_confidence`; `retry_after_s` appears only for `rate_limited` and `best` only for `matched` and `uncertain`.
+`duration_check`, and optional `cached_analysis_id` and `cached_summary`; the summary only with the id, no audio or names) and `matcher_version`. `band` must agree with `recording_match_confidence`; `retry_after_s` appears only for `rate_limited` and `best` only for `matched` and `uncertain`.
 
 ### Versioning
 

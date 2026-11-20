@@ -44,13 +44,6 @@
         "$ref": "#/$defs/candidate"
       }
     },
-    "cached_analysis_id": {
-      "type": [
-        "string",
-        "null"
-      ],
-      "description": "Analysis already cached for best within the caller's scope, if any. The only place a cached id is reported."
-    },
     "matcher_version": {
       "type": "string"
     }
@@ -155,6 +148,50 @@
             "rejected"
           ],
           "description": "abs delta <= 2 s ok, <= 5 s tolerable, above 5 s rejected."
+        },
+        "cached_analysis_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Analysis already cached for this candidate within the caller's scope. Absent when there is none."
+        },
+        "cached_summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "analyzer_version",
+            "bpm",
+            "bpm_confidence",
+            "duration_s",
+            "has_beats"
+          ],
+          "description": "Small summary of the cached analysis, free to return. Present only together with cached_analysis_id. No audio, no names.",
+          "properties": {
+            "analyzer_version": {
+              "type": "string"
+            },
+            "bpm": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "bpm_confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "duration_s": {
+              "type": "number",
+              "minimum": 0
+            },
+            "has_beats": {
+              "type": "boolean"
+            },
+            "has_downbeats": {
+              "type": "boolean"
+            },
+            "has_events": {
+              "type": "boolean"
+            }
+          }
         }
       },
       "allOf": [
@@ -216,7 +253,12 @@
             }
           }
         }
-      ]
+      ],
+      "dependentRequired": {
+        "cached_summary": [
+          "cached_analysis_id"
+        ]
+      }
     }
   }
 }
