@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence
 
+from . import downbeats_calc as db
 from . import labels_calc as lab
 from . import metrics_calc as m
 from . import phrases_calc as ph
@@ -67,6 +68,7 @@ def score_track(
         "label_segments": lab.segment_outcomes(truth["labels"], spans, c0, c1),
         "phrase_hits": phrase_hits,
         "phrase_truth": len(truth["phrases"]),
+        **db.score(truth, doc, tol["beat_tol_s"]),
     }
 
 
@@ -89,6 +91,21 @@ def _phrase_metrics(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
             [c for c, _ in outcomes], [ok for _, ok in outcomes], over_only=True
         ),
     }
+
+
+def _meter_metrics(everything: Sequence[Dict[str, Any]]) -> Dict[str, float]:
+    """Downbeats and meter, pooled per true meter (4/4 and 3/4 apart: never one number)."""
+    out: Dict[str, float] = {}
+    for bpb in (4, 3):
+        part = [r for r in everything if r["meter_true"] == bpb]
+        pooled = db.pooled(part) if part else {}
+        out[f"meter_accuracy_{bpb}_4"] = db.meter_accuracy(everything, bpb)
+        out[f"downbeat_f_{bpb}_4"] = pooled.get("f", 0.0)
+        out[f"downbeat_precision_{bpb}_4_reported"] = pooled.get("precision", 0.0)
+        out[f"downbeat_recall_{bpb}_4_reported"] = pooled.get("recall", 0.0)
+    out["meter_accuracy_min"] = min(out["meter_accuracy_4_4"], out["meter_accuracy_3_4"])
+    out["downbeat_overconfidence"] = db.pooled(everything)["overconfidence"]
+    return out
 
 
 def _reported(records: Sequence[Dict[str, Any]], suffix: str) -> Dict[str, float]:
@@ -122,8 +139,11 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     b_ok = [c for r in records for c in r["boundary_correct"]]
     frames = [r["label_frames"] for r in records]
     segs = [o for r in records for o in r["label_segments"]]
-    phr = _phrase_metrics(everything)
-    others = [r for r in everything if r["corpus"] != "baseline"]
+    # The phrase gate is measured on the 4/4 corpora it was set on; the 3/4 fixtures are reported
+    # apart (``phrase_*_waltz_reported``) so a weak result there cannot hide in a pooled number.
+    phr = _phrase_metrics([r for r in everything if r["corpus"] != "meter"])
+    pickup = [r for r in everything if r["corpus"] == "phrases"]
+    waltz = [r for r in everything if r["corpus"] == "meter"]
     out = {
         "tracks": float(n),
         "baseline_tracks": float(len(records)),
@@ -150,8 +170,10 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     }
     # Reported only, never gated: the phrase gate pools every fixture, which hides how the
     # detector does on the baseline set and on the pickup set separately.
+    out.update(_meter_metrics(everything))
     out.update(_reported(records, "baseline") if records else {})
-    out.update(_reported(others, "pickup") if others else {})
+    out.update(_reported(pickup, "pickup") if pickup else {})
+    out.update(_reported(waltz, "waltz") if waltz else {})
     out.update(_reported(everything, "all"))
     return {k: round(v, 4) for k, v in out.items()}
 

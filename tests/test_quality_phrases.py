@@ -85,6 +85,12 @@ def _record(corpus: str, hits: List[Any], truth: int) -> Dict[str, Any]:
         "boundary_f_report": 1.0,
         "label_frames": [0, 0],
         "label_segments": [],
+        "downbeat_tp": 0,
+        "downbeat_est": 0,
+        "downbeat_truth": 0,
+        "downbeat_outcomes": [],
+        "meter_true": 4,
+        "meter_ok": True,
     }
 
 

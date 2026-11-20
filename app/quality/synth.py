@@ -20,10 +20,26 @@ STEPS = {  # sixteenth-note positions within a 4/4 bar
     "hat": (2, 6, 10, 14),
     "hat16": tuple(range(0, 16, 2)),
 }
-PULSE = ("kick", "kick_break", "kick_half", "snare", "hat", "hat16")
+STEPS_3_4 = {  # sixteenth-note positions within a 3/4 bar (12 steps)
+    "kick": (0,),
+    "kick_all": (0, 4, 8),
+    "snare": (4, 8),
+    "hat": (2, 6, 10),
+    "hat16": tuple(range(0, 12, 2)),
+}
+PULSE = ("kick", "kick_all", "kick_break", "kick_half", "snare", "hat", "hat16")
 GAIN = {"kick": 1.0, "snare": 0.6, "hat": 0.25, "bass": 0.55, "pad": 0.3, "lead": 0.3, "riser": 0.5}
 BASS_NOTES = (55.0, 55.0, 65.4, 49.0)
 NOISE_FLOOR = 1e-4
+
+
+def _bpb(spec: Dict[str, Any]) -> int:
+    """Beats per bar: 4 unless the spec says 3 (the meter corpus)."""
+    return int(spec.get("beats_per_bar", 4))
+
+
+def _bar_s(spec: Dict[str, Any]) -> float:
+    return 60.0 * _bpb(spec) / spec["bpm"]
 
 
 def _t(n: float) -> np.ndarray:
@@ -64,8 +80,10 @@ def _tone(freqs: Tuple[float, ...], seconds: float, attack_s: float) -> np.ndarr
 def _section(
     y: np.ndarray, spec: Dict[str, Any], sec: Dict[str, Any], start: float, rng: np.random.Generator
 ) -> None:
-    bar = 240.0 / spec["bpm"]
-    step = bar / 16.0
+    bpb = _bpb(spec)
+    bar = _bar_s(spec)
+    step = bar / (4.0 * bpb)
+    steps = STEPS if bpb == 4 else STEPS_3_4
     length = sec["bars"] * bar
     layers = sec["layers"]
     drums = {"kick": _kick(), "snare": _snare(rng), "hat": _hat(rng)}
@@ -73,7 +91,7 @@ def _section(
         if name in PULSE:
             base = name.split("_")[0].rstrip("16")
             for b in range(sec["bars"]):
-                for s in STEPS[name]:
+                for s in steps[name]:
                     _add(y, start + b * bar + s * step, drums[base], gain * GAIN[base])
     for b in range(sec["bars"]):
         bs = start + b * bar
@@ -85,12 +103,12 @@ def _section(
                 layers["bass"] * GAIN["bass"],
             )
         if "lead" in layers:
-            for k in range(4):
+            for k in range(bpb):
                 f = 440.0 * (1.0, 1.25, 1.5, 1.875)[(k + b) % 4]
                 _add(
                     y,
-                    bs + k * bar / 4,
-                    _tone((f, 2 * f), bar / 4, 0.005),
+                    bs + k * bar / bpb,
+                    _tone((f, 2 * f), bar / bpb, 0.005),
                     layers["lead"] * GAIN["lead"],
                 )
     if "pad" in layers:
@@ -109,7 +127,7 @@ def _section(
 
 def _four_on_the_floor(spec: Dict[str, Any]) -> bool:
     kicks = {k for s in spec["sections"] for k in s["layers"] if k.startswith("kick")}
-    return kicks == {"kick"}
+    return kicks == {"kick"} and _bpb(spec) == 4
 
 
 def _phrases(spec: Dict[str, Any], t0: float) -> List[Dict[str, Any]]:
@@ -118,7 +136,7 @@ def _phrases(spec: Dict[str, Any], t0: float) -> List[Dict[str, Any]]:
     past both starts over at the section that overshot (a 4-bar pickup, then 8-bar sections: the
     phrases start after the pickup; 3-bar sections: 3, 6, 9 never make one). Sections that never
     add up (a short tail) give none."""
-    bar = 240.0 / spec["bpm"]
+    bar = _bar_s(spec)
     out: List[Dict[str, Any]] = []
     at, run, run_start = t0, 0, t0
     for sec in spec["sections"]:
@@ -134,8 +152,10 @@ def _phrases(spec: Dict[str, Any], t0: float) -> List[Dict[str, Any]]:
 
 
 def _truth(spec: Dict[str, Any], t0: float, total: float) -> Dict[str, Any]:
-    bar = 240.0 / spec["bpm"]
+    bar = _bar_s(spec)
+    bpb = _bpb(spec)
     beats: List[float] = []
+    downbeats: List[float] = []
     bounds: List[float] = []
     drops: List[float] = []
     builds: List[List[float]] = []
@@ -146,7 +166,8 @@ def _truth(spec: Dict[str, Any], t0: float, total: float) -> Dict[str, Any]:
         end = at + sec["bars"] * bar
         labels.append({"start": round(at, 3), "end": round(end, 3), "label": sec["label"]})
         if any(k in PULSE for k in sec["layers"]):
-            beats += [at + i * bar / 4 for i in range(sec["bars"] * 4)]
+            beats += [at + i * bar / bpb for i in range(sec["bars"] * bpb)]
+            downbeats += [at + i * bar for i in range(sec["bars"])]
         if prev is not None and set(prev) != set(sec["layers"]):
             bounds.append(at)
         if sec.get("drop"):
@@ -174,6 +195,8 @@ def _truth(spec: Dict[str, Any], t0: float, total: float) -> Dict[str, Any]:
         "bpm": spec["bpm"],
         "four_on_the_floor": _four_on_the_floor(spec),
         "beats": r(beats),
+        "downbeats": r(downbeats),
+        "beats_per_bar": bpb,
         "boundaries": r(sorted(bounds)),
         "drops": r(drops),
         "build_ups": [r(b) for b in builds],
@@ -190,7 +213,7 @@ def _truth(spec: Dict[str, Any], t0: float, total: float) -> Dict[str, Any]:
 def render(spec: Dict[str, Any]) -> Tuple[np.ndarray, Dict[str, Any]]:
     """The mono float32 signal at ``SR`` and its ground truth."""
     rng = np.random.default_rng(spec["seed"])
-    bar = 240.0 / spec["bpm"]
+    bar = _bar_s(spec)
     t0 = spec["lead_in_s"]
     music = sum(s["bars"] for s in spec["sections"]) * bar
     total = spec["lead_in_s"] + music + spec["tail_s"]

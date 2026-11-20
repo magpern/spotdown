@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "plan": "classbeat docs/plans/spotdown-integration.md section 7 (Revision 2, frozen)",
   "change_rule": "A threshold changes only with evaluation evidence in the PR and the usual review, and is recorded in classbeat ADR 0040. The two hard gates are never relaxed.",
   "parameters": {
@@ -28,6 +28,10 @@
     "ece_boundaries": {"op": "<=", "value": 0.10},
     "label_accuracy": {"op": ">=", "value": 0.70},
     "label_overconfidence": {"op": "<=", "value": 0.10},
+    "downbeat_f_4_4": {"op": ">=", "value": 0.85},
+    "downbeat_f_3_4": {"op": ">=", "value": 0.75},
+    "meter_accuracy_min": {"op": ">=", "value": 0.70},
+    "downbeat_overconfidence": {"op": "<=", "value": 0.03},
     "phrase_f": {"op": ">=", "value": 0.70},
     "phrase_overconfidence": {"op": "<=", "value": 0.03},
     "robustness_fraction": {"op": ">=", "value": 0.99},
@@ -37,7 +41,12 @@
   "reported_only": [
     "boundary_f_1_5s_reported",
     "ece_labels_reported",
-    "downbeats",
+    "downbeat_precision_4_4_reported",
+    "downbeat_recall_4_4_reported",
+    "downbeat_precision_3_4_reported",
+    "downbeat_recall_3_4_reported",
+    "meter_accuracy_4_4",
+    "meter_accuracy_3_4",
     "phrase_precision",
     "phrase_recall",
     "baseline_tracks",

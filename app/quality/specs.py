@@ -1,4 +1,4 @@
-"""The committed synthetic corpus: 26 specs built from a few section templates (pure data).
+"""The committed synthetic corpus: 30 specs built from a few section templates (pure data).
 
 Every spec is deterministic. ``python -m app.quality.fixtures_io --write`` renders their truth to
 ``quality/fixtures/synthetic/manifest.json``; a test fails if the committed file is stale.
@@ -151,6 +151,33 @@ def _pickup_groove(sid: str, bpm: float, seed: int, **kw: Any) -> Dict[str, Any]
     )
 
 
+METER = "meter"  # corpus of the 3/4 fixtures: the downbeat and meter gates, no baseline metric
+
+
+def _waltz(sid: str, bpm: float, seed: int, kick: str, hat: str, **kw: Any) -> Dict[str, Any]:
+    """A 3/4 track (``beats_per_bar`` 3): intro, verse, chorus, breakdown, chorus, outro.
+
+    ``kick`` is ``kick`` (beat 1 only) or ``kick_all`` (every beat, so only the bass note and the
+    snare mark the bar); ``hat`` is ``hat`` or ``hat16``. Annotation as in ``_groove``."""
+    full = {kick: 1.0, "snare": 1.0, hat: 0.8, "bass": 1.0, "lead": 1.0, "pad": 1.0}
+    return _spec(
+        sid,
+        bpm,
+        seed,
+        [
+            _sd(4, "intro", {kick: 0.9, hat: 0.8, "pad": 1.0}),
+            _sd(8, "verse", {kick: 0.9, "snare": 1.0, hat: 0.8, "bass": 1.0}),
+            _sd(8, "chorus", full),
+            _sd(4, "breakdown", {"pad": 1.0, "lead": 0.6}),
+            _sd(8, "chorus", full),
+            _sd(4, "outro", {kick: 0.9, hat: 0.8, "pad": 1.0}),
+        ],
+        beats_per_bar=3,
+        corpus=METER,
+        **kw,
+    )
+
+
 SPECS: List[Dict[str, Any]] = [
     _edm("edm-100", 100, 1, 4),
     _edm("edm-110", 110, 2, 4),
@@ -178,4 +205,8 @@ SPECS: List[Dict[str, Any]] = [
     _groove("noisy-break-98", 98, 24, "kick_break", "hat", noise_db=-30.0, lead_in_s=0.37),
     _pickup_edm("pickup-edm-140", 140, 25, corpus=PHRASES),
     _pickup_groove("pickup-groove-118", 118, 26, corpus=PHRASES),
+    _waltz("waltz-kick1-96", 96, 27, "kick", "hat"),
+    _waltz("waltz-kick1-126", 126, 28, "kick", "hat16"),
+    _waltz("waltz-allkick-108", 108, 29, "kick_all", "hat"),
+    _waltz("waltz-allkick-138", 138, 30, "kick_all", "hat16", noise_db=-32.0),
 ]
