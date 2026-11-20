@@ -14,7 +14,7 @@ import librosa
 import numpy as np
 
 # Bump when thresholds/features change so the cache (keyed on this) refreshes.
-ANALYZER_VERSION = 3
+ANALYZER_VERSION = 4
 
 # Spotify trims edge silence; if the music content matches within this many
 # seconds we treat the timeline as alignable by a simple offset.
@@ -50,6 +50,17 @@ def _snap(ts: float, arr: np.ndarray) -> float:
     return round(float(arr[j]), 3)
 
 
+def _rising_edges(e: np.ndarray, grid: np.ndarray, hi: float, lo: float,
+                  min_gap: float = 8.0) -> List[float]:
+    """Times where a (0-1) energy signal jumps from below `lo` to above `hi`."""
+    es = np.convolve(e, np.ones(3) / 3.0, mode="same")
+    out: List[float] = []
+    for i in range(2, len(es)):
+        if es[i] > hi and es[i - 2] < lo and (not out or grid[i] - out[-1] > min_gap):
+            out.append(float(grid[i]))
+    return out
+
+
 def _label(i: int, n: int, energy: float, hi: float, lo: float) -> str:
     if i == 0 and energy <= lo:
         return "intro"
@@ -78,7 +89,33 @@ def _cluster_groups(seg_feats: List[np.ndarray]) -> List[int]:
         return [0] * len(seg_feats)
 
 
-def _segments(y, sr, beat_frames, beat_times, duration, grid, e_full, e_struct) -> list:
+def _quiet_region_edges(grid: np.ndarray, e: np.ndarray,
+                        thresh: float = 0.15, min_len: float = 3.0) -> List[float]:
+    """Start/end times of low-energy runs — catches empty intros/breakdowns even
+    where the beat tracker finds no beats (so beat-based segmentation can't resolve them)."""
+    edges: List[float] = []
+    quiet = e < thresh
+    n = len(quiet)
+    i = 0
+    while i < n:
+        if quiet[i]:
+            j = i
+            while j < n and quiet[j]:
+                j += 1
+            start_t, end_t = float(grid[i]), float(grid[j - 1])
+            if end_t - start_t >= min_len:
+                edges += [start_t, end_t]
+            i = j
+        else:
+            i += 1
+    return edges
+
+
+MIN_SEG_S = 2.0
+
+
+def _segments(y, sr, beat_frames, beat_times, duration, grid, e_full, e_struct,
+              struct_frames, drops) -> list:
     if len(beat_frames) < 6:
         return []
     chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=HOP)
@@ -87,37 +124,58 @@ def _segments(y, sr, beat_frames, beat_times, duration, grid, e_full, e_struct) 
         librosa.util.normalize(chroma, axis=0),
         librosa.util.normalize(mfcc, axis=0),
     ])
-    # Beat-synchronous features so boundaries land on beats.
     fsync = librosa.util.sync(feat, beat_frames, aggregate=np.mean)
     n = fsync.shape[1]
     if n < 3:
         return []
-    k = int(max(3, min(10, round(duration / 20.0))))
-    k = min(k, n - 1)
-    try:
-        bounds = librosa.segment.agglomerative(fsync, k)
-    except Exception:
-        return []
-    bounds = sorted(set([0] + [int(b) for b in bounds] + [n]))
 
-    # Column i of fsync spans edges[i]..edges[i+1] in time.
+    # Energy weighted into the beat-synchronous features so loud<->quiet shifts matter.
+    esync = librosa.util.sync(struct_frames[np.newaxis, :], beat_frames, aggregate=np.mean)[0]
+    esync = esync / (float(esync.max()) or 1.0)
+    feat_full = np.vstack([fsync, np.tile(esync, (8, 1))])
+
+    # Column i of fsync spans edges[i]..edges[i+1]; its center time locates it.
     edges = [0.0] + [float(t) for t in beat_times] + [float(duration)]
+    col_center = np.array([0.5 * (edges[i] + edges[i + 1]) for i in range(n)])
 
     def edge_time(idx: int) -> float:
-        idx = max(0, min(idx, len(edges) - 1))
-        return float(edges[idx])
+        return float(edges[max(0, min(idx, len(edges) - 1))])
+
+    # Boundaries are assembled in TIME from three sources, so regions without a beat
+    # grid (empty intros) are still resolved:
+    k = int(max(4, min(16, round(duration / 12.0))))
+    k = min(k, n - 1)
+    try:
+        beat_bounds = [edge_time(int(b)) for b in librosa.segment.agglomerative(feat_full, k)]
+    except Exception:
+        beat_bounds = []
+    quiet_edges = _quiet_region_edges(grid, e_struct, thresh=0.15, min_len=3.0)
+    drop_times = [float(d) for d in drops]
+
+    cand = {0.0, float(duration)}
+    cand.update(beat_bounds)
+    cand.update(quiet_edges)
+    cand.update(drop_times)
+    times = sorted(t for t in cand if 0.0 <= t <= duration)
+
+    # Enforce a minimum segment length.
+    merged = [times[0]]
+    for t in times[1:]:
+        if t - merged[-1] >= MIN_SEG_S:
+            merged.append(t)
+    if float(duration) - merged[-1] >= MIN_SEG_S:
+        merged.append(float(duration))
+    else:
+        merged[-1] = float(duration)
 
     raw, seg_feats = [], []
-    for a, b in zip(bounds[:-1], bounds[1:]):
-        if b <= a:
-            continue
-        st, en = edge_time(a), edge_time(b)
-        if en - st < 1.0:
-            continue
+    for st, en in zip(merged[:-1], merged[1:]):
         mask = (grid >= st) & (grid < en)
         ef = float(e_full[mask].mean()) if mask.any() else 0.0
         es = float(e_struct[mask].mean()) if mask.any() else 0.0
-        seg_feats.append(fsync[:, a:b].mean(axis=1))
+        cmask = (col_center >= st) & (col_center < en)
+        segf = fsync[:, cmask].mean(axis=1) if cmask.any() else np.zeros(fsync.shape[0])
+        seg_feats.append(segf)
         raw.append({
             "start": round(st, 3), "end": round(en, 3),
             "energy_full": round(ef, 3), "energy_struct": round(es, 3),
@@ -172,6 +230,10 @@ def analyze_track(file_path: Path, track_id: str,
     e_low = _norm95(np.interp(grid, t_frames, low_energy))
     e_struct = _norm95(0.5 * e_perc + 0.5 * e_low)
 
+    # Frame-level structural energy (for beat-synchronous segmentation).
+    _m = min(len(rms_perc), len(low_energy))
+    struct_frames = _norm95(0.5 * _norm95(rms_perc[:_m]) + 0.5 * _norm95(low_energy[:_m]))
+
     energy_curve = [
         {"t": float(t), "full": round(float(a), 3),
          "percussive": round(float(b), 3), "low": round(float(c), 3)}
@@ -189,15 +251,20 @@ def analyze_track(file_path: Path, track_id: str,
     downbeat_times = beat_times[phase::4] if len(beat_times) > phase else beat_times
     bars = [{"index": i, "start": round(float(t), 3)} for i, t in enumerate(downbeat_times)]
 
-    # Drops: structure-energy rising edges (low -> high), snapped to nearest beat.
-    es = np.convolve(e_struct, np.ones(3) / 3.0, mode="same")
+    # Drops: rising edges detected on the LOW band (bass drops) and the PERCUSSIVE
+    # band (beat drops) separately, then merged — averaging the two hides bass-only drops.
+    raw_drops = sorted(
+        _rising_edges(e_low, grid, hi=0.5, lo=0.25)
+        + _rising_edges(e_perc, grid, hi=0.6, lo=0.35)
+    )
     drops: List[float] = []
-    for i in range(2, len(es)):
-        if es[i] > 0.6 and es[i - 2] < 0.35 and (not drops or grid[i] - drops[-1] > 8):
-            drops.append(float(grid[i]))
+    for d in raw_drops:
+        if not drops or d - drops[-1] > 4:
+            drops.append(d)
     drops = [_snap(d, beat_times) for d in drops]
 
     # Build-ups: the sustained energy climb immediately before each drop.
+    es = np.convolve(e_struct, np.ones(3) / 3.0, mode="same")
     build_ups = []
     for d in drops:
         di = int(min(len(es) - 1, round(d)))
@@ -207,20 +274,32 @@ def analyze_track(file_path: Path, track_id: str,
         if di - s >= 3:
             build_ups.append({"start": round(float(grid[max(s, 0)]), 3), "end": round(float(d), 3)})
 
-    segments = _segments(y, sr, beat_frames, beat_times, duration, grid, e_full, e_struct)
+    segments = _segments(y, sr, beat_frames, beat_times, duration, grid,
+                         e_full, e_struct, struct_frames, drops)
 
-    # Alignment: compare CONTENT duration (not file duration) to Spotify, and treat
-    # content_start as the offset from the file clock to the Spotify clock.
-    residual = (content_duration - spotify_duration_s) if spotify_duration_s else None
-    matches = (abs(residual) <= ALIGN_TOLERANCE_S) if residual is not None else None
+    # Alignment. Spotify may or may not keep edge silence, so try two hypotheses:
+    #   1) file length already matches Spotify  -> offset 0 (common for "- Topic" masters)
+    #   2) only the trimmed content matches      -> offset = leading silence
+    # Prefer whichever aligns; fall back to the content comparison when neither does.
+    if spotify_duration_s:
+        delta_file = duration - spotify_duration_s
+        delta_content = content_duration - spotify_duration_s
+        if abs(delta_file) <= ALIGN_TOLERANCE_S:
+            matches, align_offset, residual = True, 0.0, delta_file
+        elif abs(delta_content) <= ALIGN_TOLERANCE_S:
+            matches, align_offset, residual = True, content_start, delta_content
+        else:
+            matches, align_offset, residual = False, content_start, delta_content
+    else:
+        matches, align_offset, residual = None, content_start, None
 
-    # Spotify-clock cue points / segment edges — only meaningful when the content aligns.
-    drops_spotify = ([round(max(d - content_start, 0.0), 3) for d in drops]
+    # Spotify-clock cue points / segment edges — only meaningful when aligned.
+    drops_spotify = ([round(max(d - align_offset, 0.0), 3) for d in drops]
                      if matches else None)
     if matches:
         for s in segments:
-            s["start_spotify"] = round(max(s["start"] - content_start, 0.0), 3)
-            s["end_spotify"] = round(max(s["end"] - content_start, 0.0), 3)
+            s["start_spotify"] = round(max(s["start"] - align_offset, 0.0), 3)
+            s["end_spotify"] = round(max(s["end"] - align_offset, 0.0), 3)
 
     return {
         "track_id": track_id,
@@ -237,7 +316,7 @@ def analyze_track(file_path: Path, track_id: str,
         "leading_silence_s": round(leading_silence, 3),
         "trailing_silence_s": round(trailing_silence, 3),
         # Subtract this from any file timestamp to get the Spotify-playback time.
-        "spotify_offset_s": round(content_start, 3),
+        "spotify_offset_s": round(align_offset, 3),
         "timeline_residual_s": round(residual, 3) if residual is not None else None,
         "timeline_matches_spotify": matches,
         "drops_spotify": drops_spotify,
