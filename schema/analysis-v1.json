@@ -509,6 +509,11 @@
               "residual_s": {
                 "type": "number",
                 "minimum": 0
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Which mapping: untrimmed (the reference starts at the file's start) or trimmed (at the content's start, the leading silence trimmed). offset_s uses the contract's sign, reference_time = file_time + offset_s. residual_s is how far the file's end (or the content's end) misses the reference's end."
               }
             }
           }
@@ -544,6 +549,11 @@
             "ok",
             "failed"
           ]
+        },
+        "chosen": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The name of the chosen hypothesis (result ok)."
         },
         "offset_s": {
           "type": "number"

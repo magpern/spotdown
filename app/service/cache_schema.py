@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS alignments (
     align_key   TEXT NOT NULL,
     doc         TEXT NOT NULL,
     created_at  REAL NOT NULL,
+    analysis_id TEXT,
     PRIMARY KEY (cache_scope, align_key)
 );
 CREATE TABLE IF NOT EXISTS idempotency (
@@ -44,17 +45,22 @@ _INDEXES = """
 CREATE INDEX IF NOT EXISTS analyses_by_sha ON analyses (cache_scope, sha256);
 CREATE INDEX IF NOT EXISTS jobs_by_scope ON jobs (cache_scope);
 CREATE INDEX IF NOT EXISTS uploads_by_scope ON uploads (cache_scope);
+CREATE UNIQUE INDEX IF NOT EXISTS alignments_by_id ON alignments (analysis_id);
 """
 
 _ANALYSES_COLUMNS = ("sha256", "fingerprint", "analyzer_version")
 
 
 def create(conn: sqlite3.Connection) -> None:
-    """Creates the tables and adds the index columns to an ``analyses`` table of the first
-    service-mode release (spotdown#4), which lacks them."""
+    """Creates the tables and adds the columns an older table lacks: the index columns of an
+    ``analyses`` table of the first service-mode release (spotdown#4), and the aligned analysis
+    id of an ``alignments`` table of spotdown#5."""
     conn.executescript(CACHE_SCHEMA)
     have = {row[1] for row in conn.execute("PRAGMA table_info(analyses)")}
     for column in _ANALYSES_COLUMNS:
         if column not in have:
             conn.execute(f"ALTER TABLE analyses ADD COLUMN {column} TEXT")
+    # The aligned analysis id (spotdown#11); an alignments table of spotdown#5 lacks it.
+    if "analysis_id" not in {row[1] for row in conn.execute("PRAGMA table_info(alignments)")}:
+        conn.execute("ALTER TABLE alignments ADD COLUMN analysis_id TEXT")
     conn.executescript(_INDEXES)

@@ -2,5 +2,6 @@
 
 Layers: sources (``upload``, ``url``) bring the bytes, the sandbox runs the core analyser
 (``app.core``) on them, and ``analysis_doc`` formats the file-clock result as analysis-v1. The
-alignment layer and the caches plug in later (spotdown#11, spotdown#5).
+caches (spotdown#5) reuse it, and the alignment layer (``alignment_doc``, spotdown#11) adds a
+reference clock to it as an aligned analysis.
 """

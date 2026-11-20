@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import cache_schema, match_store
+from .alignment_store import Aligning, AlignmentStore, store_aligned
 from .cache_store import CacheStore, insert_analysis, put_link
 from .match_store import MatchStore
 
@@ -41,17 +42,26 @@ CREATE TABLE IF NOT EXISTS jobs (
     retry_after_s REAL,
     analysis_id   TEXT,
     created_at    REAL NOT NULL,
-    updated_at    REAL NOT NULL
+    updated_at    REAL NOT NULL,
+    reference     TEXT
 );
 """
 
 
-class Store(CacheStore, MatchStore):
+def _reference(job: Dict[str, Any]) -> Optional[str]:
+    """The job's alignment reference as stored (JSON), or None."""
+    ref = job.get("reference")
+    return json.dumps(ref, sort_keys=True) if ref is not None else None
+
+
+class Store(CacheStore, AlignmentStore, MatchStore):
     def __init__(self, path: Path) -> None:
         super().__init__(path)
         with self._conn() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
+            if "reference" not in {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}:
+                conn.execute("ALTER TABLE jobs ADD COLUMN reference TEXT")  # before spotdown#11
             cache_schema.create(conn)
             match_store.create(conn)
 
@@ -110,8 +120,8 @@ class Store(CacheStore, MatchStore):
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO jobs (job_id, cache_scope, client_ref, source_kind, source_ref,"
-                " upload_id, fetch_url, status, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
+                " upload_id, fetch_url, status, created_at, updated_at, reference)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)",
                 (
                     job["job_id"],
                     job.get("cache_scope"),
@@ -122,6 +132,7 @@ class Store(CacheStore, MatchStore):
                     job.get("fetch_url"),
                     now,
                     now,
+                    _reference(job),
                 ),
             )
 
@@ -132,7 +143,11 @@ class Store(CacheStore, MatchStore):
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         with self._conn() as conn:
             row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        job = dict(row)
+        job["reference"] = json.loads(job["reference"]) if job["reference"] else None
+        return job
 
     def get_job_in_scope(self, job_id: str, scope: Optional[str]) -> Optional[Dict[str, Any]]:
         with self._conn() as conn:
@@ -150,38 +165,57 @@ class Store(CacheStore, MatchStore):
             )
         return cur.rowcount == 1
 
-    def add_job_done(self, job: Dict[str, Any], analysis_id: str) -> None:
-        """A job answered from the cache: ``done`` at once, nothing queued."""
+    def add_job_done(
+        self, job: Dict[str, Any], analysis_id: str, aligning: Optional[Aligning] = None
+    ) -> str:
+        """A job answered from the cache: ``done`` at once, nothing queued. With an alignment
+        the job ends on the aligned analysis (stored here unless a concurrent job stored it);
+        returns the analysis id the job ended on."""
         now = time.time()
+        outcome = None
         with self._conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if aligning is not None:
+                row = store_aligned(conn, aligning, now)
+                analysis_id, outcome = row.analysis_id, row.outcome
             conn.execute(
                 "INSERT INTO jobs (job_id, cache_scope, client_ref, source_kind, source_ref,"
-                " status, analysis_id, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, 'done', ?, ?, ?)",
+                " status, outcome, failure_kind, analysis_id, created_at, updated_at, reference)"
+                " VALUES (?, ?, ?, ?, ?, 'done', ?, ?, ?, ?, ?, ?)",
                 (
                     job["job_id"],
                     job.get("cache_scope"),
                     job.get("client_ref"),
                     job["source_kind"],
                     job.get("source_ref"),
+                    outcome,
+                    outcome,
                     analysis_id,
                     now,
                     now,
+                    _reference(job),
                 ),
             )
+            conn.execute("COMMIT")
+        return analysis_id
 
     def finish_job_done(
-        self, job_id: str, analysis_id: str, scope: Optional[str], doc: Any
+        self,
+        job_id: str,
+        analysis_id: str,
+        scope: Optional[str],
+        doc: Any,
+        aligning: Optional[Aligning] = None,
     ) -> bool:
-        """Stores the analysis and marks the job done. False (nothing stored) when the job is
-        gone, which is what a scope deletion during the run leaves behind."""
+        """Stores the analysis (and its alignment) and marks the job done. False (nothing
+        stored) when the job is gone, which is what a scope deletion during the run leaves."""
         now = time.time()
         with self._conn() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            if not self._mark_done(conn, job_id, analysis_id, now):
+            insert_analysis(conn, analysis_id, scope, doc, now)
+            if not self._mark_done(conn, job_id, analysis_id, now, aligning):
                 conn.execute("ROLLBACK")
                 return False
-            insert_analysis(conn, analysis_id, scope, doc, now)
             conn.execute("COMMIT")
         return True
 
@@ -192,12 +226,13 @@ class Store(CacheStore, MatchStore):
         scope: Optional[str],
         source_kind: str,
         source_ref: Optional[str],
+        aligning: Optional[Aligning] = None,
     ) -> bool:
         """Marks the job done with an analysis that already exists, and links its source."""
         now = time.time()
         with self._conn() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            if not self._mark_done(conn, job_id, analysis_id, now):
+            if not self._mark_done(conn, job_id, analysis_id, now, aligning):
                 conn.execute("ROLLBACK")
                 return False
             put_link(conn, source_kind, source_ref, scope, analysis_id, now)
@@ -205,11 +240,19 @@ class Store(CacheStore, MatchStore):
         return True
 
     @staticmethod
-    def _mark_done(conn: Any, job_id: str, analysis_id: str, now: float) -> bool:
+    def _mark_done(
+        conn: Any, job_id: str, analysis_id: str, now: float, aligning: Optional[Aligning]
+    ) -> bool:
+        """Marks the job done, on the aligned analysis when there is an alignment (stored
+        first, in the same transaction)."""
+        outcome = None
+        if aligning is not None:
+            row = store_aligned(conn, aligning, now)
+            analysis_id, outcome = row.analysis_id, row.outcome
         cur = conn.execute(
-            "UPDATE jobs SET status = 'done', outcome = NULL, failure_kind = NULL,"
+            "UPDATE jobs SET status = 'done', outcome = ?, failure_kind = ?,"
             " analysis_id = ?, fetch_url = NULL, updated_at = ? WHERE job_id = ?",
-            (analysis_id, now, job_id),
+            (outcome, outcome, analysis_id, now, job_id),
         )
         return cur.rowcount == 1
 

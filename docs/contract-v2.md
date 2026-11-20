@@ -146,7 +146,29 @@ Start an analysis. Exactly one of `upload_id`, `source_ref` (`<kind>:<ref>`, for
 }
 ```
 
-`reference` is optional and requests an `alignment` object; `kind` is an open set.
+`reference` is optional and requests an `alignment` object; `kind` is an open set and
+`duration_s` is above 0 and at most 7200 (`422 invalid_request` otherwise).
+
+**Alignment** (`alignment_version` `1`, spotdown#11). Two hypotheses are tried on the file-clock
+analysis: `untrimmed` (the reference starts at the file's start, `offset_s` 0; the residual is
+|file duration - reference duration|) and `trimmed` (the reference starts at the content's start,
+its leading silence trimmed, `offset_s` = -content start; the residual is |content duration -
+reference duration|). The smaller residual is chosen (`untrimmed` on a tie). A best residual
+above 5 s, or no positive reference duration, is `alignment_failed`. The confidence is a first
+estimate, calibrated by the quality harness: it falls linearly from 1 at a zero residual to 0 at
+5 s and is reduced when the other hypothesis, at a different offset, misses by less than 1 s
+more. For a `youtube` source chosen by a match, `recording_match_confidence` carries the chosen
+candidate's score. spotdown reports this evidence only; it never emits a timing class.
+
+A job with a `reference` ends on an **aligned analysis**: its own `analysis_id`, the file-clock
+analysis unchanged plus the top-level `alignment` (`ok` only) and `provenance.alignment` (always,
+with every hypothesis tried and the chosen one's `name` as `chosen`); on a failed alignment
+`provenance.run.failure_kind` is `alignment_failed`. The file-clock analysis keeps its own id, is
+what the lookups and `/v2/match` report, and is reused for every reference. The alignment cache is
+keyed on the audio identity (sha256), the reference (kind, id, duration) and `alignment_version`,
+in the analysis' scope (global for a `youtube` analysis, so the reference of a global alignment is
+readable in every scope that knows its id), and is removed with its scope. A cache hit with a
+`reference` aligns at once and answers `200` with the aligned analysis id.
 `source_ref` is `youtube:<11-character video id>` (nothing else: no URL, no other kind, `422
 invalid_request` otherwise); it is `422 source_disabled` unless `ALLOW_YTDLP_SOURCING=true`, and its
 `cache_scope` is optional. The worker downloads that one video's audio (a single audio-only https
@@ -172,7 +194,7 @@ Poll a job. Response `200`, validated by `schema/job-v1.json`:
  "analysis_id": "...", "failure_kind": null}
 ```
 
-`analysis_id` is set when `status` is `done`. `GET /v2/analyses/{id}` returns the analysis
+`analysis_id` is set when `status` is `done`. `outcome` is null on a `done` job except `alignment_failed` (with `failure_kind` `alignment_failed`). `GET /v2/analyses/{id}` returns the analysis
 (`schema/analysis-v1.json`) for an id in the caller's scope or a global (public `youtube`) analysis; any other id is `404`. Jobs are visible only in the scope
 that created them. Callers poll with a backoff; no callback is made.
 

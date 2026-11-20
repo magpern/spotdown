@@ -96,7 +96,11 @@ def get_analysis(
     scope = _checked_scope(cache_scope)
     doc = None
     if re.fullmatch(ID_PATTERN, analysis_id):
-        doc = store_of(request).get_analysis_in_scope(analysis_id, scope)
+        store = store_of(request)
+        # A file-clock analysis, or an aligned one (its own id, composed on read).
+        doc = store.get_analysis_in_scope(analysis_id, scope)
+        if doc is None:
+            doc = store.get_aligned_in_scope(analysis_id, scope)
     if doc is None:
         raise _not_found()
     return JSONResponse(doc)
