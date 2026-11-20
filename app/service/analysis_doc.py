@@ -14,12 +14,13 @@ import json
 from typing import Any, Dict, List, Optional, Sequence
 
 from ..core import ANALYZER_VERSION, HOP, SR
+from .meter_doc import meter_grid
 from .structure_doc import clip as _clip
 from .structure_doc import labels, phrases, structure
 
 ANALYZER_NAME = "spotdown"
 # The core analyser's version, then this document mapping's version (1: section labels, 2: phrases).
-ANALYZER_VERSION_V2 = f"{ANALYZER_VERSION}.2"
+ANALYZER_VERSION_V2 = f"{ANALYZER_VERSION}.3"
 MEASURED_CONFIDENCE = 0.9
 
 
@@ -186,6 +187,7 @@ def build(
     grid: Dict[str, Any] = {
         "beats": {"times_s": beats, "confidence": stability, "method": "estimated"}
     }
+    grid.update(meter_grid(core))
     if found := phrases(core):
         grid["phrases"] = found
     doc: Dict[str, Any] = {

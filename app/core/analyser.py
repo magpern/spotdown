@@ -12,7 +12,16 @@ from typing import Any, Dict, List
 import librosa
 import numpy as np
 
-from . import ANALYZER_VERSION, HOP, SR, edges_calc, events_calc, signal_calc, tempo_calc
+from . import (
+    ANALYZER_VERSION,
+    HOP,
+    SR,
+    edges_calc,
+    events_calc,
+    meter_calc,
+    signal_calc,
+    tempo_calc,
+)
 from .segments import segments
 from .signal_calc import norm95
 
@@ -21,6 +30,14 @@ __all__ = ["ANALYZER_VERSION", "SR", "analyse_signal"]
 TEMPO_HOP = 256
 TEMPO_FMAX = 1500
 EVENT_STEP_S = 0.25
+
+
+def meter_strengths(onset_env: np.ndarray, beat_frames: np.ndarray) -> np.ndarray:
+    """The strongest onset within 2 frames of each tracked beat."""
+    if not len(beat_frames) or not len(onset_env):
+        return np.array([], dtype=float)
+    idx = np.clip(beat_frames, 0, len(onset_env) - 1)
+    return np.array([onset_env[max(0, i - 2) : i + 3].max() for i in idx], dtype=float)
 
 
 def analyse_signal(y: np.ndarray, sr: int) -> Dict[str, Any]:
@@ -64,17 +81,6 @@ def analyse_signal(y: np.ndarray, sr: int) -> Dict[str, Any]:
 
     _m = min(len(rms_perc), len(low_energy))
 
-    # Downbeat phase: the beat offset (0..3) with the most onset weight.
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=HOP)
-    ob = onset_env[np.clip(beat_frames, 0, len(onset_env) - 1)]
-    phase, best = 0, -1.0
-    for p in range(4):
-        s = float(ob[p::4].sum())
-        if s > best:
-            best, phase = s, p
-    downbeat_times = beat_times[phase::4] if len(beat_times) > phase else beat_times
-    bars = [{"index": i, "start": round(float(t), 3)} for i, t in enumerate(downbeat_times)]
-
     # Drops and breakdowns: steps in the low-band / percussive energy at 0.25 s resolution,
     # snapped to the beat grid; build-ups: the climb before each drop.
     low_n, perc_n = norm95(low_energy[:_m]), norm95(rms_perc[:_m])
@@ -83,6 +89,24 @@ def analyse_signal(y: np.ndarray, sr: int) -> Dict[str, Any]:
     found = events_calc.detect(low_b, perc_b, step_s, bpm, phase_s)
     drops = [d["t"] for d in found["drops"]]
     build_ups = events_calc.build_ups(e_struct, 1.0, drops)
+
+    # Meter and downbeats: the accent at each tracked beat (the onset strength around it), and
+    # the content start and the drops as places where a bar starts.
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=HOP)
+    strengths = meter_strengths(onset_env, beat_frames)
+    meter = meter_calc.estimate(
+        [float(t) for t in beat_times], strengths.tolist(), [content_start, *drops]
+    )
+    phase = 0
+    if meter:
+        bars = [{"index": i, **b} for i, b in enumerate(meter["bars"])]
+        if bars and len(beat_times):
+            phase = int(np.argmin(np.abs(beat_times - bars[0]["start"]))) % meter["beats_per_bar"]
+    else:  # no claim: the legacy 4/4 grid on the strongest beat phase stays for the v1 endpoint
+        phase = max(range(4), key=lambda p: float(strengths[p::4].sum())) if len(beat_times) else 0
+        bars = [
+            {"index": i, "start": round(float(t), 3)} for i, t in enumerate(beat_times[phase::4])
+        ]
 
     segs = segments(y, sr, duration, grid, e_full, e_struct, drops, [content_start, content_end])
 
@@ -105,6 +129,7 @@ def analyse_signal(y: np.ndarray, sr: int) -> Dict[str, Any]:
         },
         "beat_times": [round(float(t), 3) for t in beat_times],
         "downbeat_phase": phase,
+        "meter": {k: meter[k] for k in ("beats_per_bar", "confidence")} if meter else None,
         "bars": bars,
         "drops": drops,
         "drop_strengths": [d["strength"] for d in found["drops"]],

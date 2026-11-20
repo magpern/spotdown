@@ -24,6 +24,13 @@ ACHIEVED_FLOORS: Dict[str, float] = {
     "robustness_fraction": 1.0,
     "label_accuracy": 0.85,
     "phrase_f": 0.80,
+    "downbeat_f_4_4": 0.90,
+    "downbeat_f_3_4": 0.78,
+    # 3/4 phrases are withheld (structure_doc.phrases): F 0.0 by design, and no wrong phrase
+    "phrase_f_waltz_reported": 0.0,
+    "phrase_precision_waltz_reported": 1.0,
+    "meter_accuracy_4_4": 0.90,
+    "meter_accuracy_3_4": 0.74,
     # Reported-only per-corpus phrase results, pinned so they cannot get worse unseen. The pickup
     # fixtures (2 tracks, 9 truth phrases) are the case the structure analysis is weak on.
     "phrase_f_baseline_reported": 0.85,
@@ -35,6 +42,10 @@ ACHIEVED_CEILINGS: Dict[str, float] = {
     "ece_boundaries": 0.075,
     "label_overconfidence": 0.05,
     "phrase_overconfidence": 0.02,
+    "downbeat_overconfidence": 0.02,
+    "phrase_overconfidence_waltz_reported": 0.03,
+    "meter_wrong_claims_reported": 0.0,
+    "meter_overconfidence_reported": 0.02,
 }
 # The 60 s plan threshold stays in the gates file and in the command line run. Under pytest the
 # machine is shared and the run uses fewer workers, so this test only guards against a blow-up.

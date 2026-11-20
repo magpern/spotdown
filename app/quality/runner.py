@@ -185,7 +185,7 @@ def format_table(report: Dict[str, Any]) -> str:
         f"(reported only) phrase precision {m.get('phrase_precision')}, "
         f"recall {m.get('phrase_recall')}"
     )
-    for part in ("baseline", "pickup"):
+    for part in ("baseline", "pickup", "waltz"):
         lines.append(
             f"(reported only) phrases on the {part} fixtures: "
             f"F {m.get(f'phrase_f_{part}_reported')}, "

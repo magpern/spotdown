@@ -75,17 +75,26 @@ with the beat and BPM equivalents), below its floor of 0.975: the structure anal
 first boundary after a 4-bar pickup.
 
 Thresholds set by this enhancement, to be recorded in classbeat ADR 0040: `phrase_f` >= 0.70
-and `phrase_overconfidence` <= 0.03, pooled over all 26 fixtures (achieved 0.864: precision 0.884,
-recall 0.844; overconfidence 0.0). A mutation that inflates the confidences (cap 0.99, scale 1.2)
+and `phrase_overconfidence` <= 0.03, pooled over the 26 fixtures of the baseline and phrase corpora
+(achieved 0.909: precision 0.930, recall 0.889; overconfidence 0.0; they were 0.864, 0.884 and 0.844
+before #9 gave the bar grid the right phase, which snaps the phrase times to the right bars). A mutation that inflates the confidences (cap 0.99, scale 1.2)
 gives 0.097 and fails the overconfidence gate; an empty detector fails `phrase_f`.
 
 **What the numbers show, per corpus (reported only, and pinned by achieved floors):**
 
 | phrases | F | precision | recall | overconfidence |
 |---|---|---|---|---|
-| pooled, 26 fixtures (the gate) | 0.864 | 0.884 | 0.844 | 0.0 |
-| the 24 baseline fixtures | 0.900 | 0.911 | 0.889 | 0.0 |
+| pooled, 26 fixtures (the gate) | 0.909 | 0.930 | 0.889 | 0.0 |
+| the 24 baseline fixtures | 0.950 | 0.962 | 0.938 | 0.0 |
 | the 2 pickup fixtures (9 truth phrases) | 0.500 | 0.571 | 0.444 | 0.0 |
+| the 4 waltz (3/4) fixtures, not in the gate | 0.000 | 1.000 | 0.000 | 0.0 |
+
+**3/4 phrases are withheld.** With bars of three beats the phrases of the waltz fixtures scored F 0.600
+and overconfidence 0.090, three times the gate's 0.03, so a 3/4 meter claim now yields no
+`grid.phrases` (`structure_doc.phrases`; a unit test pins it) and the waltz row is zero recall with no
+wrong phrase. The row stays out of the pooled gate, and `tests/test_quality_runner.py` pins its
+overconfidence ceiling (0.03) and precision floor (1.0), so 3/4 phrases cannot come back worse unseen.
+When no meter is claimed phrases still assume 4/4.
 
 The pickup fixtures do not show that the detector handles a pickup; they show that it does not,
 on audio. The cause is the missed first boundary after the pickup (boundary F 0.92 and 0.60 on the
@@ -93,7 +102,7 @@ two tracks), so the phrase chain has no boundary to start from. Before the conte
 candidate boundary the same two tracks scored F 0.40 with overconfidence 0.059, above the 0.03
 threshold; the pooled gate hid that. **Blind 8-bar tiling from the first boundary (no structure)
 scores at least as well as the detector on the baseline fixtures** (0.917 against 0.885 measured
-at the first review of this PR), because those arrangements are built from 8-bar blocks. So the
+at the first review of #25, before #9 changed the bar grid; not measured again), because those arrangements are built from 8-bar blocks. So the
 pooled `phrase_f` gate cannot tell the detector from tiling and is a regression check only, not
 evidence of phrase quality. `tests/test_phrase_calc.py` pins the pure function on hand-made
 boundaries (a pickup moves the first phrase); it does not show that the pipeline finds the
@@ -105,8 +114,71 @@ to 0.844 and F from 0.842 to 0.864 with no threshold changed.
 
 Like the labels, the rules and the truth convention come from one author and the corpus is small
 (26 tracks, 5 phrase shapes), so the 0.4 cap (`phrase_calc.CAP`, pinned by a test) is not raised
-until held-out evidence exists (spotdown#20). Phrases also depend on the downbeat grid and a 4/4
-assumption; #9 (downbeats and meter) should improve them and may let the meter claim be made.
+until held-out evidence exists (spotdown#20). Phrases count bars of the estimated meter (4/4
+when none is claimed) and snap to the downbeat grid of #9.
+
+## Downbeat and meter gates (SD-P2+, spotdown#9)
+
+Truth comes from the arrangement (`synth._truth`): `downbeats` are the bar starts of every
+section that plays a pulse, and `beats_per_bar` is the spec's meter. 26 fixtures are 4/4. Four
+(`waltz-*`, `corpus: meter`, `beats_per_bar: 3`) are 3/4 with 96 to 138 BPM, kick on beat 1 or on
+every beat, two hat patterns and one noisy; they enter only these gates, the phrase reports and
+the all-fixture reports, so the baseline floors still measure the original 24.
+
+Scoring (`downbeats_calc`): downbeats match one to one within the beat tolerance (0.07 s, first
+5 s trimmed like beats); the meter is right when the document claims exactly the true beats per
+bar (no claim is a miss). Everything is pooled **per true meter, never as one number**:
+`downbeat_f_4_4`, `downbeat_f_3_4`, `meter_accuracy_4_4`, `meter_accuracy_3_4`
+(`meter_accuracy_min` is the gated one) and the one-sided `downbeat_overconfidence`.
+
+| gate (new thresholds, to be recorded in classbeat ADR 0040) | threshold | achieved |
+|---|---|---|
+| `downbeat_f_4_4` | >= 0.85 | 0.935 (precision 0.900, recall 0.973) |
+| `downbeat_f_3_4` | >= 0.75 | 0.811 (precision 0.878, recall 0.754) |
+| `meter_accuracy_min` | >= 0.70 | 0.750 (4/4: 0.923, 3/4: 0.750) |
+| `downbeat_overconfidence` | <= 0.03 | 0.0 |
+
+**Against the trivial baselines (same fixtures, previous analyzer where noted):**
+
+| | 4/4 F | 3/4 F | 3/4 meter |
+|---|---|---|---|
+| the previous output (4/4, the beat position with the most onset weight) | 0.064 | 0.263 | wrong |
+| 4/4 from the first tracked beat | 0.217 | 0.264 | wrong |
+| 4/4 forced on the new anchored grid (mutation) | 0.935 | 0.000 | wrong |
+| the new estimate | 0.935 | 0.811 | 3 of 4 right |
+
+The honest reading: **on 4/4 the meter estimate adds nothing to the downbeat F**. The gain over the
+previous output comes from anchoring the bars at the start of the music and at the detected drops,
+and a forced 4/4 on that grid scores the same. What the meter estimate adds is the 3/4 fixtures
+and the refusal to claim a meter without an accent (`slow-drop-74` and `slow-drop-80`, no accent
+pattern: no meter, no downbeats; `waltz-kick1-126`: the accent is below the threshold, no claim).
+Both anchors are priors from dance music, not measurements of the bar: a track that starts on an
+anacrusis or a drop that is not on a downbeat shifts every bar of its piece, and the bar
+confidence only falls when the anchors disagree with each other, not when both are wrong.
+
+Mutation checks (each fails a gate): meter forced to 4 gives `downbeat_f_3_4` 0.0 and
+`meter_accuracy_min` 0.0; no drop anchors (the start of the music only) gives `downbeat_f_4_4`
+0.783 and `meter_accuracy_min` 0.692; confidences set to 0.99 give `downbeat_overconfidence`
+0.093. The 3/4 class is four fixtures (three claimed meters), so `meter_accuracy_3_4` moves in
+steps of 0.25 and `downbeat_f_3_4` rests on about 110 bars.
+
+**The refusal threshold is not protected by a gate, and removing it raises the scores here.**
+`MIN_Z = 0` and `MIN_MARGIN = 0` (always claim) pass every gate and score better (`downbeat_f_3_4`
+0.934, `meter_accuracy_min` 0.923), because the three withheld tracks then get a right claim. Only
+`test_no_accent_pattern_claims_nothing` (noise and flat accents claim nothing) keeps the threshold; it
+is a conservative choice made for tracks without an accent, which this corpus barely has. Reported
+only: `meter_wrong_claims_reported` (0 on the corpus) and `meter_overconfidence_reported` (0.0), pinned
+by achieved ceilings. `grid.meter.confidence` has no calibration gate beyond the 0.4 cap and that
+reported number (30 tracks, 27 claims), so a raise of the cap needs held-out evidence for the meter
+confidence too.
+
+These are regression checks, not evidence of quality: the 3/4 patterns and the anchors were written
+with the detector, the corpus has one author and 30 tracks, and the meter rule only separates 3
+from 4. So `meter_calc.GATE_PASSED` stays False and **no meter or downbeat confidence exceeds 0.4**
+(`meter_calc.CAP`, pinned by a test); the cap is not raised until held-out evidence exists (CC
+fixtures or the owner corpus, spotdown#20). The schema has one confidence for the whole downbeat
+list, so the per-bar confidence stays in the core (`bars[i].confidence`) and the list carries
+their mean.
 
 ## Changing a threshold
 
@@ -115,7 +187,7 @@ Only with evaluation evidence in the PR and the usual review, recorded in classb
 
 ## Synthetic fixtures
 
-`app/quality/specs.py` lists 26 specs (tempo, sections, silence, fades, noise); `synth.py` renders
+`app/quality/specs.py` lists 30 specs (tempo, sections, silence, fades, noise); `synth.py` renders
 them with a seeded generator and computes the truth (beats, boundaries, drops, edges) arithmetically
 from the spec. Only the truth manifest is committed; audio is rendered to a temporary directory at
 run time. Add a fixture by adding a spec and running `fixtures_io --write`.

@@ -51,7 +51,7 @@ def analyze_track(file_path: Path, track_id: str, spotify_duration_s: Optional[i
         "track_id": track_id,
         "analyzer_version": ANALYZER_VERSION,
         "sr": sr,
-        "meter_assumed": "4/4",
+        "meter_assumed": f"{core['meter']['beats_per_bar']}/4" if core.get("meter") else "4/4",
         "label_method": "heuristic",
         "analyzed_duration_s": round(duration, 3),
         "spotify_duration_s": spotify_duration_s,

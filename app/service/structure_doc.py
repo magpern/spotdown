@@ -11,6 +11,7 @@ import math
 from typing import Any, Dict, List, Optional
 
 from ..core import label_calc, phrase_calc
+from . import meter_doc
 
 END_CONFIDENCE = 0.5  # the content end is a measured edge, not a novelty peak
 
@@ -68,7 +69,10 @@ def labels(core: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def phrases(core: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """8 and 16 bar phrases between structural boundaries (heuristic; 4/4 assumed)."""
+    """8 and 16 bar phrases between structural boundaries (heuristic; 4/4 bars, none for a 3/4
+    meter claim: 3/4 phrases were overconfident on the only evidence, 0.090 against 0.03)."""
+    if meter_doc.beats_per_bar(core) != 4:
+        return []  # phrases are made of 4/4 bars: a 3/4 claim withholds them (see quality-harness)
     segs = core["segments"]
     inside = label_calc.content_indices(segs, core["content_start_s"], core["content_end_s"])
     cands = [
@@ -79,7 +83,7 @@ def phrases(core: Dict[str, Any]) -> List[Dict[str, Any]]:
         for n, i in enumerate(inside)
     ]
     end = core["content_end_s"]
-    bar_s = 240.0 / core["bpm"]
+    bar_s = meter_doc.bar_seconds(core)
     if cands and end - cands[-1][0] > bar_s / 2:
         cands.append((end, END_CONFIDENCE))
     found = phrase_calc.phrases(cands, bar_s, [b["start"] for b in core.get("bars", [])])
