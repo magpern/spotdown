@@ -49,8 +49,31 @@ class RecordingDispatch:
             self.then(job_id)
 
 
-def client_for(settings: Settings, dispatch: Optional[Callable[[str], None]] = None) -> TestClient:
-    return TestClient(create_app(settings, dispatch or RecordingDispatch()))
+class KeyedClient(TestClient):
+    """Adds a fresh ``Idempotency-Key`` to a POST /v2/analyses or PUT /v2/uploads that has none,
+    so most tests need not care. A test that sets the header itself (or builds a plain
+    ``TestClient``) sees the real behaviour."""
+
+    _counter = 0
+
+    def request(self, method: str, url: Any, **kwargs: Any) -> Any:  # type: ignore[override]
+        if (method.upper(), str(url).split("?")[0]) in {
+            ("POST", "/v2/analyses"),
+            ("PUT", "/v2/uploads"),
+        }:
+            headers = dict(kwargs.get("headers") or {})
+            if not any(k.lower() == "idempotency-key" for k in headers):
+                KeyedClient._counter += 1
+                headers["Idempotency-Key"] = f"auto-{KeyedClient._counter}"
+            kwargs["headers"] = headers
+        return super().request(method, url, **kwargs)
+
+
+def client_for(
+    settings: Settings, dispatch: Optional[Callable[[str], None]] = None, keyed: bool = True
+) -> TestClient:
+    cls = KeyedClient if keyed else TestClient
+    return cls(create_app(settings, dispatch or RecordingDispatch()))
 
 
 def click_track(seconds: float, sr: int = 22050, bpm: float = 120.0) -> np.ndarray:

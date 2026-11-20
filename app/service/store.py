@@ -2,18 +2,19 @@
 
 No audio is kept here (upload bytes live in a temporary file deleted after their job or TTL), no
 file name, no key and no URL beyond the job's own run: ``fetch_url`` is cleared when the job ends.
-Every read that a caller can reach is filtered by its ``cache_scope``. The caches and the scope
-deletion are spotdown#5 and build on these tables.
+Every read that a caller can reach is filtered by its ``cache_scope``. The caches, source links,
+idempotency records and the scope deletion are in ``cache_store`` (spotdown#5).
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, List, Optional
+
+from . import cache_schema
+from .cache_store import CacheStore, insert_analysis, put_link
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS uploads (
@@ -41,31 +42,16 @@ CREATE TABLE IF NOT EXISTS jobs (
     created_at    REAL NOT NULL,
     updated_at    REAL NOT NULL
 );
-CREATE TABLE IF NOT EXISTS analyses (
-    analysis_id TEXT PRIMARY KEY,
-    cache_scope TEXT,
-    doc         TEXT NOT NULL,
-    created_at  REAL NOT NULL
-);
 """
 
 
-class Store:
+class Store(CacheStore):
     def __init__(self, path: Path) -> None:
-        self.path = path
-        path.parent.mkdir(parents=True, exist_ok=True)
+        super().__init__(path)
         with self._conn() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
-
-    @contextmanager
-    def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
+            cache_schema.create(conn)
 
     # ---- uploads ----
     def add_upload(
@@ -162,23 +148,68 @@ class Store:
             )
         return cur.rowcount == 1
 
+    def add_job_done(self, job: Dict[str, Any], analysis_id: str) -> None:
+        """A job answered from the cache: ``done`` at once, nothing queued."""
+        now = time.time()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO jobs (job_id, cache_scope, client_ref, source_kind, source_ref,"
+                " status, analysis_id, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, 'done', ?, ?, ?)",
+                (
+                    job["job_id"],
+                    job.get("cache_scope"),
+                    job.get("client_ref"),
+                    job["source_kind"],
+                    job.get("source_ref"),
+                    analysis_id,
+                    now,
+                    now,
+                ),
+            )
+
     def finish_job_done(
         self, job_id: str, analysis_id: str, scope: Optional[str], doc: Any
-    ) -> None:
+    ) -> bool:
+        """Stores the analysis and marks the job done. False (nothing stored) when the job is
+        gone, which is what a scope deletion during the run leaves behind."""
         now = time.time()
         with self._conn() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute(
-                "INSERT INTO analyses (analysis_id, cache_scope, doc, created_at)"
-                " VALUES (?, ?, ?, ?)",
-                (analysis_id, scope, json.dumps(doc, separators=(",", ":")), now),
-            )
-            conn.execute(
-                "UPDATE jobs SET status = 'done', outcome = NULL, failure_kind = NULL,"
-                " analysis_id = ?, fetch_url = NULL, updated_at = ? WHERE job_id = ?",
-                (analysis_id, now, job_id),
-            )
+            if not self._mark_done(conn, job_id, analysis_id, now):
+                conn.execute("ROLLBACK")
+                return False
+            insert_analysis(conn, analysis_id, scope, doc, now)
             conn.execute("COMMIT")
+        return True
+
+    def finish_job_reused(
+        self,
+        job_id: str,
+        analysis_id: str,
+        scope: Optional[str],
+        source_kind: str,
+        source_ref: Optional[str],
+    ) -> bool:
+        """Marks the job done with an analysis that already exists, and links its source."""
+        now = time.time()
+        with self._conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not self._mark_done(conn, job_id, analysis_id, now):
+                conn.execute("ROLLBACK")
+                return False
+            put_link(conn, source_kind, source_ref, scope, analysis_id, now)
+            conn.execute("COMMIT")
+        return True
+
+    @staticmethod
+    def _mark_done(conn: Any, job_id: str, analysis_id: str, now: float) -> bool:
+        cur = conn.execute(
+            "UPDATE jobs SET status = 'done', outcome = NULL, failure_kind = NULL,"
+            " analysis_id = ?, fetch_url = NULL, updated_at = ? WHERE job_id = ?",
+            (analysis_id, now, job_id),
+        )
+        return cur.rowcount == 1
 
     def finish_job_failed(
         self,

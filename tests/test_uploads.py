@@ -125,6 +125,7 @@ def test_a_streamed_body_over_the_cap_is_cut_off_and_removed(settings) -> None:
         "headers": [
             (b"authorization", AUTH["Authorization"].encode()),
             (b"content-type", b"application/octet-stream"),
+            (b"idempotency-key", b"stream-1"),
         ],
         "client": ("127.0.0.1", 1234),
         "server": ("127.0.0.1", 80),

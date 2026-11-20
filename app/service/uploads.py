@@ -13,12 +13,16 @@ import time
 from pathlib import Path
 
 from fastapi import Request
+from fastapi.responses import JSONResponse
 
 from ..config import Settings
+from . import idempotency_policy as idem
 from . import media_policy
 from .api_models import scope_problem
 from .errors import ApiError
 from .store import Store
+
+ENDPOINT = "PUT /v2/uploads"
 
 
 def upload_path(settings: Settings, upload_id: str) -> Path:
@@ -34,7 +38,9 @@ def purge_expired_uploads(settings: Settings, store: Store) -> None:
         store.delete_upload(upload_id)
 
 
-async def receive_upload(request: Request, settings: Settings, store: Store) -> dict:
+async def receive_upload(
+    request: Request, settings: Settings, store: Store, idem_key: str
+) -> JSONResponse:
     scope = request.query_params.get("cache_scope")
     problem = scope_problem(scope)
     if problem:
@@ -71,10 +77,24 @@ async def receive_upload(request: Request, settings: Settings, store: Store) -> 
         media = media_policy.sniff(head)
         if media is None:
             raise ApiError(415, "unsupported_media_type", "only mp3, mp4 and wav are accepted")
+        req_hash = idem.request_hash(ENDPOINT, {"sha256": digest.hexdigest(), "bytes": size})
+        recorded = store.idem_get(scope, idem_key)
+        verdict = idem.decide(recorded, req_hash)
+        if verdict == "conflict":
+            raise ApiError(
+                409, "idempotency_conflict", "this Idempotency-Key was used for another request"
+            )
+        if recorded is not None:  # the same upload again: the first response, nothing new kept
+            part.unlink(missing_ok=True)
+            return JSONResponse(recorded.body, status_code=recorded.status)
+        answer = {"upload_id": upload_id, "sha256": digest.hexdigest(), "bytes": size}
         part.rename(final)
         store.add_upload(upload_id, scope, digest.hexdigest(), size, media, settings.upload_ttl_s)
+        if not store.idem_put(scope, idem_key, req_hash, 201, answer):
+            raise ApiError(409, "idempotency_conflict", "this Idempotency-Key is in use")
     except BaseException:
         part.unlink(missing_ok=True)
         final.unlink(missing_ok=True)
+        store.delete_upload(upload_id)
         raise
-    return {"upload_id": upload_id, "sha256": digest.hexdigest(), "bytes": size}
+    return JSONResponse(answer, status_code=201)
