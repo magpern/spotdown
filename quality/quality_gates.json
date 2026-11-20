@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "plan": "classbeat docs/plans/spotdown-integration.md section 7 (Revision 2, frozen)",
+  "change_rule": "A threshold changes only with evaluation evidence in the PR and the usual review, and is recorded in classbeat ADR 0040. The two hard gates are never relaxed.",
+  "parameters": {
+    "bpm_tolerance": 0.02,
+    "beat_tol_s": 0.07,
+    "boundary_tol_s": 3.0,
+    "boundary_report_tol_s": 1.5,
+    "edge_tol_s": 0.25,
+    "drop_tol_beats": 1
+  },
+  "hard": {
+    "false_exact": 0,
+    "audio_kept_after_job": 0
+  },
+  "signal": {
+    "bpm_within_2pct_fraction": {"op": ">=", "value": 0.95},
+    "bpm_exact_octave_fraction": {"op": ">=", "value": 0.85},
+    "beat_f_four_on_the_floor": {"op": ">=", "value": 0.85},
+    "beat_f_overall": {"op": ">=", "value": 0.75},
+    "boundary_f_3s": {"op": ">=", "value": 0.60},
+    "edge_within_0_25s_fraction": {"op": ">=", "value": 0.95},
+    "drop_precision": {"op": ">=", "value": 0.75},
+    "drop_recall": {"op": ">=", "value": 0.65},
+    "ece_bpm": {"op": "<=", "value": 0.10},
+    "ece_boundaries": {"op": "<=", "value": 0.10},
+    "robustness_fraction": {"op": ">=", "value": 0.99},
+    "p95_seconds_per_5min": {"op": "<=", "value": 60},
+    "peak_memory_gib": {"op": "<=", "value": 1.5}
+  },
+  "reported_only": [
+    "boundary_f_1_5s_reported",
+    "downbeats",
+    "phrases",
+    "labels"
+  ],
+  "per_source": {
+    "status": "not evaluated here: needs the baseline path and the owner corpus (classbeat#1298)",
+    "spotify": {"vs_baseline": "BPM agreement and boundary F >= MOWL - 0.02; quality-report warnings <= MOWL + 5 %"},
+    "studio": {"vs_baseline": "beat F >= baseline - 0.02; BPM >= baseline - 1 point; boundary F >= baseline - 0.03"},
+    "mix": {"vs_baseline": "song start and end within the mix +-2 s on >= 95 %; BPM per song +-2 % on >= 95 %"}
+  }
+}

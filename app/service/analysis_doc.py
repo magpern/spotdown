@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from typing import Any, Dict, List, Optional, Sequence
 
 from ..core import ANALYZER_VERSION, HOP, SR
@@ -39,15 +40,15 @@ def _clip(x: float) -> float:
 
 
 def beat_stability(beats: Sequence[float]) -> float:
-    """1 for perfectly even beats, falling with the spread of the inter-beat intervals."""
+    """The share of inter-beat gaps within 10 % of the median gap: 1 for an even grid, and a gap
+    where beats are absent (a breakdown) costs only that gap rather than the whole score."""
     if len(beats) < 4:
         return 0.0
-    gaps = [b - a for a, b in zip(beats[:-1], beats[1:])]
-    mean = sum(gaps) / len(gaps)
-    if mean <= 0:
+    gaps = sorted(b - a for a, b in zip(beats[:-1], beats[1:]))
+    median = gaps[len(gaps) // 2]
+    if median <= 0:
         return 0.0
-    spread = (sum((g - mean) ** 2 for g in gaps) / len(gaps)) ** 0.5
-    return _clip(1.0 - 2.0 * spread / mean)
+    return _clip(sum(1 for g in gaps if abs(g - median) <= 0.1 * median) / len(gaps))
 
 
 def _curve(values: Sequence[float]) -> Dict[str, Any]:
@@ -64,6 +65,30 @@ def _mean(values: Sequence[float], start: float, end: float) -> float:
     return sum(window) / len(window) if window else 0.0
 
 
+def _fade(fade: Optional[Sequence[float]]) -> Optional[Dict[str, Any]]:
+    if not fade:
+        return None
+    return {
+        "start_s": round(fade[0], 3),
+        "end_s": round(fade[1], 3),
+        "confidence": _clip(fade[2]),
+        "method": "estimated",
+    }
+
+
+def tempo_confidence(core: Dict[str, Any], stability: float) -> float:
+    """How much to trust the BPM, from four measured things: the pulse strength at the fitted grid,
+    how clear the half/double-time decision was, how steady the tracked beats are, and how many
+    there are. Capped below 1: a tempo is an estimate. Calibrated on the synthetic corpus only
+    (spotdown#6); the owner corpus recalibrates it."""
+    t = core["tempo"]
+    pulse = min(1.0, t["comb"] / 0.8)
+    clarity = 0.8 + 0.2 * t.get("margin", 1.0)
+    steady = 0.85 + 0.15 * stability
+    coverage = min(1.0, len(core["beat_times"]) / 16.0)
+    return _clip(0.97 * pulse * clarity * steady * coverage)
+
+
 def _silences(duration: float, start: float, end: float) -> List[Dict[str, Any]]:
     regions = []
     if start > 0.05:
@@ -76,21 +101,27 @@ def _silences(duration: float, start: float, end: float) -> List[Dict[str, Any]]
     ]
 
 
+NOVELTY_SCALE = 0.08  # the novelty at which a boundary is trusted about 63 % (calibration)
+
+
+def boundary_confidence(novelty: Optional[float], first: bool) -> float:
+    """From the self-similarity novelty at the boundary: a saturating curve, capped below 1.
+    The first segment starts the file, so nothing is claimed about it beyond a measured start."""
+    if first or novelty is None:
+        return 0.9 if first else 0.3
+    return _clip(0.95 * (1.0 - math.exp(-max(0.0, novelty) / NOVELTY_SCALE)))
+
+
 def _structure(core: Dict[str, Any]) -> Dict[str, Any]:
-    struct = core["energy"]["struct"]
     segments, groups = [], {}
-    prev_energy: Optional[float] = None
     for i, seg in enumerate(core["segments"]):
         sid = f"s{i + 1}"
-        energy = _mean(struct, seg["start"], seg["end"])
-        contrast = 1.0 if prev_energy is None else abs(energy - prev_energy)
-        prev_energy = energy
         segments.append(
             {
                 "id": sid,
                 "start_s": seg["start"],
                 "end_s": seg["end"],
-                "boundary_confidence": _clip(0.3 + 0.7 * min(1.0, 2.0 * contrast)),
+                "boundary_confidence": boundary_confidence(seg.get("boundary_novelty"), i == 0),
                 "method": "estimated",
             }
         )
@@ -118,14 +149,24 @@ def _events(core: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "method": "estimated",
             }
         )
-    for d in core["drops"]:
-        jump = _mean(struct, d, d + 4) - _mean(struct, d - 4, d)
+    strengths = core.get("drop_strengths") or [0.5] * len(core["drops"])
+    for d, jump in zip(core["drops"], strengths):
         events.append(
             {
                 "kind": "drop",
                 "start_s": d,
                 "strength": _clip(jump),
                 "confidence": _clip(0.4 + 0.5 * jump),
+                "method": "estimated",
+            }
+        )
+    for bd in core.get("breakdowns", []):
+        events.append(
+            {
+                "kind": "breakdown",
+                "start_s": bd["t"],
+                "strength": _clip(bd["strength"]),
+                "confidence": _clip(0.3 + 0.6 * bd["strength"]),
                 "method": "estimated",
             }
         )
@@ -152,7 +193,7 @@ def build(
     beats = core["beat_times"]
     stability = beat_stability(beats)
     bpm = round(core["bpm"], 2)
-    tempo_conf = _clip(stability * min(1.0, len(beats) / 16.0))
+    tempo_conf = tempo_confidence(core, stability)
     audio: Dict[str, Any] = {
         "sha256": sha256,
         "fingerprint": fingerprint(core["energy"]["full"]),
@@ -204,8 +245,8 @@ def build(
             "method": "measured",
             "confidence": MEASURED_CONFIDENCE,
             "silence_regions": _silences(duration, start, end),
-            "fade_in": None,
-            "fade_out": None,
+            "fade_in": _fade(core.get("fade_in")),
+            "fade_out": _fade(core.get("fade_out")),
             "energy": {
                 "full": _curve(core["energy"]["full"]),
                 "percussive": _curve(core["energy"]["percussive"]),

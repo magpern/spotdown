@@ -11,3 +11,9 @@ dump.rdb
 .pytest_cache/
 .ruff_cache/
 node_modules/
+# analysis fixtures are annotations only, never audio
+quality/**/*.wav
+quality/**/*.mp3
+quality/**/*.flac
+quality/**/*.ogg
+quality/**/*.m4a
