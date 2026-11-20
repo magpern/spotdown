@@ -45,7 +45,9 @@ class Settings(BaseSettings):
     # Operator-set hosts the `url` source may fetch from (comma separated DNS names, exact
     # match). Empty: the `url` source is disabled.
     url_allowed_hosts: str = ""
-    max_upload_bytes: int = 100 * 1024 * 1024
+    # Per file, whatever the caller declares (classbeat sends at most 60 MiB): uploads, url and
+    # youtube downloads.
+    max_upload_bytes: int = 60 * 1024 * 1024
     url_fetch_timeout_s: float = 120.0
     upload_ttl_s: int = 3600
     # Analysis sandbox rlimits (inside the container's own ceiling).
@@ -53,6 +55,8 @@ class Settings(BaseSettings):
     analysis_max_cpu_s: int = 600
     analysis_wall_timeout_s: int = 900
     analysis_max_decoded_s: float = 1200.0
+    # Wall time for decoding one file in the sandbox (a slow decode is a hostile file).
+    analysis_max_decode_s: float = Field(default=120.0, gt=0)
     # Lifetime of the global rows that hold Spotify-catalogue-derived references: the match
     # record of a chosen video and the reference of a global (youtube) alignment (ADR 0040 §7).
     # Expired rows are never served and are purged. At least a minute: a lifetime of 0 would

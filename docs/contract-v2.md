@@ -143,6 +143,43 @@ Push audio bytes (`Content-Type: application/octet-stream`; query `cache_scope`)
 after 1 hour) and no file name is kept. Callers first try the sha256 lookup below, so unchanged
 audio is never uploaded twice.
 
+Every upload is treated as hostile (spotdown#29). Only mp3 (MPEG Layer III), mp4/m4a (an MP4 brand
+with an AAC track) and wav (PCM or float) are accepted, recognised by their bytes and then checked
+whole; the extension and `Content-Type` are never trusted. A body over the byte cap (the operator's
+`MAX_UPLOAD_BYTES`, 60 MiB by default, whatever the caller declares) is `413 too_large`. A file
+that is empty, truncated, malformed, mixed with other content (anything after the audio but an
+ID3v1 or APEv2 tag), outside 8000 to 192000 Hz or 1 to 8 channels, or whose tables declare more
+than they hold, is `415 unsupported_media_type`. A refused upload leaves no file, no row and no
+idempotency record. Tags and metadata are never read into any output. A file whose structure
+already shows more than the decoded-length cap is accepted here and refused by its job
+(`processing_failed`, `out_of_memory`) before it is decoded.
+
+The job checks every source (upload, `url`, `youtube`) the same way in the analysis sandbox before
+decoding, and decodes with a decoder pinned to that container (no format guessing): libsndfile for
+wav and mp3, which must report the same container and stream; ffmpeg for mp4 with the `mov`
+demuxer, the AAC decoder, local files only and no data references. A file refused there is
+`processing_failed` with `decode_error`; a check and decode past the operator's decode deadline
+(`ANALYSIS_MAX_DECODE_S`, 120 s by default) is `processing_failed` with `timeout`.
+
+In an mp4, every track is checked, whatever its handler (a demuxer decides the stream type from
+the sample entry): sound tracks carry only AAC (`mp4a` naming MPEG-4 AAC main, LC, SSR, LTP, HE or
+HE v2, or MPEG-2 AAC), video tracks only a video entry, and any other track is refused.
+
+Refused on purpose (a safe default; expect some real-library files among them):
+- ALAC (Apple Lossless) m4a, mp3 inside mp4, QuickTime `.mov` and 3GP (by major brand), encrypted
+  tracks, and m4a with a chapter (`text`) or timed-metadata track;
+- AAC above 65535 Hz (the 16-bit `mp4a` rate field holds 0, as ffmpeg writes for 96 kHz);
+- mp3 with anything between or after the frames other than an APEv2 and/or ID3v1 tag at the end
+  (a Lyrics3v2 tag, junk, two files concatenated at another rate), a free-format bitrate, or an
+  ID3v2 tag header whose size is not synchsafe;
+- wav that is compressed (ADPCM and others), has more than 64 chunks, or has bytes after its RIFF
+  chunk.
+
+What the decoders still parse is accepted surface, inside the sandbox's rlimits and deadline:
+libsndfile reads the wav chunks the check only bounds (`LIST`, `cue `, `smpl` and others), mpg123
+reads the ID3v2 tag the check skips, and the probe's mutagen stream-info readers walk the mp3 frame
+headers and the mp4 atom headers (including `udta`/`meta`, never their values).
+
 ### `POST /v2/analyses`
 
 Start an analysis. Exactly one of `upload_id`, `source_ref` (`<kind>:<ref>`, for example

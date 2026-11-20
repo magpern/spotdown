@@ -40,6 +40,7 @@ def limits_from(settings: Settings) -> sandbox.Limits:
         cpu_s=settings.analysis_max_cpu_s,
         wall_s=float(settings.analysis_wall_timeout_s),
         decoded_s=settings.analysis_max_decoded_s,
+        decode_s=settings.analysis_max_decode_s,
     )
 
 
