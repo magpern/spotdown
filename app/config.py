@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:8000"
     data_dir: Path = Path("./data")
     redis_url: str = "redis://localhost:6379/0"
+    # False -> API only (do not serve the web UI at GET /).
+    serve_ui: bool = True
 
     # Conversion defaults
     default_bitrate: int = 320

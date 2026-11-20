@@ -39,7 +39,9 @@ app.add_middleware(
 
 
 @app.get("/", include_in_schema=False)
-def index() -> FileResponse:
+def index():
+    if not get_settings().serve_ui:
+        return {"service": "spotdown", "ui": "disabled", "api_docs": "/docs"}
     return FileResponse(STATIC_DIR / "index.html")
 
 

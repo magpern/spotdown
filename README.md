@@ -41,6 +41,13 @@ direct URL to content you own / Creative-Commons / public-domain / licensed / yo
 / podcasts with permission. `source_url` bypasses Spotify and the YouTube search entirely and
 just downloads the URL you give it. You are responsible for how you use this.
 
+## Backend-only (no web UI)
+
+Set `SERVE_UI=false` in `.env` to run API-only — the JSON endpoints, `/files`,
+`/healthz` and `/docs` all stay; only the HTML page at `GET /` is withheld
+(`GET /` then returns `{"service":"spotdown","ui":"disabled"}`). Useful when
+another frontend or service consumes the API.
+
 ## Run it
 
 ```bash
