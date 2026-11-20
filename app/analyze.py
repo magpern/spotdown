@@ -14,7 +14,11 @@ import librosa
 import numpy as np
 
 # Bump when thresholds/features change so the cache (keyed on this) refreshes.
-ANALYZER_VERSION = 1
+ANALYZER_VERSION = 2
+
+# Spotify trims edge silence; if the music content matches within this many
+# seconds we treat the timeline as alignable by a simple offset.
+ALIGN_TOLERANCE_S = 1.5
 
 SR = 22050
 HOP = 512
@@ -136,9 +140,15 @@ def analyze_track(file_path: Path, track_id: str,
     y, sr = librosa.load(str(file_path), sr=SR, mono=True)
     duration = float(librosa.get_duration(y=y, sr=sr))
 
-    # Leading silence (reported, not silently trimmed).
+    # Content boundaries (edge silence trimmed). Spotify trims edge silence, so the
+    # *content* duration — not the file duration — is what should match Spotify, and
+    # content_start is the offset to subtract from a file time to reach Spotify's clock.
     _, idx = librosa.effects.trim(y, top_db=30)
-    leading_silence = float(idx[0]) / sr
+    content_start = float(idx[0]) / sr
+    content_end = float(idx[1]) / sr
+    content_duration = max(content_end - content_start, 0.0)
+    leading_silence = content_start
+    trailing_silence = max(duration - content_end, 0.0)
 
     # Tempo + beats.
     tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, hop_length=HOP)
@@ -197,7 +207,13 @@ def analyze_track(file_path: Path, track_id: str,
         if di - s >= 3:
             build_ups.append({"start": round(float(grid[max(s, 0)]), 3), "end": round(float(d), 3)})
 
-    delta = (duration - spotify_duration_s) if spotify_duration_s else None
+    # Alignment: compare CONTENT duration (not file duration) to Spotify, and treat
+    # content_start as the offset from the file clock to the Spotify clock.
+    residual = (content_duration - spotify_duration_s) if spotify_duration_s else None
+    matches = (abs(residual) <= ALIGN_TOLERANCE_S) if residual is not None else None
+    # Spotify-clock cue points — only meaningful when the content aligns.
+    drops_spotify = ([round(max(d - content_start, 0.0), 3) for d in drops]
+                     if matches else None)
 
     return {
         "track_id": track_id,
@@ -207,9 +223,17 @@ def analyze_track(file_path: Path, track_id: str,
         "label_method": "heuristic",
         "analyzed_duration_s": round(duration, 3),
         "spotify_duration_s": spotify_duration_s,
-        "duration_delta_s": round(delta, 3) if delta is not None else None,
-        "timeline_matches_spotify": (abs(delta) <= 1.0) if delta is not None else None,
+        "duration_delta_s": round(duration - spotify_duration_s, 3) if spotify_duration_s else None,
+        "content_start_s": round(content_start, 3),
+        "content_end_s": round(content_end, 3),
+        "content_duration_s": round(content_duration, 3),
         "leading_silence_s": round(leading_silence, 3),
+        "trailing_silence_s": round(trailing_silence, 3),
+        # Subtract this from any file timestamp to get the Spotify-playback time.
+        "spotify_offset_s": round(content_start, 3),
+        "timeline_residual_s": round(residual, 3) if residual is not None else None,
+        "timeline_matches_spotify": matches,
+        "drops_spotify": drops_spotify,
         "bpm": round(bpm, 1),
         "bpm_candidates": _tempo_candidates(bpm),
         "downbeat_phase": phase,

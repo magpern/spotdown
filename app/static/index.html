@@ -252,10 +252,12 @@ function energyCurve(d) {
 
 function renderAnalysis(d) {
   analysisCard.style.display = "block";
-  const align = d.spotify_duration_s == null ? ""
-    : (d.timeline_matches_spotify
-        ? `<span class="badge ok">timeline aligned</span>`
-        : `<span class="badge warn">off Spotify by ${d.duration_delta_s}s</span>`);
+  let align = "";
+  if (d.spotify_duration_s != null) {
+    align = d.timeline_matches_spotify
+      ? `<span class="badge ok">aligned · −${d.spotify_offset_s}s offset</span>`
+      : `<span class="badge warn">off Spotify by ${d.timeline_residual_s}s</span>`;
+  }
   const stats = `<div class="stats">
     <div class="stat"><div class="sv">${d.bpm}</div><div class="sl">BPM</div></div>
     <div class="stat"><div class="sv">${fmtDur(Math.round(d.analyzed_duration_s))}</div><div class="sl">Length</div></div>
@@ -274,7 +276,11 @@ function renderAnalysis(d) {
   analysisCard.innerHTML =
     `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
        <div style="font-weight:600">Audio analysis</div>${align}</div>
-     <div class="hint">BPM candidates: ${d.bpm_candidates.join(", ")} · meter ${d.meter_assumed} · leading silence ${d.leading_silence_s}s · labels are heuristic</div>
+     <div class="hint">BPM candidates: ${d.bpm_candidates.join(", ")} · meter ${d.meter_assumed} · labels heuristic<br>
+       Timeline: file ${fmtDur(Math.round(d.analyzed_duration_s))} = ${d.content_duration_s}s content + ${d.trailing_silence_s}s trailing + ${d.leading_silence_s}s leading silence.
+       ${d.spotify_duration_s == null ? "" : (d.timeline_matches_spotify
+         ? `Content matches Spotify (${d.spotify_duration_s}s) — subtract ${d.spotify_offset_s}s from these times for the Spotify clock.`
+         : `Content differs from Spotify by ${d.timeline_residual_s}s — treat timestamps as file-only.`)}</div>
      ${stats}
      <div class="viz-label">Structure &amp; drops</div>${segmentBar(d)}${legend}
      <div class="viz-label">Energy — percussive (orange) vs full (blue), drops dashed</div>${energyCurve(d)}
