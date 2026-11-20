@@ -91,3 +91,26 @@ def test_analyses_of_an_old_database_are_backfilled_and_become_hits(tmp_path: Pa
     assert sorted(left) == [("an_bad",), ("an_old",)]  # unreadable documents stay misses
     Store(path)  # reopening is a no-op
     assert store.find_by_sha("a", "a" * 64, version) == hit
+
+
+def test_the_backfill_runs_once_and_links_no_old_form_url(tmp_path: Path) -> None:
+    path = tmp_path / "svc.sqlite"
+    version = analysis_doc.ANALYZER_VERSION_V2
+    old_ref = "https://media.example.com/a.wav"  # the host-and-path ref of that release
+    with sqlite3.connect(path) as conn:
+        conn.executescript(OLD)
+        conn.execute(
+            "INSERT INTO analyses VALUES ('an_oldurl', 'a', ?, 2.0)",
+            (_doc("an_oldurl", "c" * 64, {"kind": "url", "ref": old_ref}),),
+        )
+    store = Store(path)
+    found = store.find_by_sha("a", "c" * 64, version)
+    assert found is not None and found.analysis_id == "an_oldurl"  # found by its bytes
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM source_links").fetchone()[0] == 0
+        assert conn.execute("PRAGMA user_version").fetchone()[0] >= 1
+        conn.execute("UPDATE analyses SET sha256 = NULL WHERE analysis_id = 'an_oldurl'")
+    Store(path)  # already migrated: no second backfill
+    with sqlite3.connect(path) as conn:
+        row = conn.execute("SELECT sha256 FROM analyses WHERE analysis_id = 'an_oldurl'")
+        assert row.fetchone()[0] is None

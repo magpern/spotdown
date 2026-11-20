@@ -216,3 +216,30 @@ def test_the_middleware_guards_v2_behind_a_root_path() -> None:
     assert sent[0]["status"] == 401
     asyncio.run(middleware({**scope, "path": "/prefix/healthz"}, receive, send))
     assert reached == ["/prefix/healthz"]
+
+
+def test_the_access_log_never_carries_a_query_string(settings) -> None:
+    """uvicorn logs the request line with its query; in service mode the query is dropped, so a
+    url sent in a lookup (or a scope) never reaches the log."""
+    client_for(settings)  # installs the filter
+    logger = logging.getLogger("uvicorn.access")
+    seen = []
+
+    class Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            seen.append(record.getMessage())
+
+    handler = Capture()
+    logger.addHandler(handler)
+    old_level = logger.level
+    logger.setLevel(logging.INFO)
+    try:
+        path = "/v2/analyses/lookup?source=url:https://media.example.com/a?X-Signature=s3cr3t"
+        logger.info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:5", "GET", path, "1.1", 200)
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(old_level)
+    assert seen == ['127.0.0.1:5 - "GET /v2/analyses/lookup HTTP/1.1" 200']
+    client_for(settings)
+    filters = [f for f in logger.filters if type(f).__name__ == "QueryRedactingFilter"]
+    assert len(filters) == 1  # installed once

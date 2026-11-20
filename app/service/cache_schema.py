@@ -53,6 +53,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS alignments_by_id ON alignments (analysis_id);
 """
 
 _ANALYSES_COLUMNS = ("sha256", "fingerprint", "analyzer_version")
+# PRAGMA user_version once the backfill of spotdown#4 analyses has run.
+SCHEMA_VERSION = 1
 
 
 def create(conn: sqlite3.Connection) -> None:
@@ -68,7 +70,9 @@ def create(conn: sqlite3.Connection) -> None:
     if "analysis_id" not in {row[1] for row in conn.execute("PRAGMA table_info(alignments)")}:
         conn.execute("ALTER TABLE alignments ADD COLUMN analysis_id TEXT")
     conn.executescript(_INDEXES)
-    _backfill(conn)
+    if conn.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+        _backfill(conn)  # once per database, not on every store construction
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
 def _backfill(conn: sqlite3.Connection) -> None:
@@ -89,7 +93,11 @@ def _backfill(conn: sqlite3.Connection) -> None:
             " WHERE analysis_id = ?",
             (fields.sha256, fields.fingerprint, fields.analyzer_version, analysis_id),
         )
-        if fields.source_ref is not None:
+        # A url ref of that release is host and path; lookups now use the digest form, so such
+        # a link could never match: the analysis is found by its sha256 only.
+        if fields.source_ref is not None and not (
+            fields.source_kind == "url" and not fields.source_ref.startswith("sha256:")
+        ):
             key = cache_policy.scope_key(cache_policy.link_scope(fields.source_kind, scope))
             conn.execute(
                 "INSERT OR IGNORE INTO source_links (source_kind, source_ref, scope_key,"

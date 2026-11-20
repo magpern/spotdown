@@ -85,3 +85,15 @@ def test_the_sweep_purges_expired_global_references_only(tmp_path: Path) -> None
         assert conn.execute("SELECT COUNT(*) FROM match_choices").fetchone()[0] == 0
         scopes = [r[0] for r in conn.execute("SELECT cache_scope FROM alignments")]
     assert scopes == [SCOPE]  # a scoped alignment lives with its scope, not by this lifetime
+
+
+def test_the_lifetime_must_be_at_least_a_minute(tmp_path: Path) -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    from .service_helpers import service_settings
+
+    for bad in (0, -1, 59):
+        with pytest.raises(ValidationError):
+            service_settings(tmp_path, global_reference_ttl_s=bad)
+    assert service_settings(tmp_path, global_reference_ttl_s=60).global_reference_ttl_s == 60

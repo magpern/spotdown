@@ -7,10 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from app.service import analysis_doc
+from app.service import analysis_doc, url_policy
 
 from .cache_helpers import URL, Stack, sha
-from .service_helpers import AUTH, SCOPE, assert_valid, audio_files
+from .service_helpers import ALLOWED_HOST, AUTH, SCOPE, assert_valid, audio_files
+
+ALLOW = frozenset({ALLOWED_HOST})
 
 
 @pytest.fixture()
@@ -100,12 +102,15 @@ def test_the_same_url_in_the_same_scope_is_a_hit_through_the_source_link(stack: 
     first = stack.post({"cache_scope": SCOPE, "url": URL + "?sig=secret"})
     assert first.status_code == 202
     analysis_id = stack.analysis_id(first)
-    found = stack.lookup(source=f"url:{URL}?sig=secret#frag")
+    digest = url_policy.check_url(URL + "?sig=secret", ALLOW).ref
+    found = stack.lookup(source=f"url:{digest}")  # the digest: no signed URL in a query string
     assert found.status_code == 200 and found.json()["analysis_id"] == analysis_id
+    raw = stack.lookup(source=f"url:{URL}?sig=secret#frag")  # a raw URL still normalises
+    assert raw.status_code == 200 and raw.json()["analysis_id"] == analysis_id
     again = stack.post({"cache_scope": SCOPE, "url": URL + "?sig=secret"})
     assert again.status_code == 200 and again.json()["analysis_id"] == analysis_id
     assert len(stack.analysed) == 1 and len(stack.dispatch.job_ids) == 1
-    assert stack.lookup("scope_b", source=f"url:{URL}?sig=secret").status_code == 404
+    assert stack.lookup("scope_b", source=f"url:{digest}").status_code == 404
     assert stack.post({"cache_scope": "scope_b", "url": URL}).status_code == 202
 
 
@@ -115,7 +120,10 @@ def test_urls_that_differ_only_in_their_query_are_different_sources(stack: Stack
     stack.fetch_bytes = stack.audio("u.wav")
     analysis_id = stack.analysis_id(stack.post({"cache_scope": SCOPE, "url": URL + "?id=1"}))
     for other in (URL, URL + "?id=2"):
-        assert stack.lookup(source=f"url:{other}").status_code == 404
+        ref = url_policy.check_url(other, ALLOW).ref
+        assert stack.lookup(source=f"url:{ref}").status_code == 404
+    first = url_policy.check_url(URL + "?id=1", ALLOW).ref
+    assert stack.lookup(source=f"url:{first}").json()["analysis_id"] == analysis_id
     second = stack.post({"cache_scope": SCOPE, "url": URL + "?id=2"})
     assert second.status_code == 202  # not answered from the first URL's link
     assert stack.analysis_id(second) == analysis_id  # equal bytes: reused, not re-analysed
@@ -239,3 +247,9 @@ def test_every_stored_analysis_validates_and_has_full_provenance(stack: Stack) -
         if d["provenance"]["source"]["kind"] == "upload"
     )
     assert {i for i in ids} == {d["analysis_id"] for d in stored}
+
+
+@pytest.mark.parametrize("ref", ["sha256:" + "0" * 64, "sha256:" + "A" * 64, "sha256:abc"])
+def test_a_url_digest_lookup_misses_cleanly(stack: Stack, ref: str) -> None:
+    res = stack.lookup(source=f"url:{ref}")
+    assert res.status_code == 404 and res.json()["error"]["code"] == "not_found"

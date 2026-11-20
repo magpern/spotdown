@@ -132,3 +132,21 @@ def test_the_lease_is_longer_than_the_queue_timeout(settings) -> None:
     assert (
         job_timeout_s(settings) >= settings.analysis_wall_timeout_s + settings.url_fetch_timeout_s
     )
+
+
+def test_a_job_starting_during_the_sweep_keeps_its_directory(settings, store, monkeypatch) -> None:
+    """The directories are listed before the running jobs are read, so a job that starts just
+    after the read (marked running, then its directory made) is not in the listing and is never
+    taken for an orphan. Read first and list second, and its directory would be removed."""
+    real = store.running_job_ids
+
+    def a_job_starts_meanwhile():
+        running = real()
+        store.add_job({"job_id": "job_new", "cache_scope": SCOPE, "source_kind": "upload"})
+        assert store.start_job("job_new")
+        (settings.work_dir / "job_new").mkdir()
+        return running  # read before the job started
+
+    monkeypatch.setattr(store, "running_job_ids", a_job_starts_meanwhile)
+    sweep.remove_orphan_work_dirs(settings, store)
+    assert (settings.work_dir / "job_new").is_dir()

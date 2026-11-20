@@ -11,6 +11,8 @@ import hmac
 from pathlib import Path
 from typing import Optional
 
+# Starlette's own helper, the one its router matches on. It is private: an upgrade that moves it
+# fails at import (loudly), never by opening the guard; tests pin its root_path behaviour.
 from starlette._utils import get_route_path
 from starlette.types import ASGIApp, Receive, Scope, Send
 
