@@ -57,8 +57,8 @@ recorded it as a follow-up.
 2. **Every request with an effect must come from the UI's own origin.** This holds in every mode,
    token or not. It is the defence against cross-site and same-site cross-origin requests. CORS and
    `SameSite` are not.
-   - **Every non-safe method** (`POST`, `PUT`, `PATCH`, `DELETE`) on a standalone route must pass
-     both of these before the body is read:
+   - **Every unsafe method** on a standalone route must pass both of these before the body is read.
+     An unsafe method is every method other than `GET`, `HEAD` and `OPTIONS`.
      - **Origin:** a present, same-origin `Origin`, compared exactly as in ADR 0002 Decision 2 (the
        scheme uvicorn sees plus `Host`, or `ui_public_origin` when set). Otherwise `403`.
      - **Content type:** an exact `Content-Type`, otherwise `415`. It is `application/json`
@@ -84,14 +84,34 @@ recorded it as a follow-up.
 3. **Loopback by default, decided where the port is published.**
    - **Launcher.** A small launcher, `python -m app.serve`, runs uvicorn on `SPOTDOWN_BIND_HOST`
      (default `127.0.0.1`) and port 8000. `README.md` uses it.
-   - **Container.** The `Dockerfile` sets `SPOTDOWN_BIND_HOST=0.0.0.0` and runs the launcher, so
-     service deployments still listen as before.
+     - The launcher builds the app object itself and hands it a `LaunchInfo` holding the bind host
+       it passes to uvicorn. This is an in-process object, not an environment variable.
+     - **Standalone mode refuses to start without it.** The module-level `app.main:app` that a
+       direct `uvicorn app.main:app` loads has no `LaunchInfo`. In standalone mode its startup
+       raises with "start standalone mode with `python -m app.serve`".
+     - **Why refuse rather than read the bind from the server config:** an ASGI app has no supported
+       way to read uvicorn's bind address. The launcher is the one place that knows it, because it
+       chose it.
+     - **Forwarded headers.** The launcher sets uvicorn's `forwarded_allow_ips` to empty unless the
+       operator names a proxy address. So no `X-Forwarded-*` header can rewrite the peer address
+       or the scheme that the connection layer and the `Origin` check read.
+     - Service mode is unaffected and still starts either way.
+   - **Container signal.** The `Dockerfile` sets `SPOTDOWN_IN_CONTAINER=1`, and only the image sets
+     it. The app counts as inside a container only when that variable is exactly `1`. Any other value,
+     or none, means a bare host. Whether the app runs in a container is never inferred from `/proc`,
+     `/.dockerenv` or cgroups. `/proc/net/route` is read only to find the gateway's address, and
+     only once the signal is set (item 5).
+   - **Container.** The `Dockerfile` also sets `SPOTDOWN_BIND_HOST=0.0.0.0` and runs the launcher,
+     so service deployments still listen as before.
    - **Publishing.** `docker-compose.yml` publishes `api` on
      `${SPOTDOWN_PUBLISH_HOST:-127.0.0.1}:8000:8000`, and passes the same value into the `api`
      container as the environment variable `SPOTDOWN_PUBLISH_HOST`. The explicit setting
-     `SPOTDOWN_PUBLISH_HOST` (for example `0.0.0.0`) widens it.
+     `SPOTDOWN_PUBLISH_HOST` (for example `0.0.0.0`) widens it. `SPOTDOWN_PUBLISH_HOST` is read **only
+     inside a container**; on a bare host it is ignored.
    - **Redis** gets no `ports` at all; the containers reach it as `redis:6379` on the compose network.
-   - The owner's existing local stack keeps working at `localhost:8000`.
+   - The owner's local stack should keep working at `localhost:8000`. One part of that is unverified
+     on Docker Desktop: from which address host traffic reaches the container. Item 5's diagnostic
+     line shows it, and a token always works.
 4. **A `Host` allowlist for every standalone route (DNS rebinding).**
    - The setting `ui_allowed_hosts` (introduced by ADR 0002) applies app-wide in standalone mode,
      as a middleware in front of every route, the token form included.
@@ -104,30 +124,51 @@ recorded it as a follow-up.
    - The host is lowercased and compared with the entries. An unlisted or unparsable `Host` gets
      `403`, and nothing else runs.
 5. **A token whenever the app may be reachable beyond loopback, failing closed.**
-   - **What triggers the token.** Standalone mode is *exposed* when any of these holds:
-     - (a) `ui_allowed_hosts` lists a name other than the loopback names;
-     - (b) `SPOTDOWN_PUBLISH_HOST` is set to anything other than `127.0.0.1`, `::1` or `localhost`;
-     - (c) `SPOTDOWN_BIND_HOST` is not loopback and `SPOTDOWN_PUBLISH_HOST` is **unset**. This is a
-       non-loopback bind outside compose, or a container started without the compose file. It fails
-       closed.
+   - **What triggers the token.** Each input is an allowlist of loopback spellings. Anything else,
+     including a missing value where one is needed, counts as exposed.
+     - **Loopback spellings.** Bind and publish hosts: `127.0.0.1`, `::1` and `localhost`. `[::1]`
+       in brackets counts as exposed, which fails safe; document `::1`. `ui_allowed_hosts` entries:
+       `localhost`, `127.0.0.1` and `[::1]`.
+     - **Exposed when any of these holds:**
+       - (a) `ui_allowed_hosts` lists a name other than the loopback names;
+       - (b) **on a bare host** (no container signal), the launcher's bind host is not loopback,
+         whatever `SPOTDOWN_PUBLISH_HOST` says;
+       - (c) **inside a container**, `SPOTDOWN_PUBLISH_HOST` is unset, empty or not a loopback
+         spelling. A container started without the compose file therefore fails closed.
+     - Standalone mode without a `LaunchInfo` does not start at all (item 3), so no bypass reaches
+       this decision.
    - **Startup.** When exposed, standalone mode refuses to start unless `standalone_access_token_file`
      names a readable file holding a token of at least 32 characters. An empty, short or unreadable
      file also fails startup. The token comes only from that file, never from a plain environment
      value, and is never logged.
      - The token must be random. The operator generates it with `openssl rand -hex 32`, and
        `README.md` documents that.
-   - **The peer layer, a further check.** With no token configured, any request whose peer address
-     is not loopback gets `403`.
-     - That catches a direct `uvicorn --host 0.0.0.0` that bypasses the launcher.
-     - Inside a container where (b) and (c) do not hold, the published port is loopback-only. The
-       peer is then the container's default gateway, read from `/proc/net/route`, which is also
-       accepted.
-     - Docker's userland proxy can present any client as that gateway. So in a container this layer
-       adds little, and the startup trigger is the defence.
+   - **The connection layer, a further check with no token.** Each request is checked against an
+     allowlist of the addresses it can arrive on.
+     - **On a bare host:** the peer address (`scope["client"]`) must be loopback, **and** the local
+       address the connection arrived on (`scope["server"]`, which uvicorn sets per connection) must
+       be loopback.
+     - **Inside a container whose `SPOTDOWN_PUBLISH_HOST` is a loopback spelling:** the peer must be
+       loopback, or exactly the container's default gateway, read from `/proc/net/route`. The
+       default gateway is the address published-port traffic arrives from.
+     - **Anywhere else:** only loopback peers.
+     - A missing or unparsable `scope["client"]` or `scope["server"]`, or an unreadable route table,
+       counts as not allowed.
+     - Anything not allowed gets `403`, with a body that says a token is needed to reach the app from
+       that address.
+     - With a token configured, this layer is off: the session is the check.
+   - **Diagnostic log line.** At startup, and on the first request and the first refused request,
+     the app logs one line: the exposure mode (`bare-loopback`, `container-loopback` or `exposed`),
+     which triggers fired, and the address class of the peer and the local address (`loopback`,
+     `gateway` or `other`). Raw addresses are never logged. So the owner can see whether Docker
+     Desktop's traffic arrives as `gateway`. If it arrives as `other`, it is refused (fail closed),
+     and the fix is to configure a token.
    - **With a token configured, every standalone route needs a session.** That covers `/`, the UI
      assets, `/api/...` and `/files/...`. There are three exceptions:
      - `GET /login` and `POST /login`;
-     - `GET /healthz`, which returns only `{"status": "ok"}` and reveals nothing.
+     - `GET /healthz`. It returns `{"ok": ..., "redis": ...}`: liveness and whether Redis answers.
+      It is the same handler as in service mode, where classbeat probes it, and it stays unchanged.
+      It reveals no data.
 
      Without a valid session:
      - a browser `GET /` (whose `Accept` includes `text/html`) gets a `303` redirect to `/login`;
@@ -138,8 +179,11 @@ recorded it as a follow-up.
      - It compares the token with `hmac.compare_digest`. A wrong token gets `401` and no cookie. The
        right token sets the session cookie and answers `204`, and the login page then goes to `/`.
      - **Rate limit:** in-process, per peer address. After 5 failures within 60 s, every login from
-       that peer gets `429` with `Retry-After: 60` for the next 60 s. Behind Docker's proxy all
-       peers can share one address, so the limit then applies to everyone, which fails safe.
+       that peer gets `429` with `Retry-After: 60` for the next 60 s. A request with no readable peer
+       address counts against one shared `unknown` bucket. Behind Docker's proxy all
+       peers can share one address, so the limit then applies to everyone, which fails safe. It also
+       means anyone who can reach `/login` can lock the owner out by failing 5 times a minute. That
+       is accepted for a single-user tool.
    - **`POST /logout`** passes item 2's checks, clears the cookie (`Max-Age=0`) and answers `204`.
    - **The session cookie.**
      - **Value:** `<expiry>.<mac>`. `<expiry>` is a Unix time in decimal digits only. `<mac>` is the
@@ -159,7 +203,8 @@ recorded it as a follow-up.
      `ui_public_origin=https://...`, so the token and the cookie never cross the network in clear
      text. Plain HTTP beyond loopback is allowed but documented as unsafe (Consequences).
    - **Not exposed means no token.** With none of (a) to (c), no token is needed. The defences are
-     then loopback publishing, the peer layer, the `Host` allowlist, no CORS and item 2.
+     then loopback publishing or binding, the connection layer, the `Host` allowlist, no CORS and
+     item 2.
 6. **Service mode is out of scope.** Its service-key authentication, its routes and its listening
    address are unchanged. None of these middlewares or startup checks is installed there.
 
@@ -175,8 +220,14 @@ recorded it as a follow-up.
 - **`Sec-Fetch-Site` instead of a custom header, or moving the effectful GETs to `POST`.** Rejected;
   the reasons are in item 2.
 - **A token always, even on loopback.** Not chosen. On loopback, item 2, the `Host` allowlist and
-  the peer layer leave only local processes able to drive the app. A token would add friction to the
+  the connection layer leave only local processes able to drive the app. A token would add friction to the
   single-user test tool for little gain. It is a reversible setting.
+- **Infer "inside a container" from `/proc/1/cgroup`, `/.dockerenv` or the route table.** Rejected:
+  these exist or look alike on bare Linux and WSL2. A bare host would then accept its LAN router or
+  the Windows host as "the gateway" (the second review of PR #53, B3). Only the image sets the
+  explicit signal.
+- **Read the bind from uvicorn's server config.** Rejected: an ASGI app has no supported access to
+  it. Requiring the launcher makes the bind known by construction.
 - **Trigger the token only from `ui_allowed_hosts`.** Rejected: publishing on `0.0.0.0` alone would
   expose an unauthenticated app to the network, because any client can send `Host: localhost`.
 - **No token beyond loopback, "trusted network" only.** Rejected: any device on that network could
@@ -194,11 +245,17 @@ recorded it as a follow-up.
 - **What local processes can do:** any local process can still drive the app without a token, as
   with any loopback service. The `Origin`, `Host`, content-type and `X-Spotdown-UI` checks stop
   browsers only.
-- **Exposure always brings a token.** Publishing beyond loopback (`SPOTDOWN_PUBLISH_HOST`), a
-  non-loopback bind outside compose, or a non-loopback name in `ui_allowed_hosts` makes startup
-  demand a token. A network-reachable standalone app started through the launcher or the compose
-  file is therefore never unauthenticated. A direct `uvicorn --host 0.0.0.0` that bypasses both
-  still meets the peer layer, which refuses non-loopback peers.
+- **Exposure always brings a token, as far as the app can see.**
+  - A non-loopback bind on a bare host, a non-loopback or missing publish host in a container, or a
+    non-loopback name in `ui_allowed_hosts` makes startup demand a token.
+  - A direct `uvicorn app.main:app` does not start standalone mode at all.
+  - Without a token, a bare host serves only connections that are loopback at both ends.
+- **What the app cannot detect.** A compose override, or a hand-written `docker run -p`, that
+  publishes the port more widely while `SPOTDOWN_PUBLISH_HOST` stays loopback.
+  - Docker's userland proxy then presents LAN clients as the gateway, and they are served without a
+    token.
+  - This is accepted, and `README.md` says it: widening the published port must go through
+    `SPOTDOWN_PUBLISH_HOST`.
 - **Plain HTTP beyond loopback exposes the token and the cookie** to anyone on the network path. TLS
   with `ui_public_origin=https://...` is the documented setup for that case.
 - **Clients that break:**
