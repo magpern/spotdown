@@ -1,7 +1,7 @@
 # ADR 0003: standalone exposure: a token always, plus same-origin requests and loopback defaults
 
 **Status:** Accepted (2026-11-21), after the Opus review of PR #53 passed at `1024de3`
-([`Agent review (opus): PASS`](https://github.com/magpern/spotdown/pull/53#issuecomment-7064851523)). The same follow-up PR (spotdown#54) folded in that review's
+([`Agent review (opus): PASS`](https://github.com/magpern/spotdown/pull/53#issuecomment-7064851523)). The follow-up PR (spotdown#57, for issue #54) folded in that review's
 non-blocking findings: the assumptions and named outcomes that #52 implements, the lifespan
 wording, and one `Origin` rule shared with ADR 0002.
 
@@ -71,9 +71,15 @@ recorded it as a follow-up.
      - every other request gets `401`, unknown paths included, so routes cannot be enumerated.
 2. **The token: owner-supplied, or generated once.**
    - **Owner-supplied.** If `standalone_access_token_file` is set, the token is that file's content
-     with trailing whitespace stripped. It is checked only for length: 32 to 512 characters, so
-     every valid token fits the 1 KiB login body. Outside that range the token state is invalid
-     (`503`).
+     with trailing whitespace stripped.
+     - **Rule:** 32 to 512 characters, each printable ASCII from `0x21` to `0x7E` except `"` and
+       `\`. Spaces, control characters and anything non-ASCII are excluded.
+     - **Why:** such a token needs no JSON escaping and is one byte per character. So
+       `{"token":"<token>"}` is at most 512 + 12 = 524 bytes, well under the 1 KiB login body cap,
+       and every valid token can be submitted.
+     - **A token outside the rule** makes the token state invalid. That is `503`, with a console
+       line at construction saying which rule failed (length or character set), never the token.
+     - A generated token (64 hex characters) always satisfies the rule.
    - **Generated.** If it is not set, the token lives at `data_dir/standalone_token`, and the
      content must be exactly 64 lowercase hex characters (with one optional trailing newline).
      - **Creation is a small state machine with one rule: no process ever deletes, replaces or
@@ -131,7 +137,8 @@ recorded it as a follow-up.
        - the link failed with `EEXIST`, but the re-read finds no final file (deleted from outside);
        - the fallback's write or `fsync` failed;
        - after the 2 s re-read, the final file is empty, short or malformed;
-       - the owner-supplied file is unreadable, or shorter than 32 or longer than 512 characters.
+       - the owner-supplied file is unreadable, or breaks the owner-token rule (length 32 to 512,
+         printable ASCII without `"` or `\`).
      - **Recovery without a restart.** A worker with no valid token keeps answering `503`, but on
        later requests it re-reads the token file (generated or owner-supplied) **at most once a
        second**. It switches to the token as soon as the file holds a valid one. This is a re-read,
@@ -242,7 +249,9 @@ recorded it as a follow-up.
 
      An empty entry, `*`, a port, a scheme, a path or whitespace raises.
    - **`ui_public_origin`** must be an exact `scheme://host[:port]` with scheme `http` or `https`,
-     and nothing else.
+     and nothing else: no userinfo, path (not even `/`), query or fragment. An explicit default
+     port (`:80` with `http`, `:443` with `https`) also raises, because browsers omit it from
+     `Origin`, so such a setting could never match.
 6. **Defence in depth.** These no longer decide authentication. They limit what a browser page or a
    misconfiguration can do. Each has its own test.
    - **Same-origin unsafe requests.** Every unsafe method (every method except `GET`, `HEAD` and
@@ -251,7 +260,8 @@ recorded it as a follow-up.
        - **The one comparison rule**, which ADR 0002 also uses: both sides are split into scheme,
          host and port. The scheme and host are lowercased, and the three parts must be equal as
          strings. No default port is added or removed, so `http://localhost` and
-         `http://localhost:80` differ. A missing `Origin` and `Origin: null` never match.
+         `http://localhost:80` differ. A missing `Origin` and `Origin: null` never match, and
+         neither does an `Origin` with userinfo, a path, a query or a fragment.
        - **The expected origin** is `ui_public_origin` if set. Otherwise it is `http://` plus the
          request's `Host` (which has passed the `Host` allowlist). It is never taken from the scheme
          uvicorn sees or from forwarded headers.
