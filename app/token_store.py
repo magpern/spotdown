@@ -25,7 +25,7 @@ FINAL_NAME = "standalone_token"
 REREAD_INTERVAL_S = 1.0
 CONSTRUCTION_WAIT_S = 2.0
 CONSTRUCTION_POLL_S = 0.05
-_READ_LIMIT = 4096
+_READ_LIMIT = 4096  # a larger file is never a valid token: it is read one byte past this
 
 # Seams for the tests (time is patched, never slept for real in a test that forces a race).
 _monotonic: Callable[[], float] = time.monotonic
@@ -45,7 +45,7 @@ def _read(path: Path) -> Optional[bytes]:
     file is read without ``O_NOFOLLOW``; a planted symlink's target is almost never valid)."""
     try:
         with open(path, "rb") as fh:
-            return fh.read(_READ_LIMIT)
+            return fh.read(_READ_LIMIT + 1)
     except FileNotFoundError:
         return None
     except OSError:
@@ -193,7 +193,10 @@ class TokenSource:
                     f"STANDALONE_ACCESS_TOKEN_FILE {self.path} is missing, unreadable or empty"
                 )
             return None
-        token, rule = owner_token_problem(raw)
+        if len(raw) > _READ_LIMIT:  # never truncated into a valid token: trailing junk counts
+            token, rule = None, "length"
+        else:
+            token, rule = owner_token_problem(raw)
         if token is None and report:
             _console(
                 f"STANDALONE_ACCESS_TOKEN_FILE {self.path} breaks the owner-token rule: {rule} "

@@ -63,6 +63,10 @@ async def _respond(
     await send({"type": "http.response.body", "body": body})
 
 
+async def _too_many(send: Send, retry: int) -> None:
+    await _respond(send, 429, "Too many failed logins", [(b"retry-after", str(retry).encode())])
+
+
 async def _read_capped(scope: Scope, receive: Receive) -> tuple[int, bytes]:
     """``(0, body)``, or an error status: 413 over 1 KiB (by ``Content-Length`` before reading,
     and while reading), 400 for a malformed ``Content-Length`` or a disconnect."""
@@ -170,12 +174,9 @@ class StandaloneAuth:
         self, scope: Scope, receive: Receive, send: Send, token: str, host: HostHeader
     ) -> None:
         """Steps 3 to 9 of ``POST /login`` (``Host`` and the token state ran already)."""
-        now = _now()
-        retry = self.limit.retry_after(now)
+        retry = self.limit.retry_after(_now())
         if retry is not None:  # the token is not evaluated and the attempt does not count
-            return await _respond(
-                send, 429, "Too many failed logins", [(b"retry-after", str(retry).encode())]
-            )
+            return await _too_many(send, retry)
         if not origin_matches(_header(scope, b"origin"), self._expected(host)):
             return await _respond(send, 403, "Origin not allowed")
         if _header(scope, b"x-spotdown-ui") != "1":
@@ -192,8 +193,12 @@ class StandaloneAuth:
         submitted = data.get("token") if isinstance(data, dict) else None
         if not isinstance(submitted, str):
             return await _respond(send, 400, 'Send {"token": "..."}')
-        if not token_matches(submitted, token):
-            self.limit.record_failure(_now())
+        # The body was awaited since step 3, so other attempts may have closed the limit: it is
+        # checked again, atomically with the comparison and the count (no await in between).
+        retry, ok = self.limit.attempt(_now(), lambda: token_matches(submitted, token))
+        if retry is not None:
+            return await _too_many(send, retry)
+        if not ok:
             return await _respond(send, 401, "Wrong token")
         cookie = set_cookie_header(make_session(token, _now()), self.https)
         await _respond(send, 204, headers=[(b"set-cookie", cookie.encode("ascii"))])

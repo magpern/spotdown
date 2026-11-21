@@ -25,9 +25,11 @@ def _run(status: int) -> dict:
 @needs_node
 def test_every_request_is_same_origin_with_the_ui_header() -> None:
     out = _run(200)
+    assert out["calls"].pop() == {"audio": "bytes"}  # the audio loader returned the body
     urls = [c["url"] for c in out["calls"]]
     assert [u.split("?")[0] for u in urls] == [
-        "/api/Gettrack", "/api/v1/convert", "/api/v1/tasks/j", "/api/v1/analyze/t1"
+        "/api/Gettrack", "/api/v1/convert", "/api/v1/tasks/j", "/api/v1/analyze/t1",
+        "/files/x.mp3",
     ]  # fmt: skip
     for call in out["calls"]:
         assert call["url"].startswith("/") and not call["url"].startswith("//")
@@ -44,7 +46,8 @@ def test_every_request_is_same_origin_with_the_ui_header() -> None:
 @needs_node
 def test_a_401_goes_to_login() -> None:
     out = _run(401)
-    assert out["navigations"] and set(out["navigations"]) == {"/login"}
+    assert out["calls"].pop() == {"audio": "error"}  # the audio loader stops, too
+    assert len(out["navigations"]) == 4 and set(out["navigations"]) == {"/login"}
 
 
 def test_the_page_has_no_cross_origin_fallback() -> None:

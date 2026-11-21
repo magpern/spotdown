@@ -10,19 +10,25 @@ const el = (id) => els[id] || (els[id] = {
 const calls = [], navigations = [];
 const ctx = {
   document: { getElementById: el }, window: { addEventListener() {} },
-  location: { protocol: "http:", assign: (u) => navigations.push(u) },
+  location: { protocol: "http:", origin: "http://localhost:8000", assign: (u) => navigations.push(u) },
   setTimeout: (f) => f(), JSON, Object, Number, String, Promise, Error, encodeURIComponent,
   fetch: async (url, opts) => {
     calls.push({ url, opts });
     const body = url.includes("/tasks/") ? { status: "done", download_url: "/files/x.mp3" }
       : { tracks: [{ id: "t1", title: "T" }], count: 1, status: "queued", task_id: "j" };
-    return { status, ok: status < 300, json: async () => body };
+    return { status, ok: status < 300, json: async () => body, arrayBuffer: async () => "bytes" };
   },
 };
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(dir, "ui.js"), "utf8"), ctx, { filename: "ui.js" });
+for (const f of ["waveform_model.js", "ui.js"])
+  vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f });
 vm.runInContext("currentTrackId = 't1'; var renderAnalysis = () => {};", ctx);
 (async () => {
   for (const fn of ["lookup", "convert", "analyze"]) await vm.runInContext(`${fn}()`, ctx);
+  // The waveform's audio loader (spotdown#60), after convert() set the download link.
+  vm.runInContext("currentAudioUrl = '/files/x.mp3'", ctx);
+  let audio = null;
+  try { audio = await vm.runInContext("loadTrackAudio()", ctx); } catch (e) { audio = "error"; }
+  calls.push({ audio });
   process.stdout.write(JSON.stringify({ calls, navigations }));
 })();

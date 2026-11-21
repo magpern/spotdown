@@ -120,7 +120,7 @@ async function loadTrackAudio() {
   if (!currentAudioUrl) return null;
   const path = wfAudioPath(currentAudioUrl, location.origin);  // same-origin /files/<name> only
   if (!path) throw new Error("the download link is not a file of this server");
-  const r = await fetch(`${API_BASE}${path}`);
+  const r = await api(path);  // same origin, with the session cookie; a 401 goes to /login
   if (!r.ok) throw new Error("the audio download failed (HTTP " + r.status + ")");
   return r.arrayBuffer();
 }

@@ -433,3 +433,12 @@ def test_a_failed_temporary_write_rereads_the_final_file(monkeypatch, tmp_path, 
     monkeypatch.setattr(token_store, "os", OsProxy(before))
     assert create_or_read(final) == ("9" * 64 if other_won else None)
     assert tmp_files(tmp_path) == []  # our own temporary file is still removed
+
+
+def test_an_owner_file_with_junk_past_the_read_limit_is_refused(tmp_path, capsys) -> None:
+    owner = tmp_path / "owner"
+    owner.write_bytes(b"k" * 40 + b" " * (token_store._READ_LIMIT - 40) + b"junk")
+    assert TokenSource(owner, owner=True).current() is None  # not truncated into "k" * 40
+    assert "owner-token rule: length" in capsys.readouterr().out
+    owner.write_bytes(b"k" * 40 + b" " * (token_store._READ_LIMIT - 40))  # exactly the limit
+    assert TokenSource(owner, owner=True).current() == "k" * 40

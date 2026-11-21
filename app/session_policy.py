@@ -11,7 +11,7 @@ import hmac
 import math
 import re
 from collections import deque
-from typing import Deque, Optional
+from typing import Callable, Deque, Optional
 
 SESSION_TTL_S = 43200  # 12 h
 LOGIN_BODY_MAX = 1024  # 1 KiB, for /login and /logout
@@ -147,3 +147,16 @@ class LoginRateLimit:
         if len(self._failures) >= RATE_LIMIT_FAILURES:
             self._failures.clear()
             self._closed_until = now + RATE_LIMIT_WINDOW_S
+
+    def attempt(self, now: float, matches: Callable[[], bool]) -> tuple[Optional[int], bool]:
+        """Step 9 as one synchronous step: ``(retry_after, False)`` while closed, without calling
+        ``matches``; else ``(None, matches())``, recording a failure when it is false. The caller
+        must not await between reading the body and calling this, and this never awaits, so
+        concurrent attempts cannot all pass an open limit together."""
+        retry = self.retry_after(now)
+        if retry is not None:
+            return retry, False
+        ok = matches()
+        if not ok:
+            self.record_failure(now)
+        return None, ok

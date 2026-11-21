@@ -136,3 +136,13 @@ def test_failures_older_than_the_window_do_not_count() -> None:
         limit.record_failure(NOW + i)
     limit.record_failure(NOW + 61)  # the first two are out of the 60 s window
     assert limit.retry_after(NOW + 61) is None
+
+
+def test_an_attempt_is_checked_compared_and_counted_in_one_step() -> None:
+    limit = sp.LoginRateLimit()
+    compared = []
+    for i in range(5):
+        assert limit.attempt(NOW, lambda: compared.append(i) or False) == (None, False)
+    assert limit.attempt(NOW, lambda: compared.append("x") or True) == (60, False)
+    assert compared == [0, 1, 2, 3, 4]  # closed: the token is not compared
+    assert limit.attempt(NOW + 60, lambda: True) == (None, True)

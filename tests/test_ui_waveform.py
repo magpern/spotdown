@@ -332,4 +332,5 @@ def test_the_audio_loader_fetches_only_the_checked_path() -> None:
     js = (STATIC / "ui.js").read_text(encoding="utf-8")
     body = js.split("async function loadTrackAudio")[1].split("async function analyze")[0]
     assert "wfAudioPath(currentAudioUrl, location.origin)" in body
-    assert body.count("fetch(") == 1 and "fetch(`${API_BASE}${path}`)" in body
+    # Through the page's one same-origin request helper (ADR 0003), never a fetch of its own.
+    assert "fetch(" not in body and body.count("api(") == 1 and "await api(path)" in body

@@ -139,14 +139,25 @@ beyond loopback serve TLS and set `UI_PUBLIC_ORIGIN=https://...`. Redis is not p
   1 KiB. A client whose JSON encoder escapes extra characters (PHP escapes `/` as `\/`, Go escapes
   `<` as `\u003c`) must send the token unescaped or use a token without those characters. The
   generated hex token needs no escaping.
+- **One worker.** The login rate limit (five wrong tokens a minute, then a minute closed) is kept
+  per process. Run standalone with one uvicorn worker, as the `Dockerfile` does: with
+  `--workers N` it allows N × 5 attempts a minute.
+- **New unsafe routes.** Every `POST`, `PUT`, `PATCH` or `DELETE` is refused with `415` unless its
+  method and path are listed with their one content type in `UNSAFE_CONTENT_TYPES`
+  (`app/session_policy.py`). spotdown#49's upload route must add its row there with
+  `application/octet-stream`.
 
 ## Try it (lawful path — a direct source URL)
 
 ```bash
 O='Origin: http://localhost:8000'; U='X-Spotdown-UI: 1'; J='Content-Type: application/json'
-# 0) sign in once (the cookie lands in ./cookies)
-curl -s -c cookies -H "$O" -H "$U" -H "$J" localhost:8000/login \
-  -d "{\"token\":\"$(cat data/standalone_token)\"}"
+umask 077   # the login body and the cookie file stay readable by you only
+# 0) sign in once. The token goes into a private file, never onto a command line (where other
+#    users could see it in the process list). The file is root-owned on Linux, hence `sudo`;
+#    or read it with `docker compose exec -T api cat /app/data/standalone_token`.
+{ printf '{"token":"'; sudo cat data/standalone_token | tr -d '\n'; printf '"}'; } > login.json
+curl -s -c cookies -H "$O" -H "$U" -H "$J" localhost:8000/login --data-binary @login.json
+rm login.json   # the cookie in ./cookies lasts 12 h; delete it when you are done
 
 # 1) kick off a conversion of content you have the right to download
 curl -s -b cookies -H "$O" -H "$U" -H "$J" localhost:8000/api/v1/convert \

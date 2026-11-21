@@ -389,3 +389,47 @@ def test_neither_the_token_nor_a_cookie_is_logged_or_returned(sa, caplog, capsys
     for secret in (sa.token, value, value.split(".")[1]):
         assert secret not in caplog.text and secret not in out.out and secret not in out.err
         assert all(secret not in body for body in bodies)
+
+
+async def _concurrent_logins(app, bodies: List[bytes]) -> List[int]:
+    """Every attempt passes step 3 first, then all bodies arrive together (held until each
+    request is waiting for its body)."""
+    release = asyncio.Event()
+    waiting = [0]
+    statuses: List[int] = []
+
+    async def one(body: bytes) -> None:
+        async def receive() -> dict:
+            waiting[0] += 1
+            await release.wait()
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        async def send(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                statuses.append(message["status"])
+
+        headers = [(k.lower().encode(), v.encode()) for k, v in LOGIN_HEADERS.items()]
+        scope = {"type": "http", "method": "POST", "path": "/login", "raw_path": b"/login",
+                 "headers": [(b"host", b"localhost:8000"), *headers], "query_string": b"",
+                 "root_path": "", "scheme": "http", "http_version": "1.1",
+                 "client": ("127.0.0.1", 1), "server": ("127.0.0.1", 8000)}  # fmt: skip
+        await app(scope, receive, send)
+
+    tasks = [asyncio.create_task(one(b)) for b in bodies]
+    # Each request is either waiting for its body or already answered (a closed limit at step 3).
+    while waiting[0] + len(statuses) < len(bodies):
+        await asyncio.sleep(0)
+    release.set()
+    await asyncio.gather(*tasks)
+    return statuses
+
+
+def test_concurrent_attempts_cannot_pass_an_open_limit_together(sa, clock, evaluated) -> None:
+    wrong = json.dumps({"token": "w" * 64}).encode()
+    statuses = asyncio.run(_concurrent_logins(sa.app, [wrong] * 50))
+    assert sorted(statuses) == [401] * 5 + [429] * 45
+    assert len(evaluated) == 5  # only five tokens were compared
+    right = json.dumps({"token": sa.token}).encode()
+    assert asyncio.run(_concurrent_logins(sa.app, [right])) == [429]  # still closed
+    clock.t += 60
+    assert asyncio.run(_concurrent_logins(sa.app, [right])) == [204]
