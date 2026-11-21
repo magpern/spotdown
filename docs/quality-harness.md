@@ -264,8 +264,11 @@ process's children). `p95_seconds_per_5min` and `peak_memory_gib` use only track
 and are `not_measured` with fewer than five of them: a corpus of short clips cannot pass them. The
 time is the job's decode and analysis time; the length factor only normalises a track a little
 under or over five minutes. Runs are serial because the machine is the thing being measured, on the
-box the gate is about (the 60 s is "on the box"). The sandbox uses POSIX resource limits: run it on
-Linux, macOS or WSL, not native Windows.
+box the gate is about (the 60 s is "on the box"). The sandbox uses POSIX resource limits, including a
+finite `RLIMIT_AS`, which macOS refuses: natively on macOS every job fails with `SubprocessError`.
+Run it on Linux or WSL, or in a Linux container on a Mac (`python:3.11-slim` with ffmpeg and
+libsndfile, the repository mounted read-only; all 23 synthetic gates passed that way on 2026-11-21).
+Not native Windows.
 
 **Baseline comparison.** With `--baseline FILE` (repeatable) the per-source rows of
 `per_source` in the gates file are computed from **derived baseline results only**. The owner runs
