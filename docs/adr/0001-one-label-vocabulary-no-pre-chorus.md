@@ -66,9 +66,20 @@ Constraints:
      3. drop `analyses`;
      4. rename `analyses_new` to `analyses`.
 
-     The rebuild runs only when `PRAGMA table_info(analyses)` shows no `response_version`, so a
-     second start does nothing. Any failure rolls the whole transaction back, so the old table stays
-     intact. A fresh database is created with the three-column key directly.
+     How the transaction is opened:
+     - Python's `sqlite3` opens no transaction before DDL, and `executescript` commits first. So the
+       rebuild uses individual `execute` calls (no `executescript`) inside an explicit
+       `BEGIN IMMEDIATE`.
+     - The `PRAGMA table_info(analyses)` check runs **inside** that transaction. Only when it shows
+       no `response_version` do the four steps run, then `COMMIT`. Otherwise it is `ROLLBACK` and
+       nothing changes.
+     - `BEGIN IMMEDIATE` takes the write lock first, so two processes starting at once cannot both
+       rebuild: the second waits, then finds the column and does nothing.
+     - A second start does nothing.
+     - SQLite DDL is transactional: any failure rolls the whole transaction back, and the old table
+       stays intact.
+
+     `_SCHEMA` creates a fresh database with the three-column key directly.
    - `set_analysis` writes with `INSERT OR REPLACE` on the full three-column key. A new row
      therefore never overwrites a row of another response version.
    - A lookup with any other pair is a miss. A miss recomputes the analysis from the converted file,
@@ -77,7 +88,8 @@ Constraints:
      never the stale row.
    - Old rows are left in place under `response_version = 1` and are never read at the new version.
      This is reversible: lowering the constant serves them again, which the full-key writes keep
-     true.
+     true. That holds only while the core `ANALYZER_VERSION` is unchanged. After a core bump, the
+     old rows are under the old core version and miss anyway.
    - The v2 caches, analysis-v1 and the core `analyzer_version` are untouched.
    - Any later change to the v1 response shape or its labels raises `V1_RESPONSE_VERSION`.
 3. **Pre-chorus is out of analysis-v1 for now, and it is an open item.** The `label` enum is

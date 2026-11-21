@@ -89,9 +89,12 @@ Constraints:
    - A declared `Content-Length` over `max_upload_bytes` is `413` before the body is read. A body
      that grows past the cap while streaming is cut off with `413`.
    - **Read deadline.** Reading the body has a total deadline, a new setting
-     `standalone_upload_read_s` (default 120 s, enough for 60 MiB at 0.5 MB/s). When it passes, the
-     answer is `408`, the partial file is deleted and the slot is released, so a client that trickles
-     bytes cannot hold the slot. The sandbox's own deadlines bound the analysis that follows.
+     `standalone_upload_read_s`.
+     - The default is 150 s. The minimum supported upload rate is therefore 60 MiB per 150 s, about
+       0.4 MiB/s (3.4 Mbit/s). A slower client can send a smaller file.
+     - When the deadline passes, the answer is `408`, so a client that trickles bytes cannot hold the
+       slot. The `408` leaves through the same `finally` as every other exit (cleanup below).
+     - The sandbox's own deadlines bound the analysis that follows.
    - **POSIX only.** The slot needs `fcntl`, and the sandbox it feeds already needs `resource`.
      Both exist only on Linux and macOS. The slot module imports `fcntl` inside a guard; without it,
      the route is not registered and the UI hides the file input. There is no unsafe fallback lock.
@@ -112,12 +115,14 @@ Constraints:
        when the standalone UI is served. The sandbox's work directory for the run is a subdirectory
        of it.
      - **Names:** random and server-chosen (`up_` prefix).
-     - **Cleanup:** the file is deleted in a `finally` when its analysis ends (success, failure,
-       rejection or a client disconnect). Crashes are covered too: whenever the slot is taken (and at
-       startup), anything left in the directory other than the lock file is deleted, files and work
-       directories alike, because with one slot anything present while nobody holds the lock is a
-       leftover. The service's `upload_ttl_s`
-       sweep is not needed there.
+     - **Cleanup:** every exit of the request goes through one `finally`: success, failure,
+       rejection, the read deadline's `408`, and a client disconnect.
+       - In that `finally`, the partial or whole file and the work directory are deleted **before**
+         the lock is released. So the next holder's leftover sweep never races the deletion.
+       - Crashes are covered too. Whenever the slot is taken (and at startup), anything left in the
+         directory other than the lock file is deleted, files and work directories alike: with one
+         slot, anything present while nobody holds the lock is a leftover.
+       - The service's `upload_ttl_s` sweep is not needed there.
      - **No cache scope and no idempotency key:** a repeat of the same bytes is a cache hit instead.
        The result is cached in the standalone `analyses` table under `upl_<sha256>`, keyed by the
        version pair of ADR 0001. A file name never takes part.
