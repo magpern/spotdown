@@ -13,9 +13,10 @@ the external-corpus runner (#20, PR #28) and hardening (PR #23). #6 stays open o
 harness is merged. #29 hostile-input hardening (PR #32) and #30 global cache retention purge (90 days
 unused or a version change, with an operator takedown; classbeat ADR 0040, amendment "#1296
 accepted"; PR #34) are merged. Open spotdown work: #40 (lifetime of scoped entries that are never
-deleted) and the follow-ups of the 2026-11-21 real-music trial, #45 to #49 and #52 (below). #43 (PR
-#50) and #44 (PR #51: ADR 0001 and ADR 0002, Accepted, in `docs/adr/`) are merged; ADR 0003 (#52) is
-in `docs/adr/`. Build order: #45, #46, #47, #48, #52, #49, one PR at a time. classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
+deleted) and the follow-ups of the 2026-11-21 real-music trial, #46 to #49, #52 and #54 (below).
+Merged so far: #43 (PR #50); #44 (PR #51: ADR 0001 and ADR 0002, Accepted); ADR 0003 (PR #53, for
+#52); and #45 (PR #55, one label vocabulary and the v1 response version in the cache key). All the
+ADRs are in `docs/adr/`. Build order: #54, #46, #47, #48, #52, #49, one PR at a time. classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
 `ALLOW_YTDLP_SOURCING` stays off by default in code and is switched on only by the owner. Quality gates file `quality/quality_gates.json` is at v5; the document version is 6.4 (6.4 added the reported `content.explicit`
 signal, spotdown#36)
 and the core analyzer version is 6. The quality thresholds are set by the amendment in classbeat
@@ -82,11 +83,13 @@ by default in code (`ALLOW_YTDLP_SOURCING`); switching it on is the owner's depl
 | hardening | #30 global cache retention purge (PR #34) | merged | – (builds on #5, merged) |
 | trial follow-up | #43 docs points of the #42 review (PR #50) | merged | – |
 | trial follow-up | #44 ADR 0001 (one label vocabulary, no pre-chorus in analysis-v1), ADR 0002 (local-file input in the standalone UI) (PR #51) | merged | – |
-| trial follow-up | #45 one label vocabulary (retire the core analyser's older labels) | open | #44 |
+| trial follow-up | #45 one label vocabulary (retire the core analyser's older labels) (PR #55) | merged | #44 |
+| trial follow-up | ADR 0003 standalone exposure (PR #53) | merged | – |
+| trial follow-up | #54 ADR 0003 Accepted, lifespan and `Origin` wording, #52's assumptions | open | #45 |
 | trial follow-up | #46 merge over-fine segments before labelling | open | #45 |
 | trial follow-up | #47 labels and segments on steady-energy tracks | open | #46 |
 | trial follow-up | #48 waveform view in the standalone UI | open | #45 |
-| trial follow-up | #52 standalone exposure: a token always on every standalone route, plus same-origin requests, a `Host` allowlist, no CORS and loopback publishing (ADR 0003; Opus Developer) | open | #44 |
+| trial follow-up | #52 standalone exposure: a token always on every standalone route, plus same-origin requests, a `Host` allowlist, no CORS and loopback publishing (ADR 0003; Opus Developer) | open | #44, #54 |
 | trial follow-up | #49 local-file input in the standalone UI (Opus Developer) | open | #44, #48, #52 |
 
 The classbeat issues SD-P4 to SD-P7 (classbeat#1301 to #1306) depend on #3, #4, #5, #6, #10 and #11;

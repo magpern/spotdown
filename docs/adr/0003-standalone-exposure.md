@@ -1,8 +1,9 @@
 # ADR 0003: standalone exposure: a token always, plus same-origin requests and loopback defaults
 
-**Status:** Proposed (2026-11-21). It becomes Accepted when its Opus review passes. The Architect
-then sets it to Accepted, citing the PASS comment, in its next PR that touches
-`docs/integration-plan.md`. That PR comes before #52's PR merges.
+**Status:** Accepted (2026-11-21), after the Opus review of PR #53 passed at `1024de3`
+([`Agent review (opus): PASS`](https://github.com/magpern/spotdown/pull/53#issuecomment-7064851523)). The follow-up PR (spotdown#57, for issue #54) folded in that review's
+non-blocking findings: the assumptions and named outcomes that #52 implements, the lifespan
+wording, and one `Origin` rule shared with ADR 0002.
 
 **Issue:** spotdown#52 (Opus Developer). It is built before spotdown#49, whose route-level checks
 (ADR 0002) stay on top of these as defence in depth.
@@ -70,7 +71,15 @@ recorded it as a follow-up.
      - every other request gets `401`, unknown paths included, so routes cannot be enumerated.
 2. **The token: owner-supplied, or generated once.**
    - **Owner-supplied.** If `standalone_access_token_file` is set, the token is that file's content
-     with trailing whitespace stripped. It is checked only for length: at least 32 characters.
+     with trailing whitespace stripped.
+     - **Rule:** 32 to 512 characters, each printable ASCII from `0x21` to `0x7E` except `"` and
+       `\`. Spaces, control characters and anything non-ASCII are excluded.
+     - **Why:** such a token needs no JSON escaping and is one byte per character. So
+       `{"token":"<token>"}` is at most 512 + 12 = 524 bytes, well under the 1 KiB login body cap,
+       and every valid token can be submitted.
+     - **A token outside the rule** makes the token state invalid. That is `503`, with a console
+       line at construction saying which rule failed (length or character set), never the token.
+     - A generated token (64 hex characters) always satisfies the rule.
    - **Generated.** If it is not set, the token lives at `data_dir/standalone_token`, and the
      content must be exactly 64 lowercase hex characters (with one optional trailing newline).
      - **Creation is a small state machine with one rule: no process ever deletes, replaces or
@@ -81,14 +90,19 @@ recorded it as a follow-up.
           - If it exists but is short or malformed, re-read every 50 ms for up to 2 s. This covers
             the fallback in step 5, where another worker may not have finished writing. A valid token
             within that time is used. Otherwise the result is `503`, with the console line below.
+            The 2 s bound applies at construction only; see "Recovery" below.
           - If it does not exist, go to step 2.
        2. **Create own temporary file.** Create `standalone_token.tmp-<pid>-<16 random hex>` in the
           same directory, with `O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW` and mode `0600`. The name
-          is unique to this process, and no other process touches it.
+          is unique to this process, and no other process touches it. `O_NOFOLLOW` is used as
+          `getattr(os, "O_NOFOLLOW", 0)`, because Windows has no such flag.
        3. **Write.** Write `secrets.token_hex(32)` and a newline, `fsync` the file and close it.
        4. **Link.** Call `os.link(tmp, final)`. It is atomic and never replaces an existing file.
           - On success, `fsync` the directory and use the token just written. The final file is the
             same inode, complete before it appeared.
+          - The directory `fsync` is **best-effort**. It is skipped where a directory cannot be
+            opened (Windows), and any `OSError` from it is ignored (for example `EINVAL` on some FUSE
+            and 9p bind mounts). It never turns a successful link into a token failure.
           - On **any** failure (`EEXIST`, `ENOENT` or anything else), go back to step 1 once. If a
             valid final file now exists, use it.
           - If none exists and the failure was not `EEXIST`, the filesystem may not support hard
@@ -98,6 +112,9 @@ recorded it as a follow-up.
             `0600`. Write the token in one `write`, then `fsync` it.
           - If that create fails with `EEXIST`, another worker won; go to step 1, including its
             2 s re-read.
+          - After the write, the same best-effort directory `fsync` as in step 4 runs.
+          - **Assumption:** the fallback relies on `O_EXCL` being atomic on the mount. Local
+            filesystems, and virtiofs and 9p (which pass it through to the host), provide this.
        6. **Clean up own file.** In a `finally`, unlink this process's own temporary file if it still
           exists. Only its own, never a pattern.
      - **Every interleaving converges.** Two or three workers starting together either read an
@@ -110,9 +127,23 @@ recorded it as a follow-up.
        and an orphan.
        - **Orphans** are never read, hold an unused random token with mode `0600`, and are harmless.
          `README.md` says they may be deleted by hand while spotdown is stopped.
-       - **The one crash that leaves a bad final file:** a crash between the fallback's create and
-         its write. It can happen only on filesystems without hard links, and only within that
-         window. It leaves an empty final file, which gives `503` and the console line.
+       - **The fallback can leave a bad final file.** A crash between the fallback's create and
+         its write leaves an empty final file, and so does a `write` or `fsync` there that fails
+         without a crash (for example `ENOSPC`). This can happen only on the fallback path, which
+         runs when `link` fails with an error other than `EEXIST` and no final file exists. That is
+         usually a filesystem without hard links, but a transient error on another filesystem
+         counts too. The result is `503` with the console line.
+     - **Named failure outcomes.** Each gives `503` and the console line naming the file:
+       - the link failed with `EEXIST`, but the re-read finds no final file (deleted from outside);
+       - the fallback's write or `fsync` failed;
+       - after the 2 s re-read, the final file is empty, short or malformed;
+       - the owner-supplied file is unreadable, or breaks the owner-token rule (length 32 to 512,
+         printable ASCII without `"` or `\`).
+     - **Recovery without a restart.** A worker with no valid token keeps answering `503`, but on
+       later requests it re-reads the token file (generated or owner-supplied) **at most once a
+       second**. It switches to the token as soon as the file holds a valid one. This is a re-read,
+       never a regeneration and never a write. It also covers a fallback winner that stalls for
+       more than 2 s between its create and its write.
      - **Never regenerated over an existing file.** A final file that is still empty, short or
        malformed after the re-read is not overwritten. The app answers `503` (the failure rule
        below) and prints one console line naming the file and saying "delete it and restart to
@@ -146,8 +177,11 @@ recorded it as a follow-up.
      - reads or creates the token;
      - installs the auth middleware.
 
-     Nothing depends on the lifespan. The same holds for the module-level `app.main:app`, whatever
-     server runs it and with or without `--lifespan off`.
+     **Authentication** depends on nothing in the lifespan. The same holds for the module-level
+     `app.main:app`, whatever server runs it and with or without `--lifespan off`. Other start-up
+     work stays in the lifespan, notably `db.init_db()` and with it ADR 0001's cache rebuild. Under
+     `--lifespan off` such routes can therefore error, but only **after** authentication: an
+     unauthenticated request is refused either way.
    - **A pure ASGI middleware**, not Starlette's `BaseHTTPMiddleware`, which passes non-HTTP scopes
      through. It handles scope types like this:
      - `lifespan` passes through;
@@ -179,8 +213,10 @@ recorded it as a follow-up.
      7. a body of at most 1 KiB, checked against `Content-Length` before reading and enforced while
         reading, `413`;
      8. a JSON object with a string `token`, otherwise `400`;
-     9. `hmac.compare_digest` against the token. A wrong token gets `401` and no cookie, and counts
-        as one failure. The right token sets the cookie and answers `204`.
+     9. `hmac.compare_digest` on the **UTF-8 bytes** of the submitted and the stored token (never
+        on `str`, which raises `TypeError` for non-ASCII input). A wrong token, including one over
+        512 characters, gets `401` and no cookie, and counts as one failure. The right token sets
+        the cookie and answers `204`.
 
      Only step 9 failures count towards the limit.
    - **Rate limit.** There is one in-process limit for the whole app, not per peer, so no address is
@@ -213,17 +249,27 @@ recorded it as a follow-up.
 
      An empty entry, `*`, a port, a scheme, a path or whitespace raises.
    - **`ui_public_origin`** must be an exact `scheme://host[:port]` with scheme `http` or `https`,
-     and nothing else.
+     and nothing else: no userinfo, path (not even `/`), query or fragment. An explicit default
+     port (`:80` with `http`, `:443` with `https`) also raises, because browsers omit it from
+     `Origin`, so such a setting could never match.
 6. **Defence in depth.** These no longer decide authentication. They limit what a browser page or a
    misconfiguration can do. Each has its own test.
    - **Same-origin unsafe requests.** Every unsafe method (every method except `GET`, `HEAD` and
      `OPTIONS`) needs two things before the body is read:
-     - **`Origin`:** a present `Origin` equal to the expected origin, otherwise `403`. The expected
-       origin is `ui_public_origin` if set. Otherwise it is `http://` plus the request's `Host`. It
-       is never taken from the scheme uvicorn sees or from forwarded headers.
+     - **`Origin`:** a present `Origin` that matches the expected origin, otherwise `403`.
+       - **The one comparison rule**, which ADR 0002 also uses: both sides are split into scheme,
+         host and port. The scheme and host are lowercased, and the three parts must be equal as
+         strings. No default port is added or removed, so `http://localhost` and
+         `http://localhost:80` differ. A missing `Origin` and `Origin: null` never match, and
+         neither does an `Origin` with userinfo, a path, a query or a fragment.
+       - **The expected origin** is `ui_public_origin` if set. Otherwise it is `http://` plus the
+         request's `Host` (which has passed the `Host` allowlist). It is never taken from the scheme
+         uvicorn sees or from forwarded headers.
      - **`Content-Type`:** exact, otherwise `415`. It is `application/json` (with optional
        `charset=utf-8`) for `/api/v1/convert`, `/login` and `/logout`, and
-       `application/octet-stream` for #49's upload route.
+       `application/octet-stream` for #49's upload route. **Default deny:** every other unsafe
+       request (a route with no listed type) gets `415`, so a later route cannot ship with a
+       CORS-simple type by omission.
    - **`X-Spotdown-UI`.** Every request under `/api/` needs `X-Spotdown-UI: 1`, otherwise `403`.
      - A non-safelisted header cannot be sent cross-origin without a preflight, which never
        succeeds.
