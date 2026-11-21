@@ -22,8 +22,9 @@ from .structure_doc import labels, phrases, structure
 
 ANALYZER_NAME = "spotdown"
 # The core analyser's version, then this document mapping's version (1: section labels, 2: phrases,
-# 3: meter and downbeats, 4: the content group with the explicit signal).
-ANALYZER_VERSION_V2 = f"{ANALYZER_VERSION}.4"
+# 3: meter and downbeats, 4: the content group with the explicit signal, 5: the chorus label needs
+# a clear energy margin, spotdown#47).
+ANALYZER_VERSION_V2 = f"{ANALYZER_VERSION}.5"
 MEASURED_CONFIDENCE = 0.9
 
 

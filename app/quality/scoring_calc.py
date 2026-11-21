@@ -192,10 +192,14 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     out.update(_reported(pickup, "pickup") if pickup else {})
     out.update(_reported(waltz, "waltz") if waltz else {})
     over = [r for r in everything if r["corpus"] == "oversplit"]
-    # the over-split fixtures are reported apart: they hold the truth boundaries that the
-    # structure analysis misses (spotdown#47), so they must not move the floor of the others
-    out.update(_reported([r for r in everything if r not in over], "all"))
+    steady = [r for r in everything if r["corpus"] == "steady"]
+    # the over-split fixtures are reported apart: they hold truth boundaries the structure
+    # analysis misses (spotdown#47); the steady-energy fixtures are the check of that fix, so
+    # neither moves the floor of the others
+    out.update(_reported([r for r in everything if r not in over and r not in steady], "all"))
     out.update(_reported(over, "oversplit") if over else {})
+    out.update(_reported(steady, "steady") if steady else {})
+    out.update(_segment_counts(steady, "steady"))
     return {k: round(v, 4) for k, v in out.items()}
 
 

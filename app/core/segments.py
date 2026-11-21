@@ -56,11 +56,17 @@ def boundaries(
     duration: float,
     drops: Sequence[float],
     edges: Sequence[float],
+    contrast: float = 1.0,
 ) -> List[Dict[str, float]]:
-    """Interior boundaries ``{"t", "novelty"}``: peaks, plus drops and edges not near one."""
+    """Interior boundaries ``{"t", "novelty"}``: peaks, plus drops and edges not near one.
+
+    ``contrast`` is the track's energy contrast (``novelty_calc.energy_contrast``): when low, the
+    timbre and harmony novelty alone places the boundaries with a lower peak threshold."""
     nov = novelty_calc.novelty_curve(feat)
+    rel = novelty_calc.peak_rel(contrast)
     found = [
-        {"t": i * frame_s, "novelty": float(nov[i])} for i in novelty_calc.pick_peaks(nov, frame_s)
+        {"t": i * frame_s, "novelty": float(nov[i])}
+        for i in novelty_calc.pick_peaks(nov, frame_s, rel=rel)
     ]
 
     def at(t: float) -> float:
@@ -92,7 +98,8 @@ def segments(
         return []
     edges = [t for t in content if MIN_SEG_S < t < duration - MIN_SEG_S]
     edges += quiet_region_edges(grid, e_struct, thresh=0.05, min_len=3.0)
-    cuts = boundaries(feat, frame_s, duration, drops, edges)
+    contrast = novelty_calc.energy_contrast(e_struct, 1.0, content[0], content[1])  # grid is 1 s
+    cuts = boundaries(feat, frame_s, duration, drops, edges, contrast)
     times = [0.0]
     strength = {0.0: 1.0}
     for b in cuts:
