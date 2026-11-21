@@ -89,6 +89,24 @@ function eventsHtml(m) {
   return `<table class="t"><tr><th>Event</th><th>Time</th><th>Strength</th><th>Conf</th></tr>${rows}${ph}</table>`;
 }
 
+// "explicit" glyph: Material Symbols (Google), Apache License 2.0, https://www.apache.org/licenses/LICENSE-2.0
+const EXPLICIT_ICON = `<svg viewBox="0 -960 960 960" width="18" height="18" fill="currentColor" aria-hidden="true" style="vertical-align:-4px"><path d="M360-280h240v-80H440v-80h160v-80H440v-80h160v-80H360v400ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Z"/></svg>`;
+
+function evidenceText(ev) {
+  const items = Array.isArray(ev) ? ev : ev ? [ev] : [];
+  return items.map((i) => (typeof i === "string" ? i : [i.source, i.detail || i.text || i.term].filter(Boolean).join(": ") || JSON.stringify(i))).join("\n");
+}
+
+// Report only: never hides or dims anything.
+function explicitHtml(m) {
+  const x = m.explicit;
+  if (!x) return "";
+  const tip = escapeHtml(`method ${x.method}, confidence ${pct(x.confidence)}` + (evidenceText(x.evidence) ? "\n" + evidenceText(x.evidence) : ""));
+  if (x.value === "yes") return `<div class="hint" title="${tip}"><span class="badge warn" style="font-size:13px">${EXPLICIT_ICON} Explicit</span> flagged (hover for evidence and source)</div>`;
+  if (x.value === "no") return `<div class="hint dim" title="${tip}">explicit: not flagged</div>`;
+  return `<div class="hint" title="${tip}">explicit: unknown</div>`;
+}
+
 const APPROX_NOTE = `<div class="note"><b>Approximate, not exact.</b> Analyses of a YouTube match are timing-approximate:
   the audio is not Spotify's own file, so beats, sections and events are exact only on this file's clock, and the
   Spotify clock is one offset that can drift. Section labels, phrases and meter are heuristic estimates.</div>`;
@@ -98,7 +116,7 @@ function renderAnalysis(d) {
   tlModel = m;
   analysisCard.style.display = "block";
   analysisCard.innerHTML = `<div style="font-weight:600">Audio analysis</div>
-    ${statsHtml(m)}${tempoHtml(m)}${signalHtml(m)}${alignmentHtml(m)}
+    ${statsHtml(m)}${explicitHtml(m)}${tempoHtml(m)}${signalHtml(m)}${alignmentHtml(m)}
     <div class="viz-label">Timeline</div>${timelineControls(m)}<div id="tlHost"></div>${timelineLegend(m)}${APPROX_NOTE}
     <div class="grid2"><div><div class="viz-label">Sections</div>${sectionsHtml(m)}</div>
     <div><div class="viz-label">Events &amp; phrases</div>${eventsHtml(m)}</div></div>

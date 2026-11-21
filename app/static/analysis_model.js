@@ -19,7 +19,8 @@ const DOC_FIELDS = {
     "alignment.offset_s", "alignment.residual_s", "alignment.confidence",
     "alignment.reference.duration_s", "provenance.alignment.result",
     "provenance.alignment.hypotheses"
-  ]
+  ],
+  "report_only": ["content.explicit"]
 };
 const V1_FIELDS = ["document"];
 /*fields:end*/
@@ -86,6 +87,8 @@ function buildModel(d) {
       refDuration: docAt(doc, "alignment.reference.duration_s"),
       hypotheses: docAt(doc, "provenance.alignment.hypotheses"),
     },
+    // Report-only (spotdown#36): optional, never changes how a track is shown.
+    explicit: docAt(doc, "content.explicit") || null,
     prov: {
       analyzer: docAt(doc, "provenance.analyzer.name"),
       version: docAt(doc, "provenance.analyzer.analyzer_version"),

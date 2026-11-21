@@ -66,12 +66,21 @@ def test_every_field_the_page_reads_is_in_the_v1_document() -> None:
 
 def test_the_scripts_read_only_listed_fields() -> None:
     fields = _fields()["DOC_FIELDS"]
-    listed = set(fields["required"] + fields["optional"])
+    listed = set(fields["required"] + fields["optional"] + fields["report_only"])
     read = set()
     for js in STATIC.glob("analysis_*.js"):
         read |= set(re.findall(r'docAt\(\s*doc\s*,\s*"([^"]+)"', js.read_text(encoding="utf-8")))
     assert read and read <= listed, read - listed
     assert listed <= read, listed - read  # a listed field nobody reads is stale
+
+
+def test_the_explicit_object_is_read_from_a_hand_made_document() -> None:
+    """content.explicit (spotdown#36) is report-only and may not be on every base yet."""
+    doc = {"content": {"explicit": {"value": "yes", "confidence": 0.9, "method": "lyrics"}}}
+    for path in _fields()["DOC_FIELDS"]["report_only"]:
+        assert _at(doc, path) is not MISSING, path
+    js = (STATIC / "analysis_view.js").read_text(encoding="utf-8")
+    assert "currentColor" in js and "Apache License 2.0" in js  # the inline icon and its licence
 
 
 def test_the_document_is_schema_valid_and_aligned() -> None:
