@@ -218,9 +218,8 @@ def test_the_page_stays_self_contained() -> None:
     for name in WAVEFORM_FILES:
         js = (STATIC / name).read_text(encoding="utf-8")
         assert not re.search(r"https?://|XMLHttpRequest|WebSocket|sendBeacon|import\(", js), name
-        assert "fetch(" not in js, (
-            name
-        )  # the player gets bytes from the page's loader, never fetches
+        # the player gets bytes from the page's loader and never fetches itself
+        assert "fetch(" not in js, name
     assert "@import" not in (STATIC / "ui.css").read_text(encoding="utf-8")
 
 
