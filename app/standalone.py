@@ -35,6 +35,7 @@ UI_ASSETS = {
     "analysis_model.js": "text/javascript",
     "analysis_timeline.js": "text/javascript",
     "analysis_view.js": "text/javascript",
+    "upload.js": "text/javascript",
 }
 
 
@@ -148,6 +149,8 @@ def analyze_track_endpoint(track_id: str, refresh: bool = False) -> dict:
     from . import analyze as analysis
     from . import spotify as spotify_mod
 
+    if track_id.lower().startswith("upl_"):  # upload results: only by uploading again (ADR 0002)
+        raise HTTPException(status_code=404, detail="Not found")
     if not refresh:
         cached = db.get_analysis(track_id, analysis.ANALYZER_VERSION, analysis.V1_RESPONSE_VERSION)
         if cached:

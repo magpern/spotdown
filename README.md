@@ -88,6 +88,18 @@ Set `SERVE_UI=false` in `.env` to run API-only — the JSON endpoints, `/files`,
 (`GET /` then returns `{"service":"spotdown","ui":"disabled"}`). Useful when
 another frontend or service consumes the API.
 
+## Local files in the web UI
+
+On Linux and macOS (and in the container) the page also takes a local mp3, m4a or wav file (ADR
+0002). It goes through the same checks as service-mode uploads: the container is recognised by its
+bytes and checked whole, `MAX_UPLOAD_BYTES` caps it, and the analysis runs in the sandbox. One file
+is analysed at a time per installation (a second gets `429`), and reading an upload must finish
+within `STANDALONE_UPLOAD_READ_S` (150 s). The route needs a session, refuses cross-site requests
+and a `Host` outside `UI_ALLOWED_HOSTS`; behind a TLS proxy set `UI_PUBLIC_ORIGIN`. No file name is
+kept, the file is deleted after the analysis, and the waveform is drawn from the file in the
+browser. The result is cached by the file's sha256 and is read again only by uploading the same
+bytes.
+
 ## Run it
 
 ```bash
@@ -122,7 +134,7 @@ curl -s -X POST localhost:8000/api/v1/convert \
   -H 'content-type: application/json' \
   -d '{"source_url":"https://example.com/my-own-audio.wav","format":"mp3","bitrate":320}'
 # -> {"status":"queued","task_id":"src_...-mp3-320", ...}
-# (source_url is an API-only path; the web UI exposes only the Spotify-link flow.)
+# (source_url is an API-only path; the web UI offers the Spotify-link flow and local files.)
 
 # 2) poll until done
 curl -s localhost:8000/api/v1/tasks/<task_id>

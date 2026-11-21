@@ -19,9 +19,7 @@ def _healthz() -> dict:
 
 
 def create_standalone_app(settings: Settings) -> FastAPI:
-    from fastapi.middleware.cors import CORSMiddleware
-
-    from . import db
+    from . import db, upload_route
     from .standalone import router
 
     @asynccontextmanager
@@ -31,17 +29,10 @@ def create_standalone_app(settings: Settings) -> FastAPI:
         yield
 
     app = FastAPI(title="spotdown", version="0.1.0", lifespan=lifespan)
-    # Dev convenience: allow the page to call the API when it's opened cross-origin
-    # (e.g. a local file:// editor preview hitting http://localhost:8000). Tighten
-    # allow_origins for any real deployment.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # No CORS in standalone mode (ADR 0003 item 6; ADR 0002 Decision 2).
     app.get("/healthz")(_healthz)
     app.include_router(router)
+    upload_route.register(app, settings)  # local files (ADR 0002); POSIX and UI only
     return app
 
 

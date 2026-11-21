@@ -78,7 +78,7 @@ def test_standalone_mode_is_unchanged(tmp_path: Path, monkeypatch) -> None:
     with TestClient(create_app(settings)) as client:
         res = client.get("/files/track-320.mp3", headers={"Origin": "https://ui.example.com"})
         assert res.status_code == 200 and res.content == b"ID3audio"
-        assert res.headers["access-control-allow-origin"] == "*"
+        assert "access-control-allow-origin" not in res.headers  # no CORS (ADR 0003 item 6)
         assert client.get("/").status_code == 200
         assert client.get("/v2/jobs/job_1", headers=AUTH).status_code == 404
     assert not settings.uploads_dir.exists()
