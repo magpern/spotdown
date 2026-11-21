@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Sequence
 import librosa
 import numpy as np
 
-from . import HOP, novelty_calc
+from . import HOP, merge_calc, novelty_calc
 from .signal_calc import quiet_region_edges
 
 MIN_SEG_S = 2.0
@@ -85,6 +85,7 @@ def segments(
     e_struct: np.ndarray,
     drops: Sequence[float],
     content: Sequence[float],
+    bar_s: float = 0.0,
 ) -> List[Dict[str, Any]]:
     feat, frame_s = features(y, sr)
     if feat.shape[1] < 3:
@@ -99,11 +100,16 @@ def segments(
             times.append(round(b["t"], 3))
             strength[times[-1]] = b["novelty"]
     times.append(float(duration))
-    raw, seg_feats = [], []
+    novelty = [strength[t] for t in times[:-1]]
+    keep = merge_calc.protected_times(times, [*drops, *content, *edges], MERGE_S)
+    times, novelty = merge_calc.merge_similar(
+        times, novelty, _mean_features(feat, frame_s, times), keep
+    )
+    times, novelty = merge_calc.merge_short(times, novelty, keep, bar_s)
+    seg_feats = _mean_features(feat, frame_s, times)
+    raw = []
     for st, en in zip(times[:-1], times[1:]):
         mask = (grid >= st) & (grid < en)
-        cols = feat[:, int(st / frame_s) : max(int(en / frame_s), int(st / frame_s) + 1)]
-        seg_feats.append(cols.mean(axis=1))
         raw.append(
             {
                 "start": round(st, 3),
@@ -117,3 +123,11 @@ def segments(
     for i, s in enumerate(raw):
         s["group"] = groups[i] if i < len(groups) else 0
     return raw
+
+
+def _mean_features(feat: np.ndarray, frame_s: float, times: Sequence[float]) -> List[np.ndarray]:
+    out = []
+    for st, en in zip(times[:-1], times[1:]):
+        cols = feat[:, int(st / frame_s) : max(int(en / frame_s), int(st / frame_s) + 1)]
+        out.append(cols.mean(axis=1))
+    return out

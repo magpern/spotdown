@@ -36,6 +36,9 @@ ACHIEVED_FLOORS: Dict[str, float] = {
     "phrase_f_baseline_reported": 0.85,
     "phrase_f_pickup_reported": 0.45,
     "boundary_f_3s_all_reported": 0.95,
+    # the over-split fixtures (in no gate): boundary F achieved 0.5455 (they hold boundaries the
+    # analysis misses, spotdown#47)
+    "boundary_f_3s_oversplit_reported": 0.50,
     # the file's own offset is found for the two same-recording references of each fixture
     "alignment_offset_within_0_05s_reported": 1.0,
 }
@@ -47,6 +50,10 @@ ACHIEVED_CEILINGS: Dict[str, float] = {
     "downbeat_overconfidence": 0.02,
     "phrase_overconfidence_waltz_reported": 0.03,
     "meter_wrong_claims_reported": 0.0,
+    # segments per truth section: 1.1667 on the over-split fixtures (7 of 6 sections), 1.0274 on
+    # the baseline fixtures; a rise is the merge step doing less
+    "segments_per_truth_section_reported": 1.25,
+    "segments_per_truth_section_baseline_reported": 1.05,
     "meter_overconfidence_reported": 0.02,
 }
 # The 60 s plan threshold stays in the gates file and in the command line run. Under pytest the

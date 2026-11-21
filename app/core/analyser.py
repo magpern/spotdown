@@ -108,7 +108,10 @@ def analyse_signal(y: np.ndarray, sr: int) -> Dict[str, Any]:
             {"index": i, "start": round(float(t), 3)} for i, t in enumerate(beat_times[phase::4])
         ]
 
-    segs = segments(y, sr, duration, grid, e_full, e_struct, drops, [content_start, content_end])
+    bar_s = 60.0 * (meter["beats_per_bar"] if meter else 4) / bpm if bpm else 0.0
+    segs = segments(
+        y, sr, duration, grid, e_full, e_struct, drops, [content_start, content_end], bar_s
+    )
 
     def _r(x: np.ndarray) -> List[float]:
         return [round(float(v), 3) for v in x]

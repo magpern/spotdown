@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "plan": "classbeat docs/plans/spotdown-integration.md section 7 (Revision 2, frozen)",
   "change_rule": "A threshold changes only with evaluation evidence in the PR and the usual review, and is recorded in classbeat ADR 0040. The two hard gates are never relaxed.",
   "parameters": {
@@ -59,6 +59,11 @@
     "phrase_f_pickup_reported",
     "phrase_overconfidence_pickup_reported",
     "boundary_f_3s_all_reported",
+    "segments_per_truth_section_reported",
+    "segments_per_truth_section_baseline_reported",
+    "boundary_f_3s_oversplit_reported",
+    "beat_f_overall_oversplit_reported",
+    "bpm_within_2pct_fraction_oversplit_reported",
     "alignment_cases_reported",
     "alignment_overreach_reported",
     "alignment_offset_within_0_05s_reported"

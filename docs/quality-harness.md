@@ -91,6 +91,36 @@ a two-sided calibration gate or per-label reliability. `tests/test_label_calc.py
 False. The base confidences are deliberately conservative priors, not measured hit rates. The report
 records both the core analyzer version and the document version (`5.1`) that produced the labels.
 
+## Over-split check (spotdown#46)
+
+The 2026-11-21 trial cut one vocal song into 21 parts, with boundaries inside single verses and
+choruses. `app/core/merge_calc.py` merges over-fine segments before the groups and labels are made
+(rules and constants in its docstring: segments under 2.5 bars, and neighbours that sound alike
+across a weak boundary; drops, content edges and quiet-region edges are never merged away).
+The owner's listening is not ground truth, so the check is synthetic: two `oversplit` fixtures
+(`corpus: oversplit`) carry fills and timbre changes inside verses and choruses (sections flagged
+`continues` in the spec), and the truth has six sections and boundaries only at the five real
+section changes. `tests/test_quality_oversplit.py` asserts at most truth sections plus one
+segments (7), and that the same audio with the merge switched off makes more (10 and 14 segments
+against 6 sections before the merge, 7 and 7 after). 7 is at the limit, not below it: the merged
+result still has boundaries that are not truth boundaries and misses some that are (boundary F at
+3 s is about 0.55; the misses are the coarse-structure case of spotdown#47).
+
+**Which pool the fixtures are in: none.** `scoring_calc.aggregate` keeps the oversplit fixtures
+out of every gated pool (the baseline gates, the phrase gate, and the downbeat and meter gates)
+and out of the `all` reported set, so adding them moves no gate value and no floor
+(`GATED_CORPORA`, `PHRASE_CORPORA`, `REPORTED_ONLY_CORPORA`; a record of a corpus in none of the
+lists raises, so a new corpus has to be assigned). Reported only: `segments_per_truth_section_reported`
+(oversplit: 1.167, was 2.0 before the merge), `segments_per_truth_section_baseline_reported`
+(1.027, 150 segments in 146 sections, the same with and without the merge, so the 24 baseline
+fixtures are unchanged) and the `boundary_f_3s`, `beat_f_overall` and
+`bpm_within_2pct_fraction` `_oversplit_reported` values.
+
+**What this does not show.** The merge constants (0.7 similarity, 0.4 weak novelty, 0.6 strong
+novelty, 2.5 bars, 6 s) were fitted on this synthetic corpus. They are not validated on real
+music, and the 24 baseline fixtures do not exercise the merge at all (the count is the same
+without it). Held-out evidence is spotdown#20.
+
 ## Phrase gate (SD-P2+, spotdown#8)
 
 Truth phrases come from the arrangement by arithmetic (`synth._phrases`): consecutive sections
