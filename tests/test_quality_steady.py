@@ -78,8 +78,10 @@ def test_at_most_half_the_content_is_chorus_and_a_verse_is_found(spec: Dict[str,
 def test_the_check_bites_on_the_rule_before_the_margin(
     spec: Dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With the margin off (the rule before spotdown#47) the loudest repeating group, the verses,
-    is the chorus: the pair of assertions above fails."""
+    """With the margin off (``PEAK_MARGIN = -1``, which reproduces the rule before spotdown#47
+    whenever the track has a middle segment outside the peak group; the ``not others`` guard still
+    returns no peak otherwise) the loudest repeating group, the verses, is the chorus: the pair of
+    assertions above fails."""
     monkeypatch.setattr(label_calc, "PEAK_MARGIN", -1.0)
     run = _run(spec)
     assert not (_chorus_share(run) <= 0.5 and len(_verses(run)) >= 1)

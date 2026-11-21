@@ -99,7 +99,10 @@ def _clear_peak(segments: Sequence[Dict[str, Any]], idx: Sequence[int]) -> Optio
 
 def _repeated_group(segments: Sequence[Dict[str, Any]], idx: Sequence[int]) -> Optional[int]:
     """The one group with the most members (at least two), when it covers at most
-    ``REPEAT_MAX_SHARE`` of the content time; ``None`` on a tie or when it is most of the track."""
+    ``REPEAT_MAX_SHARE`` of the content time; ``None`` on a tie or when it is most of the track.
+
+    Every content segment counts, the first and the last included: an intro that groups with the
+    choruses (a repeat of the same material) raises that group's count and share."""
     count: Dict[int, int] = {}
     span: Dict[int, float] = {}
     for i in idx:

@@ -132,10 +132,10 @@ def test_the_bar_length_comes_from_the_meter_and_is_zero_without_a_tempo(
     assert quiet["bpm"] == 0 and seen[-1] == 0.0
 
 
-def _bad_over_record() -> Dict[str, Any]:
+def _bad_record(corpus: str) -> Dict[str, Any]:
     from tests.test_quality_phrases import _record
 
-    bad = _record("oversplit", [(0.4, False)], 3)
+    bad = _record(corpus, [(0.4, False)], 3)
     bad.update(
         boundary_f=0.0,
         beat_f=0.0,
@@ -151,20 +151,65 @@ def _bad_over_record() -> Dict[str, Any]:
     return bad
 
 
-def test_the_oversplit_fixtures_move_no_gated_value_and_are_reported_apart() -> None:
-    from app.quality.scoring_calc import aggregate
+def _others() -> List[Dict[str, Any]]:
     from tests.test_quality_phrases import _record
 
     others = [_record("baseline", [(0.4, True)], 1), _record("phrases", [(0.4, True)], 1)]
-    others.append(_record("meter", [], 0))
+    return [*others, _record("meter", [], 0)]
+
+
+def _segments_key(corpus: str) -> str:
+    """The reported segments-per-section key of a reported-only corpus (oversplit has no suffix)."""
+    return (
+        "segments_per_truth_section_reported"
+        if corpus == "oversplit"
+        else (f"segments_per_truth_section_{corpus}_reported")
+    )
+
+
+def test_every_reported_only_corpus_is_registered_and_covered_below() -> None:
+    from app.quality.scoring_calc import GATED_CORPORA, REPORTED_ONLY_CORPORA
+
+    assert set(REPORTED_ONLY_CORPORA) == {"oversplit", "steady"}
+    assert not set(REPORTED_ONLY_CORPORA) & set(GATED_CORPORA)
+
+
+@pytest.mark.parametrize("corpus", ["oversplit", "steady"])
+def test_a_reported_only_corpus_moves_no_gated_value_and_is_reported_apart(corpus: str) -> None:
+    from app.quality.scoring_calc import REPORTED_ONLY_CORPORA, aggregate
+
+    assert corpus in REPORTED_ONLY_CORPORA
+    others = _others()
     base = aggregate(others)
-    out = aggregate([*others, _bad_over_record()])
+    out = aggregate([*others, _bad_record(corpus)])
     moved = {k for k in base if base[k] != out[k]}
-    assert moved == {"tracks"}  # every gate and every other reported value is the same
-    assert out["boundary_f_3s_oversplit_reported"] == 0.0
-    assert out["bpm_within_2pct_fraction_oversplit_reported"] == 0.0
-    assert out["segments_per_truth_section_reported"] == pytest.approx(14 / 6, abs=1e-3)
-    assert not [k for k in out if k.startswith("phrase_") and "oversplit" in k]
+    assert moved == {"tracks"}  # every gate, the ``all`` set and every other reported value
+    assert out[f"boundary_f_3s_{corpus}_reported"] == 0.0
+    assert out[f"beat_f_overall_{corpus}_reported"] == 0.0
+    assert out[f"bpm_within_2pct_fraction_{corpus}_reported"] == 0.0
+    assert out[_segments_key(corpus)] == pytest.approx(14 / 6, abs=1e-3)
+    assert not [k for k in out if k.startswith("phrase_") and corpus in k]
+    other = next(c for c in REPORTED_ONLY_CORPORA if c != corpus)  # the other corpus has no keys
+    assert not [k for k in out if f"_{other}_" in k]
+    assert f"boundary_f_3s_{other}_reported" not in out
+
+
+def test_the_reported_only_corpora_do_not_mix_their_numbers() -> None:
+    """The oversplit keys are the same with and without steady records beside them, and the
+    steady keys hold only the steady records."""
+    from app.quality.scoring_calc import aggregate
+
+    over = _bad_record("oversplit")
+    steady = _bad_record("steady")
+    steady.update(boundary_f=1.0, n_segments=7, n_truth_sections=7)
+    alone = aggregate([*_others(), over])
+    both = aggregate([*_others(), over, steady])
+    for k in alone:
+        if k != "tracks":
+            assert both[k] == alone[k], k
+    assert both["segments_per_truth_section_steady_reported"] == pytest.approx(1.0)
+    assert both["boundary_f_3s_steady_reported"] == 1.0
+    assert both["segments_per_truth_section_reported"] == pytest.approx(14 / 6, abs=1e-3)
 
 
 def test_a_record_of_an_unassigned_corpus_fails_loudly() -> None:

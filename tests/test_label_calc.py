@@ -145,8 +145,9 @@ def test_the_peak_margin_decides_between_steady_and_clear() -> None:
 
 
 def test_the_old_rule_made_the_steady_verses_chorus(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The margin is what changed: with it off (the rule before spotdown#47) three of seven are
-    chorus, so the check above can fail."""
+    """The margin is what changed: with it off (``PEAK_MARGIN = -1``: the rule before spotdown#47
+    whenever a middle segment lies outside the peak group, the ``not others`` guard aside) three of
+    seven are chorus, so the check above can fail."""
     monkeypatch.setattr(label_calc, "PEAK_MARGIN", -1.0)
     assert _labels(STEADY, ce=112.0).count("chorus") == 3
 
