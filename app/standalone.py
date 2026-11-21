@@ -29,6 +29,23 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+UI_ASSETS = {
+    "ui.css": "text/css",
+    "ui.js": "text/javascript",
+    "analysis_model.js": "text/javascript",
+    "analysis_timeline.js": "text/javascript",
+    "analysis_view.js": "text/javascript",
+}
+
+
+@router.get("/{name}", include_in_schema=False)
+def ui_asset(name: str):
+    """The page's own stylesheet and scripts (a fixed list, so no path is ever built from input)."""
+    if name not in UI_ASSETS or not get_settings().serve_ui:
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(STATIC_DIR / name, media_type=UI_ASSETS[name])
+
+
 @router.get("/api/Gettrack")
 def get_track(spotify_url: str = Query(...)) -> dict:
     """Resolve a Spotify track/album/playlist URL to metadata (no audio)."""
