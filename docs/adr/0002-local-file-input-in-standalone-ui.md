@@ -66,8 +66,9 @@ Constraints:
      Every other type is `415`, including the CORS-simple `text/plain`,
      `application/x-www-form-urlencoded` and `multipart/form-data`. A cross-site form post or a
      simple `fetch` therefore cannot reach the decoder.
-   - **A same-origin `Origin`.** `Origin` must be present and must equal the expected origin
-     exactly: scheme, host and port, compared as strings after lowercasing the scheme and host.
+   - **A same-origin `Origin`.** `Origin` must be present and must match the expected origin under
+     ADR 0003 item 6's single comparison rule: scheme, host and port, with the scheme and host
+     lowercased, no default port added or removed, and `null` never matching.
      - **Expected origin** (ADR 0003 item 6): `ui_public_origin` if it is set, as one exact origin
        such as `https://spotdown.example`, which is then the only origin accepted. Otherwise it is
        `http://` plus the request's `Host` header, which must pass the next check.
@@ -118,6 +119,15 @@ Constraints:
        rejection, the read deadline's `408`, and a client disconnect.
        - In that `finally`, the partial or whole file and the work directory are deleted **before**
          the lock is released. So the next holder's leftover sweep never races the deletion.
+       - **The child first.** The blocking `sandbox.run_analysis` runs in a worker thread. If the
+         request is cancelled while it runs, the `finally` does these steps in order:
+         1. kills the child's process group (through a cancel hook on the existing `_kill_group`);
+         2. waits for the thread to return, which also reaps the child;
+         3. deletes the files;
+         4. releases the lock.
+
+         The slot is never released while an analysis still runs (the PR #53 PASS, non-blocking 7;
+         spotdown#49).
        - Crashes are covered too. Whenever the slot is taken, anything left in the directory other
          than the lock file is deleted, files and work directories alike: with one slot, anything
          present while nobody holds the lock is a leftover.
