@@ -5,7 +5,7 @@ const API_BASE = (location.protocol === "http:" || location.protocol === "https:
   ? "" : "http://localhost:8000";
 const trackCard = $("trackCard"), statusCard = $("statusCard"), statusEl = $("status");
 const analysisCard = $("analysisCard");
-let currentTrackId = null;
+let currentTrackId = null, currentAudioUrl = null;
 
 function showStatus(html, isErr) {
   statusCard.style.display = "block";
@@ -20,6 +20,7 @@ function fmtDur(s) {
   return `${m}:${ss}`;
 }
 function renderTrack(t) {
+  if ((t.id || null) !== currentTrackId) currentAudioUrl = null;  // the audio belongs to one track
   currentTrackId = t.id || null;
   trackCard.style.display = "block";
   const cover = safeUrl(t.cover_url) ? `<img src="${escapeHtml(t.cover_url)}" alt="">` : `<img alt="">`;
@@ -102,7 +103,19 @@ async function poll(taskId) {
 function done(downloadUrl) {
   if (!safeUrl(downloadUrl) && !(typeof downloadUrl === "string" && /^\/(?!\/)/.test(downloadUrl)))
     return showStatus("The server returned an unusable download link.", true);
+  currentAudioUrl = downloadUrl;
   showStatus(`Done. <a class="dl" href="${escapeHtml(downloadUrl)}" download>⬇ Download file</a>`);
+}
+
+// The converted file the server already offered for download (no new endpoint); null if this page
+// has not converted the track. A local-file analysis passes its own loader (upload.js).
+async function loadTrackAudio() {
+  if (!currentAudioUrl) return null;
+  const path = wfAudioPath(currentAudioUrl, location.origin);  // same-origin /files/<name> only
+  if (!path) throw new Error("the download link is not a file of this server");
+  const r = await fetch(`${API_BASE}${path}`);
+  if (!r.ok) throw new Error("the audio download failed (HTTP " + r.status + ")");
+  return r.arrayBuffer();
 }
 
 async function analyze() {

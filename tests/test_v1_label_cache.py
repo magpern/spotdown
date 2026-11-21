@@ -213,15 +213,21 @@ def test_a_second_init_db_waits_on_the_lock_and_does_not_rebuild_again(
             errors.append(exc)
 
     holder = sqlite3.connect(settings.db_path, isolation_level=None)
-    holder.execute("BEGIN IMMEDIATE")
-    for step in steps:
-        holder.execute(step)
     thread = threading.Thread(target=start)
-    thread.start()
-    assert at_begin.wait(10)
-    holder.execute("COMMIT")
-    holder.close()
-    thread.join(30)
+    try:
+        holder.execute("BEGIN IMMEDIATE")
+        for step in steps:
+            holder.execute(step)
+        thread.start()
+        assert at_begin.wait(10)
+        holder.execute("COMMIT")
+    finally:
+        # On every path, including a failed wait: release the write lock first, then join.
+        if holder.in_transaction:
+            holder.execute("ROLLBACK")
+        holder.close()
+        if thread.is_alive():
+            thread.join(30)
     assert not thread.is_alive() and errors == []
     with sqlite3.connect(settings.db_path) as conn:
         assert conn.execute("SELECT count(*) FROM rebuild_log").fetchone()[0] == 1

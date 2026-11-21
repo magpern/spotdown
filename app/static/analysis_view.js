@@ -114,16 +114,20 @@ const APPROX_NOTE = `<div class="note"><b>Approximate, not exact.</b> Analyses o
   the audio is not Spotify's own file, so beats, sections and events are exact only on this file's clock, and the
   Spotify clock is one offset that can drift. Section labels, phrases and meter are heuristic estimates.</div>`;
 
-function renderAnalysis(d) {
+// loadAudio: where the waveform gets its audio (default: the converted file; a picked local file
+// for an upload, so the server never sends that audio back).
+function renderAnalysis(d, loadAudio) {
   const m = buildModel(d);
   tlModel = m;
   analysisCard.style.display = "block";
   analysisCard.innerHTML = `<div style="font-weight:600">Audio analysis</div>
     ${statsHtml(m)}${explicitHtml(m)}${tempoHtml(m)}${signalHtml(m)}${alignmentHtml(m)}
+    <div class="viz-label">Waveform</div><div id="wfCard"></div>
     <div class="viz-label">Timeline</div>${timelineControls(m)}<div id="tlHost"></div>${timelineLegend(m)}${APPROX_NOTE}
     <div class="grid2"><div><div class="viz-label">Sections</div>${sectionsHtml(m)}</div>
     <div><div class="viz-label">Events &amp; phrases</div>${eventsHtml(m)}</div></div>
     <div class="foot">${escapeHtml(m.prov.analyzer)} analyzer ${escapeHtml(m.prov.version)} · document ${escapeHtml(m.prov.schema)} · standalone analysis of a YouTube match · ${escapeHtml(m.prov.created)}</div>`;
   wireTimeline();
+  startWaveform(m, loadAudio || loadTrackAudio);
 }
 window.addEventListener("resize", drawTimeline);

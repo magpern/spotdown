@@ -44,7 +44,10 @@ def test_the_picked_file_is_sent_as_octet_stream_with_the_ui_header() -> None:
 
 def test_the_waveform_is_drawn_from_the_picked_file_not_from_the_server() -> None:
     got = _run(200)
+    # renderAnalysis got a loader that resolves to the picked file's own bytes, with no fetch.
     assert len(got["waveform"]) == 1 and got["waveform"][0]["same"] is True
+    assert got["fetchedForAudio"] == 0
+    assert got["viewPasses"] is True  # analysis_view.js passes it on to startWaveform
 
 
 def test_a_401_goes_to_login() -> None:

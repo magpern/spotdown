@@ -26,9 +26,8 @@ async function analyzeFile(file) {
     if (r.status === 401) return toLogin();
     const d = await r.json();
     if (!r.ok) return showStatus("Analysis failed: " + (d.detail || ("HTTP " + r.status)), true);
-    renderAnalysis(d);
-    // The waveform view (spotdown#48) draws from the user's own file, never from the server.
-    if (typeof drawWaveform === "function") drawWaveform(file, d);
+    // The waveform (spotdown#48) is decoded from the user's own file, never fetched from the server.
+    renderAnalysis(d, () => file.arrayBuffer());
     showStatus("Analysis ready.");
   } catch (e) {
     showStatus("Analysis failed: " + e.message, true);

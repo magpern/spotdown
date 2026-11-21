@@ -9,7 +9,8 @@ const el = (id) => els[id] || (els[id] = {
   addEventListener(type, fn) { this.handlers[type] = fn; }, set innerHTML(v) { this.html = v; },
 });
 const calls = [], waveform = [], rendered = [];
-const picked = { name: "secret-name.mp3", size: 3, type: "audio/mpeg" };
+const BYTES = { picked: true };  // what the picked file's arrayBuffer() resolves to
+const picked = { name: "secret-name.mp3", size: 3, type: "audio/mpeg", arrayBuffer: async () => BYTES };
 const ctx = {
   document: { getElementById: el }, window: {}, console,
   location: { protocol: "http:", assigned: null, assign(u) { this.assigned = u; } },
@@ -22,19 +23,34 @@ const ctx = {
 };
 vm.createContext(ctx);
 for (const f of ["ui.js", "upload.js"]) vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f });
-ctx.renderAnalysis = (d) => rendered.push(d);
-ctx.drawWaveform = (file, d) => waveform.push({ same: file === picked, d });
+ctx.renderAnalysis = (d, loadAudio) => rendered.push({ d, loadAudio });
 ctx.picked = picked;
 (async () => {
   const shown = await vm.runInContext("uploadReady", ctx);
   els.file.files = [picked];
   els.file.handlers.change();
   await new Promise((r) => setTimeout(r, 50));
+  const fetchesBefore = calls.length;
+  for (const r of rendered) waveform.push({ same: r.loadAudio ? (await r.loadAudio()) === BYTES : false });
+  const fetchedForAudio = calls.length - fetchesBefore;
   const post = calls.find((c) => c.opts.method === "POST");
-  process.stdout.write(JSON.stringify({
+  // The real renderAnalysis hands that loader to the waveform (everything else stubbed).
+  const got = [], stubbed = ["statsHtml", "explicitHtml", "tempoHtml", "signalHtml", "alignmentHtml",
+    "timelineControls", "timelineLegend", "sectionsHtml", "eventsHtml", "wireTimeline", "drawTimeline"];
+  const view = { console, window: { addEventListener() {} }, analysisCard: { style: {} },
+    buildModel: () => ({ prov: {} }), escapeHtml: String, loadTrackAudio: "default",
+    startWaveform: (m, load) => got.push(load) };
+  vm.createContext(view);
+  vm.runInContext(fs.readFileSync(path.join(dir, "analysis_view.js"), "utf8"), view, { filename: "analysis_view.js" });
+  vm.runInContext(stubbed.map((n) => `${n} = () => "";`).join(" "), view);
+  const mine = () => 0;
+  vm.runInContext("renderAnalysis", view)({}, mine);
+  vm.runInContext("renderAnalysis", view)({});
+  const viewPasses = got[0] === mine && got[1] === "default";
+  process.stdout.write(JSON.stringify({ viewPasses,
     shown, card: els.fileCard.style.display, probe: calls[0],
     post: post && { url: post.url, method: post.opts.method, headers: post.opts.headers,
       credentials: post.opts.credentials, bodyIsFile: post.opts.body === picked },
-    waveform, rendered: rendered.length, login: ctx.location.assigned,
+    waveform, fetchedForAudio, rendered: rendered.length, login: ctx.location.assigned,
   }));
 })();
