@@ -143,13 +143,13 @@ def analyze_track_endpoint(track_id: str, refresh: bool = False) -> dict:
     """MIR analysis (tempo, beats, energy, drops, segments) of an already-converted track.
 
     Runs on the highest-bitrate file for this track_id; result is cached per
-    analyzer version. Pass ?refresh=true to force re-analysis.
+    analyzer version and v1 response version. Pass ?refresh=true to force re-analysis.
     """
     from . import analyze as analysis
     from . import spotify as spotify_mod
 
     if not refresh:
-        cached = db.get_analysis(track_id, analysis.ANALYZER_VERSION)
+        cached = db.get_analysis(track_id, analysis.ANALYZER_VERSION, analysis.V1_RESPONSE_VERSION)
         if cached:
             return _json.loads(cached)
 
@@ -175,7 +175,9 @@ def analyze_track_endpoint(track_id: str, refresh: bool = False) -> dict:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
 
-    db.set_analysis(track_id, analysis.ANALYZER_VERSION, _json.dumps(result))
+    db.set_analysis(
+        track_id, analysis.ANALYZER_VERSION, analysis.V1_RESPONSE_VERSION, _json.dumps(result)
+    )
     return result
 
 

@@ -15,11 +15,17 @@ from typing import Optional
 import librosa
 
 from .alignment_calc import ALIGN_TOLERANCE_S, offset_hypotheses
+from .core import label_calc
 from .core.analyser import ANALYZER_VERSION, SR, analyse_signal
 from .core.signal_calc import tempo_candidates
 from .standalone_doc import standalone_document
 
-__all__ = ["ALIGN_TOLERANCE_S", "ANALYZER_VERSION", "analyze_track"]
+__all__ = ["ALIGN_TOLERANCE_S", "ANALYZER_VERSION", "V1_RESPONSE_VERSION", "analyze_track"]
+
+# Version of the standalone v1 response, next to the core ANALYZER_VERSION in the cache key
+# (ADR 0001, Decision 2). Rows cached before it existed count as 1. Raise it with any change to the
+# shape or the labels of this response; it never touches the v2 caches or analysis-v1.
+V1_RESPONSE_VERSION = 2
 
 
 def _sha256(path: Path) -> str:
@@ -28,6 +34,22 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def fill_labels(segments: list, core: dict) -> None:
+    """Set ``segments[].label`` from ``label_calc``, the labeller of the document's ``labels``.
+
+    A segment it leaves unlabelled (silence around the content, or a single content segment)
+    reads ``unlabelled``, the same word the web UI uses for a segment without a label.
+    """
+    found = {
+        x["index"]: x["label"]
+        for x in label_calc.label_segments(
+            segments, core["drops"], core["content_start_s"], core["content_end_s"]
+        )
+    }
+    for i, seg in enumerate(segments):
+        seg["label"] = found.get(i, "unlabelled")
 
 
 def analyze_track(file_path: Path, track_id: str, spotify_duration_s: Optional[int] = None) -> dict:
@@ -40,6 +62,7 @@ def analyze_track(file_path: Path, track_id: str, spotify_duration_s: Optional[i
     trailing_silence = max(duration - content_end, 0.0)
     segments = core["segments"]
     drops = core["drops"]
+    fill_labels(segments, core)
     energy = core["energy"]
 
     matches, align_offset, residual = offset_hypotheses(
