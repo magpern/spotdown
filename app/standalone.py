@@ -35,6 +35,9 @@ UI_ASSETS = {
     "analysis_model.js": "text/javascript",
     "analysis_timeline.js": "text/javascript",
     "analysis_view.js": "text/javascript",
+    "waveform_model.js": "text/javascript",
+    "waveform_view.js": "text/javascript",
+    "waveform_player.js": "text/javascript",
 }
 
 
