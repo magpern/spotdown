@@ -13,7 +13,7 @@ import librosa
 import numpy as np
 
 from . import HOP, novelty_calc
-from .signal_calc import quiet_region_edges, segment_label
+from .signal_calc import quiet_region_edges
 
 MIN_SEG_S = 2.0
 FRAME_S = 0.5
@@ -114,9 +114,6 @@ def segments(
             }
         )
     groups = cluster_groups(seg_feats)
-    structs = [s["energy_struct"] for s in raw]
-    hi, lo = float(np.percentile(structs, 60)), float(np.percentile(structs, 35))
     for i, s in enumerate(raw):
         s["group"] = groups[i] if i < len(groups) else 0
-        s["label"] = segment_label(i, len(raw), s["energy_struct"], hi, lo)
     return raw

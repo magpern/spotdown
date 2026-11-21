@@ -21,14 +21,16 @@ CREATE TABLE IF NOT EXISTS downloads (
 );
 CREATE INDEX IF NOT EXISTS idx_downloads_track_id ON downloads(track_id);
 
--- Analysis cache, keyed by (track_id, analyzer_version) so tuning the analyzer
--- (which bumps the version) refreshes instead of serving stale results.
+-- Standalone v1 analysis cache, keyed by (track_id, analyzer_version, response_version): tuning
+-- the analyzer (which bumps its version) or changing the v1 response (which bumps
+-- V1_RESPONSE_VERSION) refreshes instead of serving stale results (ADR 0001, Decision 2).
 CREATE TABLE IF NOT EXISTS analyses (
     track_id         TEXT NOT NULL,
     analyzer_version INTEGER NOT NULL,
+    response_version INTEGER NOT NULL,
     json             TEXT NOT NULL,
     created_at       INTEGER NOT NULL,
-    PRIMARY KEY (track_id, analyzer_version)
+    PRIMARY KEY (track_id, analyzer_version, response_version)
 );
 """
 
@@ -49,9 +51,56 @@ def _conn() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+# Rebuild of an ``analyses`` table that has the older two-column key (ADR 0001, Decision 2). Every
+# existing row is a version 1 response. One statement per entry: ``executescript`` commits first.
+_REBUILD_STEPS = (
+    """CREATE TABLE analyses_new (
+           track_id         TEXT NOT NULL,
+           analyzer_version INTEGER NOT NULL,
+           response_version INTEGER NOT NULL,
+           json             TEXT NOT NULL,
+           created_at       INTEGER NOT NULL,
+           PRIMARY KEY (track_id, analyzer_version, response_version)
+       )""",
+    """INSERT INTO analyses_new
+           (track_id, analyzer_version, response_version, json, created_at)
+       SELECT track_id, analyzer_version, 1, json, created_at FROM analyses""",
+    "DROP TABLE analyses",
+    "ALTER TABLE analyses_new RENAME TO analyses",
+)
+
+
+def _migrate_analyses() -> None:
+    """Add ``response_version`` to the ``analyses`` key once, in one transaction.
+
+    ``BEGIN IMMEDIATE`` takes the write lock first, so two processes starting together cannot both
+    rebuild: the second waits, then finds the column inside its own transaction. SQLite DDL is
+    transactional, so any failure rolls back and leaves the original table intact.
+    """
+    conn = sqlite3.connect(get_settings().db_path, timeout=30, isolation_level=None)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            columns = [r[1] for r in conn.execute("PRAGMA table_info(analyses)")]
+            if "response_version" in columns:
+                conn.execute("ROLLBACK")
+                return
+            for step in _REBUILD_STEPS:
+                conn.execute(step)
+            conn.execute("COMMIT")
+        except BaseException:
+            # Defensive: close() discards an open transaction anyway, so this is not tested.
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
     with _conn() as conn:
         conn.executescript(_SCHEMA)
+    _migrate_analyses()
 
 
 def get_done(vid: str) -> Optional[dict]:
@@ -99,19 +148,23 @@ def get_best_file_for_track(track_id: str) -> Optional[str]:
     return row["file_name"]
 
 
-def get_analysis(track_id: str, version: int) -> Optional[str]:
+def get_analysis(track_id: str, version: int, response_version: int) -> Optional[str]:
+    """The cached v1 response for exactly this key; any other version pair is a miss."""
     with _conn() as conn:
         row = conn.execute(
-            "SELECT json FROM analyses WHERE track_id = ? AND analyzer_version = ?",
-            (track_id, version),
+            "SELECT json FROM analyses"
+            " WHERE track_id = ? AND analyzer_version = ? AND response_version = ?",
+            (track_id, version, response_version),
         ).fetchone()
     return row["json"] if row else None
 
 
-def set_analysis(track_id: str, version: int, json_str: str) -> None:
+def set_analysis(track_id: str, version: int, response_version: int, json_str: str) -> None:
+    """Write on the full key, so a row of another response version is never overwritten."""
     with _conn() as conn:
         conn.execute(
-            """INSERT OR REPLACE INTO analyses (track_id, analyzer_version, json, created_at)
-               VALUES (?, ?, ?, ?)""",
-            (track_id, version, json_str, int(time.time())),
+            """INSERT OR REPLACE INTO analyses
+               (track_id, analyzer_version, response_version, json, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (track_id, version, response_version, json_str, int(time.time())),
         )

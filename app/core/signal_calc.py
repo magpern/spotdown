@@ -45,18 +45,6 @@ def rising_edges(
     return out
 
 
-def segment_label(i: int, n: int, energy: float, hi: float, lo: float) -> str:
-    if i == 0 and energy <= lo:
-        return "intro"
-    if i == n - 1 and energy <= lo:
-        return "outro"
-    if energy >= hi:
-        return "chorus/drop"
-    if energy <= lo:
-        return "breakdown/quiet"
-    return "verse"
-
-
 def quiet_region_edges(
     grid: np.ndarray, e: np.ndarray, thresh: float = 0.15, min_len: float = 3.0
 ) -> List[float]:
