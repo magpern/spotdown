@@ -2,8 +2,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    # No ports: only the containers use Redis (ADR 0003).
 
   api:
     build: .
@@ -11,8 +10,9 @@ services:
     env_file: .env
     environment:
       REDIS_URL: redis://redis:6379/0
+    # Loopback only unless SPOTDOWN_PUBLISH_HOST widens it (ADR 0003); the app never reads it.
     ports:
-      - "8000:8000"
+      - "${SPOTDOWN_PUBLISH_HOST:-127.0.0.1}:8000:8000"
     volumes:
       - ./data:/app/data
     depends_on:

@@ -1,8 +1,17 @@
 const $ = (id) => document.getElementById(id);
-// When opened as a served page, use relative URLs. When opened as a local file
-// (e.g. an editor preview), fall back to the dev server so fetch() still works.
-const API_BASE = (location.protocol === "http:" || location.protocol === "https:")
-  ? "" : "http://localhost:8000";
+// Same-origin requests only (ADR 0003): the page is served by the app itself, behind its session.
+// Every API call carries X-Spotdown-UI; a 401 means the session is gone, so sign in again.
+async function api(path, opts) {
+  const o = opts || {};
+  const headers = Object.assign({ "X-Spotdown-UI": "1" }, o.headers || {});
+  if (o.json !== undefined) headers["Content-Type"] = "application/json";
+  const r = await fetch(path, {
+    method: o.method || "GET", headers, credentials: "same-origin", mode: "same-origin",
+    body: o.json !== undefined ? JSON.stringify(o.json) : undefined,
+  });
+  if (r.status === 401) { location.assign("/login"); throw new Error("Signed out"); }
+  return r;
+}
 const trackCard = $("trackCard"), statusCard = $("statusCard"), statusEl = $("status");
 const analysisCard = $("analysisCard");
 let currentTrackId = null;
@@ -57,7 +66,7 @@ async function lookup() {
   if (!url) return;
   showStatus('<span class="spin"></span>Looking up…');
   try {
-    const r = await fetch(`${API_BASE}/api/Gettrack?spotify_url=${encodeURIComponent(url)}`);
+    const r = await api(`/api/Gettrack?spotify_url=${encodeURIComponent(url)}`);
     const d = await r.json();
     if (!r.ok) return showStatus("Lookup failed: " + (d.detail || r.status), true);
     if (!d.tracks || !d.tracks.length) return showStatus("No tracks found.", true);
@@ -74,9 +83,7 @@ async function convert() {
   $("convert").disabled = true;
   showStatus('<span class="spin"></span>Requesting conversion…');
   try {
-    const r = await fetch(`${API_BASE}/api/v1/convert`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-    });
+    const r = await api("/api/v1/convert", { method: "POST", json: body });
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || ("HTTP " + r.status));
     if (d.track) renderTrack(d.track);
@@ -89,7 +96,7 @@ async function convert() {
 
 async function poll(taskId) {
   for (let i = 0; i < 120; i++) {
-    const r = await fetch(`${API_BASE}/api/v1/tasks/${encodeURIComponent(taskId)}`);
+    const r = await api(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
     const d = await r.json();
     if (d.status === "done") return done(d.download_url);
     if (d.status === "failed") return showStatus("Conversion failed:\n" + (d.error || "unknown error"), true);
@@ -110,7 +117,7 @@ async function analyze() {
   $("analyze").disabled = true;
   showStatus('<span class="spin"></span>Analyzing audio… (first run can take ~10s)');
   try {
-    const r = await fetch(`${API_BASE}/api/v1/analyze/${encodeURIComponent(currentTrackId)}`);
+    const r = await api(`/api/v1/analyze/${encodeURIComponent(currentTrackId)}`);
     const d = await r.json();
     if (r.status === 404) return showStatus("Convert the track first — analysis needs the downloaded file.", true);
     if (!r.ok) throw new Error(d.detail || ("HTTP " + r.status));
