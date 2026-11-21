@@ -73,3 +73,11 @@ def test_the_input_is_hidden_until_the_route_answers() -> None:
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     assert 'id="fileCard" class="card" style="display:none"' in html
     assert '<script src="upload.js"></script>' in html
+
+
+def test_a_local_file_result_says_nothing_of_a_youtube_match_or_spotify() -> None:
+    got = _run(200)
+    local, track = got["localHtml"], got["trackHtml"]
+    assert "local file" in local
+    assert "YouTube" not in local and "Spotify" not in local
+    assert "YouTube match" in track and "Spotify" in track  # unchanged for a converted track

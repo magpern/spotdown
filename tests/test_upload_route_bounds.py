@@ -365,6 +365,7 @@ def test_a_failed_delete_is_logged_and_the_slot_is_still_released(
     import shutil
 
     calls: List[Path] = []
+    real_rmtree = shutil.rmtree
 
     def rmtree(path: Any, *args: Any, **kwargs: Any) -> None:
         calls.append(Path(path))
@@ -378,3 +379,6 @@ def test_a_failed_delete_is_logged_and_the_slot_is_still_released(
     slot = upload_slot.try_acquire(settings.standalone_uploads_dir)  # released all the same
     assert slot is not None
     slot.release()
+    monkeypatch.setattr(shutil, "rmtree", real_rmtree)
+    assert _post(app).status_code == 200  # the next holder's sweep retries the leftover
+    assert left(settings) == [LOCK]

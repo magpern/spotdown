@@ -46,9 +46,11 @@ class Received:
 
 
 def declared_too_large(content_length: Optional[str], max_bytes: int) -> bool:
-    """A declared length that is not a plain number, or is over the cap."""
+    """A declared length that is not a plain ASCII number, or is over the cap. ``str.isdigit``
+    alone accepts digits such as ``²`` that ``int`` refuses, so ASCII is required first."""
     return content_length is not None and (
-        not content_length.isdigit() or int(content_length) > max_bytes
+        not (content_length.isascii() and content_length.isdigit())
+        or int(content_length) > max_bytes
     )
 
 

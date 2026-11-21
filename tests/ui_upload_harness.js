@@ -35,7 +35,7 @@ ctx.picked = picked;
   const fetchedForAudio = calls.length - fetchesBefore;
   const post = calls.find((c) => c.opts.method === "POST");
   // The real renderAnalysis hands that loader to the waveform (everything else stubbed).
-  const got = [], stubbed = ["statsHtml", "explicitHtml", "tempoHtml", "signalHtml", "alignmentHtml",
+  const got = [], stubbed = ["statsHtml", "explicitHtml", "tempoHtml", "signalHtml",
     "timelineControls", "timelineLegend", "sectionsHtml", "eventsHtml", "wireTimeline", "drawTimeline"];
   const view = { console, window: { addEventListener() {} }, analysisCard: { style: {} },
     buildModel: () => ({ prov: {} }), escapeHtml: String, loadTrackAudio: "default",
@@ -47,7 +47,14 @@ ctx.picked = picked;
   vm.runInContext("renderAnalysis", view)({}, mine);
   vm.runInContext("renderAnalysis", view)({});
   const viewPasses = got[0] === mine && got[1] === "default";
-  process.stdout.write(JSON.stringify({ viewPasses,
+  // The text of a local-file result and of a converted track's (real renderAnalysis and
+  // alignmentHtml; the model has no alignment, as an upload's never does).
+  const card = () => view.analysisCard.innerHTML;
+  vm.runInContext("renderAnalysis", view)({ track_id: "upl_" + "a".repeat(64) }, mine);
+  const localHtml = card();
+  vm.runInContext("renderAnalysis", view)({ track_id: "t1" });
+  const trackHtml = card();
+  process.stdout.write(JSON.stringify({ viewPasses, localHtml, trackHtml,
     shown, card: els.fileCard.style.display, probe: calls[0],
     post: post && { url: post.url, method: post.opts.method, headers: post.opts.headers,
       credentials: post.opts.credentials, mode: post.opts.mode, bodyIsFile: post.opts.body === picked },

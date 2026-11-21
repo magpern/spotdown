@@ -64,8 +64,9 @@ function signalHtml(m) {
     silence: ${reg} · ${fade(m.fadeIn, "fade in")}, ${fade(m.fadeOut, "fade out")}.</div>`;
 }
 
-function alignmentHtml(m) {
+function alignmentHtml(m, local) {
   const a = m.alignment;
+  if (!a && local) return `<div class="hint">Alignment: none (a local file has no reference recording).</div>`;
   if (!a) return `<div class="hint">Alignment: none (no Spotify duration known).</div>`;
   if (a.result !== "ok") {
     const h = a.hypotheses.map((x) => `${esc(x.name)} residual ${pct(x.residual)}s`).join("; ");
@@ -113,20 +114,24 @@ function explicitHtml(m) {
 const APPROX_NOTE = `<div class="note"><b>Approximate, not exact.</b> Analyses of a YouTube match are timing-approximate:
   the audio is not Spotify's own file, so beats, sections and events are exact only on this file's clock, and the
   Spotify clock is one offset that can drift. Section labels, phrases and meter are heuristic estimates.</div>`;
+// A local file's analysis (ADR 0002): its own audio, so there is no match and no other clock.
+const LOCAL_NOTE = `<div class="note"><b>Your local file.</b> Beats, sections and events are on this file's own
+  clock. Section labels, phrases and meter are heuristic estimates.</div>`;
+const isLocalResult = (d) => typeof (d && d.track_id) === "string" && d.track_id.startsWith("upl_");
 
 // loadAudio: where the waveform gets its audio (default: the converted file; a picked local file
 // for an upload, so the server never sends that audio back).
 function renderAnalysis(d, loadAudio) {
-  const m = buildModel(d);
+  const m = buildModel(d), local = isLocalResult(d);
   tlModel = m;
   analysisCard.style.display = "block";
   analysisCard.innerHTML = `<div style="font-weight:600">Audio analysis</div>
-    ${statsHtml(m)}${explicitHtml(m)}${tempoHtml(m)}${signalHtml(m)}${alignmentHtml(m)}
+    ${statsHtml(m)}${explicitHtml(m)}${tempoHtml(m)}${signalHtml(m)}${alignmentHtml(m, local)}
     <div class="viz-label">Waveform</div><div id="wfCard"></div>
-    <div class="viz-label">Timeline</div>${timelineControls(m)}<div id="tlHost"></div>${timelineLegend(m)}${APPROX_NOTE}
+    <div class="viz-label">Timeline</div>${timelineControls(m)}<div id="tlHost"></div>${timelineLegend(m)}${local ? LOCAL_NOTE : APPROX_NOTE}
     <div class="grid2"><div><div class="viz-label">Sections</div>${sectionsHtml(m)}</div>
     <div><div class="viz-label">Events &amp; phrases</div>${eventsHtml(m)}</div></div>
-    <div class="foot">${escapeHtml(m.prov.analyzer)} analyzer ${escapeHtml(m.prov.version)} · document ${escapeHtml(m.prov.schema)} · standalone analysis of a YouTube match · ${escapeHtml(m.prov.created)}</div>`;
+    <div class="foot">${escapeHtml(m.prov.analyzer)} analyzer ${escapeHtml(m.prov.version)} · document ${escapeHtml(m.prov.schema)} · standalone analysis of ${local ? "a local file" : "a YouTube match"} · ${escapeHtml(m.prov.created)}</div>`;
   wireTimeline();
   startWaveform(m, loadAudio || loadTrackAudio);
 }

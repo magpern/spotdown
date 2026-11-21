@@ -352,3 +352,58 @@ def test_fail_closed_when_the_child_cannot_be_shown_to_exit(
     names = left(settings)
     assert len(names) == 3 and LOCK in names  # the file and the work directory are kept
     assert jobs and jobs[0].done.wait(10) and _gone(procs[0])  # the kill still happened
+
+
+# --- a job stopped before its thread or its child exists ------------------------------------------
+
+
+def _job(tmp_path: Path) -> upload_job.Job:
+    from app.service.worker import limits_from
+
+    audio, work = tmp_path / "audio", tmp_path / "work"
+    audio.write_bytes(WAV)
+    work.mkdir()
+    limits = limits_from(standalone_settings(tmp_path, analysis_wall_timeout_s=60))
+    return upload_job.Job(audio, "wav", work, limits)
+
+
+def test_a_job_stopped_before_its_thread_begins_starts_nothing(
+    tmp_path: Path, monkeypatch, procs
+) -> None:
+    """anyio drops a worker call cancelled before a thread picks it up: ``done`` is then never
+    set, so ``stop`` must not wait for it; and a thread that does begin late starts no child."""
+    monkeypatch.setattr(upload_job, "WAIT_BOUND_S", 2.0)
+    job = _job(tmp_path)
+    t0 = time.monotonic()
+    assert job.stop() is True
+    assert time.monotonic() - t0 < 0.5  # it did not wait for a thread that never ran
+    job._work()  # the thread, had anyio run it after all
+    assert procs == [] and job.started is False and job.done.is_set()
+
+
+def test_a_job_stopped_before_its_child_exists_kills_it_at_once(
+    tmp_path: Path, monkeypatch, procs
+) -> None:
+    """The thread has begun but the child does not exist yet when ``stop`` runs: the start hook
+    refuses the new child, and ``run_analysis`` kills and reaps it before the thread ends."""
+    monkeypatch.setattr(upload_job, "WAIT_BOUND_S", 3.0)
+    job = _job(tmp_path)
+    fake_popen = sandbox.subprocess.Popen
+
+    def popen(cmd: Any, **kwargs: Any) -> subprocess.Popen:
+        while not job._stopping:  # the child appears only after stop() has begun
+            time.sleep(0.01)
+        return fake_popen(cmd, **kwargs)
+
+    monkeypatch.setattr(sandbox.subprocess, "Popen", popen)
+    thread = threading.Thread(target=job._work, daemon=True)
+    thread.start()
+    while not job.started:
+        time.sleep(0.01)
+    t0 = time.monotonic()
+    assert job.stop() is True
+    assert time.monotonic() - t0 < 2.0  # well inside the bound, nowhere near wall_s (60 s)
+    assert isinstance(job.error, upload_job.Cancelled)
+    assert len(procs) == 1 and _gone(procs[0]) and procs[0].returncode == -9
+    thread.join(5)
+    assert not thread.is_alive()

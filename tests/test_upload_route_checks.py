@@ -264,3 +264,10 @@ def test_a_bad_host_setting_stops_construction(tmp_path: Path) -> None:
 def test_not_registered_without_resource(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "resource", None)  # no sandbox rlimits: no route
     assert upload_route.available(standalone_settings(tmp_path)) is False
+
+
+def test_a_superscript_declared_length_is_413_not_500(settings, monkeypatch) -> None:
+    app = make_app(settings, monkeypatch)
+    body = Unread()
+    res = _post(app, {**GOOD, "Content-Length": b"\xb2"}, body)  # type: ignore[dict-item]
+    assert res.status_code == 413 and not body.read and left(settings) == [LOCK]
