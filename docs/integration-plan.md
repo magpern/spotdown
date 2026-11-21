@@ -86,7 +86,7 @@ by default in code (`ALLOW_YTDLP_SOURCING`); switching it on is the owner's depl
 | trial follow-up | #46 merge over-fine segments before labelling | open | #45 |
 | trial follow-up | #47 labels and segments on steady-energy tracks | open | #46 |
 | trial follow-up | #48 waveform view in the standalone UI | open | #45 |
-| trial follow-up | #52 standalone exposure: a token always on every standalone route, plus same-origin requests, `Host` and CORS allowlists and loopback publishing (ADR 0003; Opus Developer) | open | #44 |
+| trial follow-up | #52 standalone exposure: a token always on every standalone route, plus same-origin requests, a `Host` allowlist, no CORS and loopback publishing (ADR 0003; Opus Developer) | open | #44 |
 | trial follow-up | #49 local-file input in the standalone UI (Opus Developer) | open | #44, #48, #52 |
 
 The classbeat issues SD-P4 to SD-P7 (classbeat#1301 to #1306) depend on #3, #4, #5, #6, #10 and #11;

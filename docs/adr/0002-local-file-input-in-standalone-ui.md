@@ -55,14 +55,13 @@ Constraints:
 1. **The standalone UI accepts the local file**, in standalone mode only. The new route (for example
    `POST /api/v1/analyze-upload`) is registered only when the standalone UI is served (`serve_ui`),
    and never in service mode. The UI is not served in service mode.
-2. **The browser cannot reach the route from another site.** The route is exempt from the CORS
-   middleware and makes three request checks. The checks run before the slot of item 3 is taken and
-   before any byte of the body is read. A failed check answers `415` for the content type and `403`
-   otherwise, and nothing is written.
-   - **Outside the wildcard CORS.** The CORS middleware does not apply to the route's path: a
-     preflight for it gets no `Access-Control-Allow-*` headers, and its answers carry none. A
-     cross-site page can therefore neither send the request (the preflight fails) nor read a
-     response.
+2. **The browser cannot reach the route from another site.** Behind ADR 0003's session, the route
+   makes four request checks: the content type, `X-Spotdown-UI` (ADR 0003 item 6), `Origin` and
+   `Host`. They run before the slot of item 3 is taken and before any byte of the body is read. A
+   failed check answers `415` for the content type and `403` otherwise, and nothing is written.
+   - **No CORS.** Standalone mode installs no CORS middleware (ADR 0003 item 6). A preflight for the
+     route gets no `Access-Control-Allow-*` headers, and its answers carry none. A cross-site page can
+     therefore neither send the request (the preflight fails) nor read a response.
    - **A non-simple content type.** `Content-Type` must be exactly `application/octet-stream`.
      Every other type is `415`, including the CORS-simple `text/plain`,
      `application/x-www-form-urlencoded` and `multipart/form-data`. A cross-site form post or a
@@ -153,9 +152,8 @@ Constraints:
 - **Rely on CORS alone, or on "local network only".** Rejected: the wildcard CORS allows every
   origin, and a simple request is sent before any CORS check. The binding to `0.0.0.0` and DNS
   rebinding make "local" no boundary.
-- **Narrow the CORS of the whole standalone app.** That is out of scope here: the existing routes'
-  exposure predates this ADR, and this route does not widen it. The new route simply does not rely
-  on CORS.
+- **Narrow the CORS of the whole standalone app here.** Left to ADR 0003, which removes CORS from
+  standalone mode. This route never relied on CORS.
 - **A bounded queue of several uploads.** Rejected for now: it multiplies the disk and CPU that a
   caller, or a leaked session, can hold, for a single-user test tool. Raising the slot count later is
   a reversible change.

@@ -50,66 +50,118 @@ recorded it as a follow-up.
 
 1. **A token always, in standalone mode.**
    - **Scope.** Every standalone route needs a valid session. That covers `/`, the UI assets,
-     `/api/...`, `/files/...` and #49's upload route. There are exactly three exceptions, named in
-     code:
+     `/api/...`, `/files/...`, #49's upload route, FastAPI's `/docs`, `/docs/oauth2-redirect`,
+     `/redoc` and `/openapi.json`, and any unknown path. There are exactly three exceptions, each
+     matched on the **exact method and exact `scope["path"]`**:
      - `GET /login`;
      - `POST /login`;
      - `GET /healthz`. It is the handler shared with service mode, returning
        `{"ok": ..., "redis": ...}` (liveness and whether Redis answers). It is unchanged, and
        classbeat probes it in service mode.
+
+     Variants are not exempt: `/login/`, `/LOGIN`, `//login`, `/healthz/` and `HEAD /healthz` all
+     need a session. Percent-encoding is decoded before `scope["path"]`, so `/%6Cogin` is `/login`.
    - **No detection at all.** There is no exposure detection, no peer, gateway or local-address
      exception, no container signal and no launcher requirement. Whether the app runs on loopback,
      in a container, behind a proxy or behind a forwarder changes nothing about authentication.
    - **Without a session:**
      - a `GET /` whose `Accept` includes `text/html` gets `303` to `/login` (usability only, not a
        gate);
-     - every other request gets `401`.
+     - every other request gets `401`, unknown paths included, so routes cannot be enumerated.
 2. **The token: owner-supplied, or generated once.**
-   - **Owner-supplied.** If `standalone_access_token_file` is set, the token is read from that file.
-     It must hold at least 32 characters after stripping trailing whitespace.
-   - **Generated.** If it is not set, the token lives at `data_dir/standalone_token`.
-     - If that file does not exist at construction, the app generates `secrets.token_hex(32)`
-       (32 random bytes) and creates the file with `os.open(path, O_WRONLY | O_CREAT | O_EXCL,
-       0o600)`.
-     - `O_EXCL` means two processes cannot both write it: the loser reads the winner's file.
+   - **Owner-supplied.** If `standalone_access_token_file` is set, the token is that file's content
+     with trailing whitespace stripped. It is checked only for length: at least 32 characters.
+   - **Generated.** If it is not set, the token lives at `data_dir/standalone_token`, and the
+     content must be exactly 64 lowercase hex characters (with one optional trailing newline).
+     - **Created atomically.** If the file does not exist at construction, the app:
+       1. creates a temporary file in the same directory with
+          `O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW` and mode `0600`;
+       2. writes `secrets.token_hex(32)` and `fsync`s it;
+       3. runs `os.link(tmp, final)`, which is atomic and fails with `EEXIST` without replacing
+          anything;
+       4. unlinks the temporary file, whether the link succeeded or not.
+
+       A process that loses the race (`EEXIST`) reads the final file, which is always complete,
+       because it only ever appears through the link.
+     - **Never regenerated over an existing file.** A generated file that is empty, short or
+       malformed (left by a crash before the atomic create existed, or edited by hand) is not
+       overwritten. The app answers `503` (the failure rule below) and prints one console line naming
+       the file and saying "delete it and restart to generate a new token".
+     - A temporary file left by a crash is harmless. It is never read and is deleted at the next
+       construction (`standalone_token.tmp-*`).
    - **Console line.** At construction the app prints one line: the **path** of the token file and
      "open /login and paste it". It never prints, logs or returns the token itself.
    - **Mode bits are set, not checked.** On create the mode is `0600`. On read the mode is not
      enforced: a bind mount on Docker Desktop for Windows can show other bits. The token's secrecy
      rests on `data_dir` being the operator's own directory.
-   - **No token means nothing is served.** An unreadable, empty or short token file, or a failure
-     to create one, does not stop construction. Instead the auth middleware answers every request
-     except `/healthz` with `503` and a message naming the file. Nothing is served.
+   - **No valid token means nothing is served.** An unreadable, empty, short or malformed token, or
+     a failure to create one, does not stop construction. Instead the auth middleware answers every
+     request except `GET /healthz` with `503` and a message naming the file. Nothing is served.
    - **Rotation** is deleting the file, or editing the owner-supplied one, and restarting. Every
      session then ends.
    - **Generating a token by hand:** `openssl rand -hex 32`. The token must be random.
-3. **Authentication runs in middleware installed when the app is built.**
-   - `create_standalone_app` reads or creates the token and installs the auth middleware at
-     construction. Nothing depends on the lifespan.
-   - The same holds for the module-level `app.main:app`, whatever server runs it and with or
-     without `--lifespan off`.
+   - **Reading the generated token.**
+     - With compose it is `./data/standalone_token` on the host, or
+       `docker compose exec api cat /app/data/standalone_token`.
+     - On a Linux host the container runs as root, so the file on the bind mount is root-owned with
+       mode `0600`. Read it with `sudo cat`, or with `docker compose exec`.
+     - `README.md` documents both.
+3. **Authentication runs in a pure ASGI middleware installed when the app is built.**
+   - **At construction.** `create_standalone_app`:
+     - calls `Settings.ensure_dirs` (moved from the lifespan to construction);
+     - reads or creates the token;
+     - installs the auth middleware.
+
+     Nothing depends on the lifespan. The same holds for the module-level `app.main:app`, whatever
+     server runs it and with or without `--lifespan off`.
+   - **A pure ASGI middleware**, not Starlette's `BaseHTTPMiddleware`, which passes non-HTTP scopes
+     through. It handles scope types like this:
+     - `lifespan` passes through;
+     - `http` is checked;
+     - `websocket` is closed with code 1008 before `accept`;
+     - any other scope type is refused.
+   - **Order for an `http` scope**, outermost first:
+     1. the `Host` allowlist (item 6);
+     2. the token state (`503` if there is no valid token);
+     3. the exemptions and the session (item 1);
+     4. the unsafe-method checks (item 6);
+     5. `X-Spotdown-UI` (item 6).
    - A settings error (item 5) raises during construction, so no app object exists at all.
+   - **Tests** set a temporary `data_dir`, so no test writes `./data/standalone_token`.
 4. **Login, logout and the session cookie.**
    - **`GET /login`** is one self-contained HTML response with inline CSS and JS and no other assets.
      It is served with:
      `Content-Security-Policy: default-src 'none'; style-src 'sha256-<css>'; script-src 'sha256-<js>';
      connect-src 'self'; form-action 'none'; frame-ancestors 'none'`.
-   - **`POST /login`** takes `{"token": "..."}` as `application/json` and passes item 6's checks:
-     `Origin`, exact content type and `X-Spotdown-UI`.
-     - The token is compared with `hmac.compare_digest`.
-     - A wrong token gets `401` and no cookie.
-     - The right token sets the cookie and answers `204`.
-     - **Rate limit:** one in-process limit for the whole app, not per peer, so no address is
-       trusted. After 5 failures within 60 s, every login gets `429` with `Retry-After: 60` for the
-       next 60 s. That lets anyone who can reach `/login` lock the owner out for a minute at a time.
-       This is accepted for a single-user tool; brute force of a 32-byte token is infeasible anyway.
-   - **`POST /logout`** passes item 6's checks, clears the cookie (`Max-Age=0`) and answers `204`.
+   - **`POST /login`** runs these checks in this order. Each answers at once and stops:
+     1. the `Host` allowlist, `403`;
+     2. the token state, `503`;
+     3. the lockout: while the rate limit is closed, `429` with `Retry-After`. The token is not
+        evaluated, and the attempt does **not** count;
+     4. a same-origin `Origin`, `403`;
+     5. `X-Spotdown-UI: 1`, `403`;
+     6. an exact `Content-Type: application/json`, `415`;
+     7. a body of at most 1 KiB, checked against `Content-Length` before reading and enforced while
+        reading, `413`;
+     8. a JSON object with a string `token`, otherwise `400`;
+     9. `hmac.compare_digest` against the token. A wrong token gets `401` and no cookie, and counts
+        as one failure. The right token sets the cookie and answers `204`.
+
+     Only step 9 failures count towards the limit.
+   - **Rate limit.** There is one in-process limit for the whole app, not per peer, so no address is
+     trusted. After 5 counted failures within 60 s, the limit closes for the next 60 s. That lets
+     anyone who can reach `/login` lock the owner out for a minute at a time. This is accepted for a
+     single-user tool; brute force of a 32-byte token is infeasible anyway.
+   - **`POST /logout`** needs a session and passes item 6's checks. It answers `204` and clears the
+     cookie: same name, `Max-Age=0`, `Path=/` and, for the `__Host-` name, `Secure`. Its body is
+     `{}` or empty, also capped at 1 KiB.
    - **The cookie.**
      - **Value:** `<expiry>.<mac>`, which must match `^[0-9]{1,12}\.[0-9a-f]{64}$`. `<mac>` is the
        hex `HMAC-SHA256(HMAC-SHA256(token, "spotdown-session-v1"), "<expiry>")`.
      - **Verification:** the MAC is compared with `hmac.compare_digest`, and the expiry must be in
        the future and at most 12 h ahead. Anything else gets `401`.
-     - **Lifetime:** 12 hours, with no server state. Rotating the token ends every session.
+     - **Lifetime:** 12 hours, sent as `Max-Age=43200`, with no server state. Rotating the token
+       ends every session.
      - **Replay window:** a stolen cookie works until its expiry or a rotation. This is accepted.
      - **Name and flags.**
        - When the expected origin (item 6) is `https`, the cookie is named
@@ -125,8 +177,8 @@ recorded it as a follow-up.
      - a bracketed IPv6 literal such as `[::1]`.
 
      An empty entry, `*`, a port, a scheme, a path or whitespace raises.
-   - **`ui_cors_origins` and `ui_public_origin`.** Each must be an exact `scheme://host[:port]` with
-     scheme `http` or `https`, and nothing else. `*` raises.
+   - **`ui_public_origin`** must be an exact `scheme://host[:port]` with scheme `http` or `https`,
+     and nothing else.
 6. **Defence in depth.** These no longer decide authentication. They limit what a browser page or a
    misconfiguration can do. Each has its own test.
    - **Same-origin unsafe requests.** Every unsafe method (every method except `GET`, `HEAD` and
@@ -146,9 +198,10 @@ recorded it as a follow-up.
      applies to every standalone route, the three exceptions included.
      - Parsing handles bracketed IPv6: `[::1]:8000` and `[::1]` are host `::1`.
      - An unlisted or unparsable `Host` gets `403`.
-   - **CORS allowlist.** `ui_cors_origins` defaults to empty, which means no CORS headers.
-     - A listed origin is echoed exactly, with `allow_credentials=False`.
-     - #49's route stays exempt.
+   - **No CORS at all.** Standalone mode installs no CORS middleware: the wildcard is removed and
+     nothing replaces it. Under an always-on session and the exact `Origin` check, a CORS origin
+     could neither send an unsafe request nor read an authenticated answer, so an allowlist setting
+     would do nothing useful.
    - **Loopback publishing.**
      - `docker-compose.yml` publishes `api` on `${SPOTDOWN_PUBLISH_HOST:-127.0.0.1}:8000:8000`. The
        explicit setting `SPOTDOWN_PUBLISH_HOST` widens it, and the app never reads that variable.
@@ -178,8 +231,17 @@ recorded it as a follow-up.
   bits, which would lock the owner out for a cosmetic reason. The bits are set on create.
 - **A per-peer login rate limit.** Not chosen: it trusts the peer address, which a proxy or forwarder
   rewrites. A global limit trusts nothing.
-- **Keep the wildcard CORS for "dev convenience".** Rejected: it lets any page drive conversions and
-  read results. A developer who needs a cross-origin editor lists that origin in `ui_cors_origins`.
+- **Keep the wildcard CORS for "dev convenience", or a CORS allowlist.** Rejected. The wildcard lets
+  any page drive conversions and read results. An allowlist could do nothing under the session and
+  the exact `Origin` check, so standalone mode has no CORS. A cross-origin editor preview is not
+  supported; open the UI from the app itself.
+- **Write the generated token with `O_EXCL` on the final path.** Rejected: the file exists empty
+  before the token is written, so a racing worker can read a partial token, and a crash leaves an
+  empty file. Create, write, `fsync` and `link` instead.
+- **Regenerate a malformed generated token automatically.** Rejected: it would silently overwrite a
+  file the owner may have edited, and would hide a crash. `503` with a named fix is explicit.
+- **`BaseHTTPMiddleware` for authentication.** Rejected: it passes WebSocket and other non-HTTP
+  scopes through untouched.
 - **`Sec-Fetch-Site` instead of a custom header, or moving the GETs with effects to `POST`.**
   Rejected: not every browser sends the header, and moving the GETs would change the documented v1
   API for no extra protection.
@@ -196,6 +258,9 @@ recorded it as a follow-up.
   (`data/standalone_token` in the compose layout), and has a session for up to 12 h.
 - **Scripts** that call the standalone API first `POST /login` with `Origin`, the JSON type and
   `X-Spotdown-UI`, then send the cookie and `X-Spotdown-UI` on every `/api/` request.
+- **No cross-origin use.** A cross-origin editor preview that called the API stops working; the UI is
+  used from the app's own origin.
+- **The API docs** (`/docs`, `/redoc`, `/openapi.json`) need a session too.
 - **Plain HTTP beyond loopback** exposes the token and the cookie to anyone on the network path, and
   the cookie cannot use the `__Host-` prefix. Over plain HTTP the cookie is also shared with every
   other service on the same host name (browsers ignore ports for cookies), so those services are
