@@ -127,7 +127,11 @@ class Matcher:
         record = calc.match_record(query, decision)
         assert record is not None
         self.store.put_choice(
-            decision.best.candidate.video_id, record, wanted.duration_s, self.clock()
+            decision.best.candidate.video_id,
+            record,
+            wanted.duration_s,
+            self.clock(),
+            track.explicit,
         )
         return {
             "schema_version": "match-v1",

@@ -106,6 +106,7 @@ def post_analysis(
         "cache_scope": scope,
         "client_ref": body.client_ref,
         "reference": body.reference.model_dump() if body.reference is not None else None,
+        "explicit": body.explicit,
     }
     version = analysis_doc.ANALYZER_VERSION_V2
     hit = None
