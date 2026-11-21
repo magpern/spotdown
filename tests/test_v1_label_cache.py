@@ -19,7 +19,6 @@ from typing import Any, Dict, List
 
 import pytest
 import soundfile as sf
-from fastapi.testclient import TestClient
 
 from app import analyze, db, standalone
 from app.analyze import ANALYZER_VERSION, V1_RESPONSE_VERSION, analyze_track
@@ -27,6 +26,8 @@ from app.config import Settings
 from app.main import create_app
 from app.quality.fixtures_io import render_to
 from app.quality.specs import SPECS
+
+from .standalone_helpers import generated_token, signed_in
 
 ROOT = Path(__file__).resolve().parent.parent
 OLD_LABEL = "chorus" + "/drop"  # the retired string; spelled so this file passes the grep criterion
@@ -260,7 +261,7 @@ class _Env:
 
         monkeypatch.setattr(analyze, "analyze_track", fake)
         monkeypatch.setattr("app.spotify.resolve", lambda url: [])
-        self.client = TestClient(create_app(self.settings))
+        self.client = signed_in(create_app(self.settings), generated_token(self.settings))
         self.with_file = with_file
 
     def __enter__(self) -> "_Env":
