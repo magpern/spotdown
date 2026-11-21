@@ -91,6 +91,22 @@ a two-sided calibration gate or per-label reliability. `tests/test_label_calc.py
 False. The base confidences are deliberately conservative priors, not measured hit rates. The report
 records both the core analyzer version and the document version (`5.1`) that produced the labels.
 
+## Over-split check (spotdown#46)
+
+The 2026-11-21 trial cut one vocal song into 21 parts, with boundaries inside single verses and
+choruses. `app/core/merge_calc.py` merges over-fine segments before the groups and labels are made
+(rules and constants in its docstring: segments under 2.5 bars, and neighbours that sound alike
+across a weak boundary; drops, content edges and quiet-region edges are never merged away).
+The owner's listening is not ground truth, so the check is synthetic: two `oversplit` fixtures
+(`corpus: oversplit`) carry fills and timbre changes inside verses and choruses (sections flagged
+`continues` in the spec), and the truth has boundaries only at the six real section changes.
+`tests/test_quality_oversplit.py` asserts at most truth sections plus one segments, and that the
+same audio with the merge switched off makes more (10 and 14 segments against 6 sections before
+the merge, 7 and 7 after). The fixtures enter no gate and are reported apart (`*_oversplit_reported`; the `all` set leaves them out, because they also hold the truth boundaries the structure analysis misses, spotdown#47); `segments_per_truth_section_reported`
+(oversplit: 1.167, was 2.0 before the merge) and
+`segments_per_truth_section_baseline_reported` (1.027, 150 segments in 146 sections, the same with
+and without the merge, so the 24 baseline fixtures are unchanged) are reported only.
+
 ## Phrase gate (SD-P2+, spotdown#8)
 
 Truth phrases come from the arrangement by arithmetic (`synth._phrases`): consecutive sections

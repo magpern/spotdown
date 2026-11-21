@@ -415,7 +415,8 @@ other change is a new version served beside the old one. `analyzer_version` chan
 cached analyses but not the schema. `analyzer_version` is the core analyser's version, a dot, then
 the document mapping's version, which goes up whenever the document builder emits something new
 (mapping version 1 section labels, 2 phrases, 3 meter and downbeats, 4 the `content` group;
-the running version is `6.4`). Optional fields
+the running version is `7.4`: core version 7 merges over-fine segments before the groups and
+labels are made, `app/core/merge_calc.py`, spotdown#46; the schema is unchanged). Optional fields
 added to analysis-v1 so far: `provenance.source.decoded_duration_check` (spotdown#18), the
 alignment hypotheses' `name` and `chosen` (spotdown#21) and `content` (spotdown#36, document
 version `6.4`). A consumer that validates against an older copy of the schema rejects a document

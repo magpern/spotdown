@@ -1,4 +1,4 @@
-"""The committed synthetic corpus: 30 specs built from a few section templates (pure data).
+"""The committed synthetic corpus: 32 specs built from a few section templates (pure data).
 
 Every spec is deterministic. ``python -m app.quality.fixtures_io --write`` renders their truth to
 ``quality/fixtures/synthetic/manifest.json``; a test fails if the committed file is stale.
@@ -178,6 +178,50 @@ def _waltz(sid: str, bpm: float, seed: int, kick: str, hat: str, **kw: Any) -> D
     )
 
 
+OVERSPLIT = "oversplit"  # corpus of the fixtures that only the over-split check measures
+
+
+def _c(bars: int, label: str, layers: Dict[str, float]) -> Dict[str, Any]:
+    """A variation inside the section before it (a fill, a stop, a timbre change): no boundary."""
+    return {**_sd(bars, label, layers), "continues": True}
+
+
+def _oversplit(sid: str, bpm: float, seed: int, **kw: Any) -> Dict[str, Any]:
+    """Verses and choruses with in-section variation that is not a section change.
+
+    Truth boundaries are only at the real changes (intro, verse, chorus, verse, chorus, outro).
+    Inside the verses: a fill (no kick, the snare and hats double) and two timbre changes (a pad,
+    then a lead enters); inside the choruses a fill. Each variation is 2 bars.
+    """
+    verse = {"kick": 0.9, "snare": 1.0, "hat": 1.0, "bass": 1.0}
+    chorus = {"kick": 1.0, "snare": 1.0, "hat": 1.0, "bass": 1.0, "lead": 1.0, "pad": 1.0}
+    fill = {"snare": 1.0, "hat16": 1.0, "bass": 1.0}
+    return _spec(
+        sid,
+        bpm,
+        seed,
+        [
+            _sd(8, "intro", {"kick": 0.9, "bass": 1.0}),
+            _sd(6, "verse", verse),
+            _c(2, "verse", fill),
+            _c(6, "verse", verse),
+            _c(2, "verse", {**verse, "pad": 1.0}),
+            _sd(8, "chorus", chorus),
+            _c(2, "chorus", fill),
+            _c(6, "chorus", chorus),
+            _sd(6, "verse", verse),
+            _c(2, "verse", {**verse, "lead": 1.0}),
+            _c(8, "verse", {**verse, "lead": 1.0}),
+            _sd(8, "chorus", chorus),
+            _c(2, "chorus", fill),
+            _c(6, "chorus", chorus),
+            _sd(8, "outro", {"kick": 0.9, "bass": 1.0}),
+        ],
+        corpus=OVERSPLIT,
+        **kw,
+    )
+
+
 SPECS: List[Dict[str, Any]] = [
     _edm("edm-100", 100, 1, 4),
     _edm("edm-110", 110, 2, 4),
@@ -209,4 +253,6 @@ SPECS: List[Dict[str, Any]] = [
     _waltz("waltz-kick1-126", 126, 28, "kick", "hat16"),
     _waltz("waltz-allkick-108", 108, 29, "kick_all", "hat"),
     _waltz("waltz-allkick-138", 138, 30, "kick_all", "hat16", noise_db=-32.0),
+    _oversplit("oversplit-120", 120, 31),
+    _oversplit("oversplit-100", 100, 32, noise_db=-34.0),
 ]
