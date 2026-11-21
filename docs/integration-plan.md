@@ -17,9 +17,9 @@ deleted) and the follow-ups of the 2026-11-21 real-music trial, #46 to #49, #52 
 Merged so far: #43 (PR #50); #44 (PR #51: ADR 0001 and ADR 0002, Accepted); ADR 0003 (PR #53, for
 #52); and #45 (PR #55, one label vocabulary and the v1 response version in the cache key). All the
 ADRs are in `docs/adr/`. Build order: #54, #46, #47, #48, #52, #49, one PR at a time. classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
-`ALLOW_YTDLP_SOURCING` stays off by default in code and is switched on only by the owner. Quality gates file `quality/quality_gates.json` is at v6 (v6 added the reported segments-per-truth-section metric, spotdown#46); the document version is 7.4 (core 7, mapping 4; mapping 4 added the reported `content.explicit`
+`ALLOW_YTDLP_SOURCING` stays off by default in code and is switched on only by the owner. Quality gates file `quality/quality_gates.json` is at v6 (v6 added the reported segments-per-truth-section metric, spotdown#46); the document version is 8.5 (core 8, mapping 5; mapping 5 added the chorus margin, spotdown#47; mapping 4 added the reported `content.explicit`
 signal, spotdown#36)
-and the core analyzer version is 7 (running version `7.4`: over-fine segments are merged before labelling, spotdown#46). The quality thresholds are set by the amendment in classbeat
+and the core analyzer version is 8 (running version `8.5`: over-fine segments are merged before labelling, spotdown#46; steady-energy tracks are split by timbre novelty and a chorus needs an energy margin, spotdown#47). The quality thresholds are set by the amendment in classbeat
 ADR 0040 (Accepted); see that ADR for the numbers.
 
 The complete plan, with every decision, is in classbeat:

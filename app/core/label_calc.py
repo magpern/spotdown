@@ -3,8 +3,13 @@
 The labels are a heuristic, never a measurement: they read the segments the structure analysis
 found (energy, repetition group, position) and the detected drops, nothing else. The rules:
 
-* **chorus**: a segment that starts at a drop, or that belongs to the repetition group with the
-  highest mean energy (and is not much quieter than it).
+* **chorus**: a segment that starts at a drop, or that belongs to the chorus group (and is not
+  much quieter than the loudest segment). The chorus group is the repetition group with the
+  highest mean energy when it is clearly louder than the other middle segments (``PEAK_MARGIN``).
+  When the energy barely varies (a steady track) the loudest group is no evidence, and the
+  fallback is repetition: the single most repeated group, if it covers at most half of the content
+  time (``REPEAT_MAX_SHARE``); with a tie, or a group that is most of the track, there is no
+  chorus group and only drops start choruses, so a track is never mostly chorus.
 * **intro** and **outro**: the first and the last content segment when they are not a chorus.
 * **breakdown**: a middle segment far quieter than the chorus level.
 * **bridge**: a middle segment straight after a chorus, with another chorus still to come.
@@ -33,6 +38,10 @@ GATED_CAP = 0.75  # the most a label may claim once held-out evidence exists (no
 DROP_SNAP_S = 1.0  # a segment this close to a drop starts at it
 BREAKDOWN_RATIO = 0.25  # a middle segment this much below the chorus level is a breakdown
 PEAK_GROUP_RATIO = 0.8  # a member of the peak group at least this loud is a chorus
+# The peak group must be this much louder (0..1 scale) than the other middle segments:
+PEAK_MARGIN = 0.1
+# The repetition fallback is no chorus group when it covers more of the content time than this:
+REPEAT_MAX_SHARE = 0.5
 SHORT_SEGMENT_S = 4.0  # shorter segments carry less evidence
 
 # Rule confidence before the cap: deliberately conservative priors (more cues agreeing, more
@@ -70,11 +79,55 @@ def _peak_group(segments: Sequence[Dict[str, Any]], idx: Sequence[int]) -> Optio
     return max(repeated, key=lambda g: repeated[g]) if repeated else None
 
 
+def _clear_peak(segments: Sequence[Dict[str, Any]], idx: Sequence[int]) -> Optional[int]:
+    """The peak group when it is louder than the other middle segments by ``PEAK_MARGIN``.
+
+    The first and the last content segment are left out of the comparison (they are the intro and
+    the outro unless they are choruses); with no other middle segment there is nothing to
+    compare with and no clear peak."""
+    peak = _peak_group(segments, idx)
+    if peak is None:
+        return None
+    members = [segments[i]["energy_struct"] for i in idx if segments[i].get("group", 0) == peak]
+    others = [
+        segments[i]["energy_struct"] for i in idx[1:-1] if segments[i].get("group", 0) != peak
+    ]
+    if not others or sum(members) / len(members) - sum(others) / len(others) < PEAK_MARGIN:
+        return None
+    return peak
+
+
+def _repeated_group(segments: Sequence[Dict[str, Any]], idx: Sequence[int]) -> Optional[int]:
+    """The one group with the most members (at least two), when it covers at most
+    ``REPEAT_MAX_SHARE`` of the content time; ``None`` on a tie or when it is most of the track.
+
+    Every content segment counts, the first and the last included: an intro that groups with the
+    choruses (a repeat of the same material) raises that group's count and share."""
+    count: Dict[int, int] = {}
+    span: Dict[int, float] = {}
+    for i in idx:
+        g = segments[i].get("group", 0)
+        count[g] = count.get(g, 0) + 1
+        span[g] = span.get(g, 0.0) + segments[i]["end"] - segments[i]["start"]
+    most = max(count.values())
+    best = [g for g, n in count.items() if n == most]
+    total = sum(span.values())
+    if most < 2 or len(best) != 1 or span[best[0]] > REPEAT_MAX_SHARE * total:
+        return None
+    return best[0]
+
+
+def _chorus_group(segments: Sequence[Dict[str, Any]], idx: Sequence[int]) -> Optional[int]:
+    """The loudest repeating group when clearly louder, else the repetition fallback."""
+    peak = _clear_peak(segments, idx)
+    return peak if peak is not None else _repeated_group(segments, idx)
+
+
 def _choruses(
     segments: Sequence[Dict[str, Any]], idx: Sequence[int], drops: Sequence[float]
 ) -> Dict[int, float]:
     """``{segment index: confidence}`` for every chorus."""
-    peak = _peak_group(segments, idx)
+    peak = _chorus_group(segments, idx)
     loudest = max((segments[i]["energy_struct"] for i in idx), default=0.0)
     found: Dict[int, float] = {}
     for i in idx:

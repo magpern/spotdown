@@ -1,4 +1,4 @@
-"""The committed synthetic corpus: 32 specs built from a few section templates (pure data).
+"""The committed synthetic corpus: 35 specs built from a few section templates (pure data).
 
 Every spec is deterministic. ``python -m app.quality.fixtures_io --write`` renders their truth to
 ``quality/fixtures/synthetic/manifest.json``; a test fails if the committed file is stale.
@@ -222,6 +222,51 @@ def _oversplit(sid: str, bpm: float, seed: int, **kw: Any) -> Dict[str, Any]:
     )
 
 
+STEADY = "steady"  # corpus of the fixtures that only the steady-energy label check measures
+
+
+def _steady(sid: str, bpm: float, seed: int, **kw: Any) -> Dict[str, Any]:
+    """A steady-energy track: verse and chorus at almost the same loudness (spotdown#47).
+
+    The verse has a pad, the chorus a lead, on the same drums and bass: the energy barely varies.
+    The verses are long (12 bars, three) and the choruses short (6 bars, two), so calling the
+    loudest repeating group the chorus makes the verses most of the track.
+    """
+    drums = {"kick": 1.0, "snare": 1.0, "hat": 1.0, "bass": 1.0}
+    verse = _sd(12, "verse", {**drums, "pad": 1.0})
+    chorus = _sd(6, "chorus", {**drums, "lead": 1.0})
+    edge = {"kick": 1.0, "hat": 1.0, "bass": 1.0}
+    return _spec(
+        sid,
+        bpm,
+        seed,
+        [_sd(4, "intro", edge), verse, chorus, verse, chorus, verse, _sd(4, "outro", edge)],
+        corpus=STEADY,
+        **kw,
+    )
+
+
+def _steady_subtle(sid: str, bpm: float, seed: int, **kw: Any) -> Dict[str, Any]:
+    """Steady energy and a faint timbre change: the chorus is the verse with a quiet lead on top.
+
+    The novelty between a verse and a chorus is a small share of the strongest novelty (intro and
+    outro), so the peak threshold of ``novelty_calc`` decides whether the boundary is found.
+    """
+    drums = {"kick": 1.0, "snare": 1.0, "hat": 1.0, "bass": 1.0}
+    edge = {"kick": 1.0, "hat": 1.0, "bass": 1.0}
+    verse, chorus = _sd(6, "verse", drums), _sd(6, "chorus", {**drums, "lead": 0.6})
+    bridge = _sd(6, "bridge", {"pad": 1.0, "bass": 1.0, "lead": 0.6, "kick": 0.6})
+    return _spec(
+        sid,
+        bpm,
+        seed,
+        [_sd(6, "intro", edge), verse, chorus, verse, chorus, bridge]
+        + [verse, chorus, verse, chorus, _sd(6, "outro", edge)],
+        corpus=STEADY,
+        **kw,
+    )
+
+
 SPECS: List[Dict[str, Any]] = [
     _edm("edm-100", 100, 1, 4),
     _edm("edm-110", 110, 2, 4),
@@ -255,4 +300,7 @@ SPECS: List[Dict[str, Any]] = [
     _waltz("waltz-allkick-138", 138, 30, "kick_all", "hat16", noise_db=-32.0),
     _oversplit("oversplit-120", 120, 31),
     _oversplit("oversplit-100", 100, 32, noise_db=-34.0),
+    _steady("steady-120", 120, 49),
+    _steady("steady-140", 140, 55),
+    _steady_subtle("steady-subtle-120", 120, 73),
 ]

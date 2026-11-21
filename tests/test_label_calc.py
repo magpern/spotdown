@@ -111,3 +111,92 @@ def test_a_short_segment_carries_less_confidence(monkeypatch: pytest.MonkeyPatch
     rows: List[Seg] = [(0, 10, 0.2, 4), (10, 12, 0.4, 2), (12, 22, 0.5, 1), (22, 32, 0.5, 1)]
     found = label_calc.label_segments(_segs(rows), [], 0.0, 100.0)
     assert found[1]["confidence"] < label_calc.BASE_CONFIDENCE[found[1]["label"]]
+
+
+STEADY: List[
+    Seg
+] = [  # intro, three verses (the repeating group), two choruses, outro: same loudness
+    (0, 8, 0.82, 4),
+    (8, 32, 0.84, 1),
+    (32, 44, 0.83, 2),
+    (44, 68, 0.84, 1),
+    (68, 80, 0.83, 2),
+    (80, 104, 0.84, 1),
+    (104, 112, 0.82, 4),
+]
+
+
+def test_a_steady_track_has_no_loudest_group_chorus() -> None:
+    """The loudest repeating group is the verse by a hair; it is no evidence of a chorus."""
+    labels = _labels(STEADY, ce=112.0)
+    assert "chorus" not in labels
+    assert labels[0] == "intro" and labels[-1] == "outro" and labels.count("verse") == 5
+
+
+def test_the_peak_margin_decides_between_steady_and_clear() -> None:
+    clear = [(a, b, e + 0.2 if g == 1 else e, g) for a, b, e, g in STEADY]
+    assert (
+        _labels(clear, ce=112.0).count("chorus") == 3
+    )  # the same arrangement, the group clearly louder
+    just_under = [(a, b, e + 0.07 if g == 1 else e, g) for a, b, e, g in STEADY]
+    assert "chorus" not in _labels(
+        just_under, ce=112.0
+    )  # 0.01 + 0.07 is below label_calc.PEAK_MARGIN
+
+
+def test_the_old_rule_made_the_steady_verses_chorus(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The margin is what changed: with it off (``PEAK_MARGIN = -1``: the rule before spotdown#47
+    whenever a middle segment lies outside the peak group, the ``not others`` guard aside) three of
+    seven are chorus, so the check above can fail."""
+    monkeypatch.setattr(label_calc, "PEAK_MARGIN", -1.0)
+    assert _labels(STEADY, ce=112.0).count("chorus") == 3
+
+
+def test_a_drop_still_makes_a_chorus_on_a_steady_track() -> None:
+    labels = _labels(STEADY, drops=[32.0], ce=112.0)
+    assert labels[2] == "chorus" and labels.count("chorus") == 1
+
+
+def test_a_group_that_is_most_of_the_track_has_nothing_to_compare_with() -> None:
+    rows: List[Seg] = [
+        (0, 10, 0.2, 4),
+        (10, 20, 0.5, 1),
+        (20, 30, 0.5, 1),
+        (30, 40, 0.5, 1),
+        (40, 50, 0.2, 4),
+    ]
+    assert "chorus" not in _labels(rows, ce=50.0)  # 30 of 50 s: no margin, and too much of it
+
+
+def test_a_steady_track_falls_back_to_the_most_repeated_group_when_it_is_a_minority() -> None:
+    """Same loudness everywhere, but one group repeats most and covers under half the track."""
+    rows: List[Seg] = [
+        (0, 8, 0.8, 4),
+        (8, 20, 0.8, 2),
+        (20, 28, 0.8, 1),
+        (28, 40, 0.8, 3),
+        (40, 48, 0.8, 1),
+        (48, 60, 0.8, 5),
+        (60, 68, 0.8, 1),
+        (68, 76, 0.8, 4),
+    ]
+    assert _labels(rows, ce=76.0) == [
+        "intro", "verse", "chorus", "bridge", "chorus", "bridge", "chorus", "outro",
+    ]  # fmt: skip
+
+
+def test_a_tie_between_repeated_groups_makes_no_chorus() -> None:
+    rows: List[Seg] = [
+        (0, 8, 0.8, 4),
+        (8, 16, 0.8, 1),
+        (16, 24, 0.8, 2),
+        (24, 32, 0.8, 1),
+        (32, 40, 0.8, 2),
+        (40, 48, 0.8, 4),
+    ]
+    assert "chorus" not in _labels(rows, ce=48.0)
+
+
+def test_steady_labels_keep_the_confidence_cap() -> None:
+    found = label_calc.label_segments(_segs(STEADY), [32.0], 0.0, 112.0)
+    assert found and max(x["confidence"] for x in found) <= label_calc.UNGATED_CAP

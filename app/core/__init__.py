@@ -5,6 +5,6 @@ sources (``app.service``) bring the file, and the alignment layer maps its clock
 """
 
 # Bump when thresholds/features change so the caches keyed on it refresh.
-ANALYZER_VERSION = 7
+ANALYZER_VERSION = 8
 SR = 22050
 HOP = 512

@@ -118,7 +118,10 @@ def _meter_metrics(everything: Sequence[Dict[str, Any]]) -> Dict[str, float]:
 # from a gate by accident.
 GATED_CORPORA = ("baseline", "phrases", "meter")  # the pool of the downbeat and meter gates
 PHRASE_CORPORA = ("baseline", "phrases")  # the pool of the phrase gate (4/4 only)
-REPORTED_ONLY_CORPORA = ("oversplit",)  # in no gate and not in the ``all`` set: reported apart
+REPORTED_ONLY_CORPORA = (
+    "oversplit",
+    "steady",
+)  # in no gate and not in the ``all`` set: reported apart
 
 
 def _segment_counts(records: Sequence[Dict[str, Any]], suffix: str) -> Dict[str, float]:
@@ -151,8 +154,9 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     fixtures of an enhancement corpus (``corpus`` other than ``baseline``, for example the phrase
     fixtures) enter only their own gate, so adding them never moves a baseline floor. The pools
     are the ``*_CORPORA`` lists above; a record of a corpus in none of them raises. The over-split
-    fixtures (``REPORTED_ONLY_CORPORA``) are in no gate: only their segment count and boundary,
-    beat and BPM scores are reported (``*_oversplit_reported``), never phrases or meter."""
+    and steady-energy fixtures (``REPORTED_ONLY_CORPORA``) are in no gate: only their segment
+    count and boundary, beat and BPM scores are reported (``*_oversplit_reported``,
+    ``*_steady_reported``), never phrases or meter."""
     unknown = {r["corpus"] for r in records} - {*GATED_CORPORA, *REPORTED_ONLY_CORPORA}
     if unknown:
         raise ValueError(f"corpus not assigned to a gate pool: {sorted(unknown)}")
@@ -201,7 +205,9 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     # Reported only, never gated: the phrase gate pools every fixture, which hides how the
     # detector does on the baseline set and on the pickup set separately.
     out.update(_segment_counts(records, "baseline"))
-    out.update(_segment_counts(over, ""))
+    out.update(_segment_counts([r for r in over if r["corpus"] == "oversplit"], ""))
+    steady = [r for r in over if r["corpus"] == "steady"]
+    out.update(_segment_counts(steady, "steady"))
     out.update(_meter_metrics(everything))
     out.update(_reported(records, "baseline") if records else {})
     out.update(_reported(pickup, "pickup") if pickup else {})
@@ -210,12 +216,14 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     # boundaries that the structure analysis misses (spotdown#47), so they must not move the
     # floor of the others; their own numbers are the ``*_oversplit_reported`` ones
     out.update(_reported(everything, "all"))
-    if over:
-        out["boundary_f_3s_oversplit_reported"] = _mean([r["boundary_f"] for r in over])
-        out["beat_f_overall_oversplit_reported"] = _mean([r["beat_f"] for r in over])
-        out["bpm_within_2pct_fraction_oversplit_reported"] = _mean(
-            [float(r["bpm_octave_ok"]) for r in over]
-        )
+    for name in REPORTED_ONLY_CORPORA:
+        part = [r for r in over if r["corpus"] == name]
+        if part:
+            out[f"boundary_f_3s_{name}_reported"] = _mean([r["boundary_f"] for r in part])
+            out[f"beat_f_overall_{name}_reported"] = _mean([r["beat_f"] for r in part])
+            out[f"bpm_within_2pct_fraction_{name}_reported"] = _mean(
+                [float(r["bpm_octave_ok"]) for r in part]
+            )
     return {k: round(v, 4) for k, v in out.items()}
 
 

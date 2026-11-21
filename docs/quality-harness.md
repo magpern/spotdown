@@ -121,6 +121,31 @@ novelty, 2.5 bars, 6 s) were fitted on this synthetic corpus. They are not valid
 music, and the 24 baseline fixtures do not exercise the merge at all (the count is the same
 without it). Held-out evidence is spotdown#20.
 
+## Steady-energy check (spotdown#47)
+
+On a steady-energy older recording the trial called seven of nine parts "chorus", none "verse",
+and one 55 s part held several section changes. Two changes, checked on the synthetic corpus only
+(the owner's listening is not ground truth):
+
+* `label_calc`: the loudest repeating group is the chorus group only when its mean energy is at
+  least `PEAK_MARGIN` (0.1 on the 0 to 1 scale) above the other middle segments. Otherwise the
+  fallback is repetition: the single most repeated group, if it covers at most half of the
+  content time (`REPEAT_MAX_SHARE`); on a tie, or when that group is most of the track, there is no
+  chorus group and only a segment starting at a drop is a chorus. A steady track with a repeated
+  group that is most of its time (long verses) gets no chorus rather than a wrong majority.
+* `novelty_calc` / `segments`: when the energy contrast (the spread of 4 s block means, 90th minus
+  10th percentile) is below `LOW_CONTRAST` (0.18; the steady fixtures measure 0.15 to 0.17, the nearest other fixture 0.197), a novelty peak needs 15% of the strongest
+  novelty instead of 30%, so faint timbre changes between verses and choruses place boundaries.
+  The merge step of #46 stays in force.
+
+Three `steady` fixtures (`corpus: steady`; enter no gate, reported apart as `*_steady_reported`,
+in no gated pool (`REPORTED_ONLY_CORPORA`) and left out of the `all` set): `steady-120` and `steady-140` (long pad verses, short lead choruses,
+same drums, the verses a hair louder) and `steady-subtle-120` (chorus is the verse plus a quiet
+lead). `tests/test_quality_steady.py` asserts at most half of the labelled time is chorus, at
+least one verse, boundary F at 3 s at least 0.60 (the gate) and at most truth sections plus one
+segments; it fails on the old label rule (`PEAK_MARGIN` off: 61% and 64% chorus on the first two)
+and on the old peak share on the subtle fixture (boundary F 0.53, six parts).
+
 ## Phrase gate (SD-P2+, spotdown#8)
 
 Truth phrases come from the arrangement by arithmetic (`synth._phrases`): consecutive sections
