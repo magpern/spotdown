@@ -80,12 +80,16 @@ Request:
 {
   "cache_scope": "<cache_scope>",
   "tracks": [
-    {"client_ref": "track-7", "title": "...", "artists": ["..."], "duration_s": 213.0, "isrc": "..."}
+    {"client_ref": "track-7", "title": "...", "artists": ["..."], "duration_s": 213.0, "isrc": "...",
+     "explicit": true}
   ]
 }
 ```
 
-`isrc` is optional; `1 <= len(tracks) <= 50`. Response `200`:
+`isrc` is optional; `1 <= len(tracks) <= 50`. `explicit` (optional, a JSON boolean; anything else
+is `422 invalid_request`) is the caller's explicit-lyrics flag for the track: it does not change the
+search, the scores or the source-match cache, and is kept with the match record of the chosen video
+as evidence for its analysis' `content.explicit` (see "Explicit content" below). Response `200`:
 `{"results": [match-v1, ...]}` in request order, validated by `schema/match-v1.json`: status,
 the best candidate with its recording-match confidence, band and duration check, up to 2
 alternates. **Every candidate** (best and alternates) carries `cached_analysis_id` and a small
@@ -190,9 +194,14 @@ Start an analysis. Exactly one of `upload_id`, `source_ref` (`<kind>:<ref>`, for
   "cache_scope": "<cache_scope>",
   "client_ref": "track-7",
   "upload_id": "...",
-  "reference": {"kind": "spotify", "id": "...", "duration_s": 213.0}
+  "reference": {"kind": "spotify", "id": "...", "duration_s": 213.0},
+  "explicit": false
 }
 ```
+
+`explicit` is optional (a JSON boolean, `422 invalid_request` otherwise): the caller's
+explicit-lyrics flag, recorded as evidence in the new analysis' `content.explicit`. It never
+changes whether or how a job runs.
 
 `reference` is optional and requests an `alignment` object; `kind` is an open set and
 `duration_s` is above 0 and at most 7200 (`422 invalid_request` otherwise).
@@ -332,12 +341,38 @@ and treat `heuristic` ones as hints.
 | `events` | build-ups, drops, breakdowns and transitions (hard stop, fade, tempo change), each with strength and confidence | yes |
 | `labels` | intro, verse, chorus, bridge, outro, breakdown per labelled segment, each with a label confidence; always `heuristic` (analyzer `5.1`: present when the content has two or more segments, confidence at most 0.4, see below) | optional |
 | `alignment` | reference (kind, id, duration), offset, residual, confidence, carried recording-match confidence | optional |
+| `content` | `explicit`: `yes`, `no` or `unknown`, with confidence, method `metadata` and the evidence (document version `6.4`, see below) | optional |
 
 **Labels (spotdown#7).** Rule-based, from the segment structure alone (energy, repetition group, position, detected drops): a chorus starts at a drop or belongs to the loudest repeating group, the first and last other segments are intro and outro, a much quieter middle segment is a breakdown, a middle segment right after a chorus with another chorus to come is a bridge, the rest are verses (a build into a drop is a verse, the pre-chorus). Silence around the content is not labelled. The label gates (`label_accuracy`, `label_overconfidence`) pass on the synthetic corpus but are only regression checks there (the rules were written on it), so no label confidence exceeds 0.4; the cap is not raised until held-out evidence exists (spotdown#20: CC-licensed fixtures or the owner corpus). Treat every label as a hint. The schema is unchanged (`labels` was already optional and `heuristic`).
 
 **Phrases (spotdown#8).** Between structural boundaries (the segment starts, which include the detected drops), the next boundary 8 bars later closes an 8-bar phrase, else one 16 bars later closes a 16-bar phrase; a section that is not a whole phrase long gives nothing, so `grid.phrases` is absent when the structure has no such sections. A bar is four beats of the estimated tempo: a phrase without a `meter` assumes 4/4, and a 3/4 meter claim yields no phrases (they were overconfident on the synthetic 3/4 fixtures); every phrase is a `heuristic`. A phrase's times are boundary times on the file's clock, snapped to a tracked bar start when one is within half a bar. Confidence is half the mean boundary confidence of its two ends, capped at 0.4; the cap is not raised until held-out evidence exists (spotdown#20). The phrase gates pass on the synthetic corpus but are regression checks there (see `docs/quality-harness.md`). **Phrases are unreliable after a pickup or when a boundary is missed**: on the synthetic pickup fixtures only 44 % of the true phrases are found, because the structure analysis misses the first boundary after a short pickup, and blind 8-bar tiling does as well on the other fixtures. Treat a phrase as a hint and its absence as no information. The schema is unchanged (`grid.phrases` was already optional).
 
 **Meter and downbeats (spotdown#9).** `grid.meter.beats_per_bar` is 3 or 4, from the accent: the onset strength at the tracked beats differs by position in the bar more than chance explains (an adjusted explained-variance z-score of at least 3, and a margin over the other meter); with no such accent pattern neither `meter` nor `downbeats` is present, so the meter is never assumed to be 4/4. `grid.downbeats.times_s` steps one bar at a time from the start of the music and from each detected drop, snapped to a tracked beat, and restarts at the next drop. Both are `heuristic`: the confidence is how clearly the meter was decided, halved for a piece whose next anchor is not a whole number of bars away, and never above 0.4 (`meter_calc.CAP`; the cap is not raised until held-out evidence exists, spotdown#20). The schema holds one confidence for the downbeat list: it is the mean of the per-bar confidences. **Downbeats assume that the music and every drop start on a bar**: a track that starts on a pickup, or a drop that is not on a downbeat, shifts the bars of that piece without lowering the confidence much. On the synthetic corpus a forced 4/4 on the same grid scores as well as the estimate on 4/4 tracks (see `docs/quality-harness.md`); only 3/4 needs the estimate. The schema is unchanged (`grid.meter` and `grid.downbeats` were already optional).
+
+**Explicit content (spotdown#36).** `content.explicit` says whether the recording has explicit
+lyrics. **It is reported only: spotdown never blocks, filters, refuses or ranks anything on it; the
+consumer decides.** In this phase it comes from metadata alone (method `metadata`, no audio model);
+each piece of evidence is listed in `evidence` as `{"source", "value"}`:
+
+- `caller`: the `explicit` flag of the `POST /v2/analyses` request (any source kind);
+- `caller_match`: the `explicit` flag of the `POST /v2/match` item whose match chose the video
+  (`youtube` only; the latest unexpired match that chose it wins, as for `source.match`, so a later
+  match without a flag removes it);
+- `youtube_age_limit`: the video's age restriction from its metadata, in years, when it is 18 or
+  more. A lower age limit is no evidence either way and is not listed. An upload or a `url` file
+  carries no evidence of its own.
+
+The value is `unknown` with confidence 0 and no evidence when there is none, and never `no` without
+evidence. Any `yes` evidence (a true flag or an age limit) makes it `yes`, even against a false flag:
+a caution flag errs toward flagging, and the conflict shows in the evidence. The confidence is the
+strongest weight on the winning side (a true flag 0.9, a false flag 0.8, an age limit 0.6; first
+documented estimates, `explicit_calc.WEIGHTS`), at most 0.5 when the evidence conflicts. The schema
+checks that the value agrees with the evidence. The evidence is the one known when the analysis was
+made: a cache hit or a reuse of equal bytes returns the stored analysis unchanged, without the new
+request's flag, so a caller that knows its own flag combines it itself. A global (`youtube`)
+analysis is read by every scope, so its caller flags are visible to every scope; they name no
+caller. Analyses made before document version `6.4` have no `content` group: absent means not
+reported, not `unknown` evidence.
 
 Baseline fields are those the integration depends on; labels, phrases, downbeats and meter are
 incremental enhancements and are never blocking. Until an enhancement passes its gate the field is
@@ -377,7 +412,15 @@ with `source`, `recording_match_confidence`, `band`, `duration_s`, `duration_del
 
 `schema_version` is `analysis-v1`, `match-v1`, `job-v1` or `lookup-v1`. A change that adds an optional field keeps v1; any
 other change is a new version served beside the old one. `analyzer_version` changes invalidate
-cached analyses but not the schema.
+cached analyses but not the schema. `analyzer_version` is the core analyser's version, a dot, then
+the document mapping's version, which goes up whenever the document builder emits something new
+(mapping version 1 section labels, 2 phrases, 3 meter and downbeats, 4 the `content` group;
+the running version is `6.4`). Optional fields
+added to analysis-v1 so far: `provenance.source.decoded_duration_check` (spotdown#18), the
+alignment hypotheses' `name` and `chosen` (spotdown#21) and `content` (spotdown#36, document
+version `6.4`). A consumer that validates against an older copy of the schema rejects a document
+carrying a newer optional field (the schema forbids unknown properties), so it updates its copy;
+one that only reads the fields it knows is unaffected.
 
 ## Open points (for ADR 0040 to confirm)
 

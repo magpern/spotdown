@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Annotated, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 SCOPE_PATTERN = r"^[A-Za-z0-9_-]{1,128}$"
 _SCOPE = re.compile(SCOPE_PATTERN)
@@ -40,6 +40,8 @@ class AnalysisRequest(BaseModel):
     source_ref: Optional[str] = Field(default=None, min_length=1, max_length=256)
     url: Optional[str] = Field(default=None, min_length=1, max_length=2048)
     reference: Optional[Reference] = None
+    # The caller's explicit-lyrics flag: reported as evidence in ``content.explicit``, never a gate.
+    explicit: Optional[StrictBool] = None
 
     def source_count(self) -> int:
         return sum(v is not None for v in (self.upload_id, self.source_ref, self.url))
@@ -59,6 +61,8 @@ class MatchTrack(BaseModel):
     artists: List[ArtistName] = Field(min_length=1, max_length=10)
     duration_s: float = Field(gt=0, le=7200)
     isrc: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    # Kept with the match record of the chosen video; evidence for its analysis, never a gate.
+    explicit: Optional[StrictBool] = None
 
 
 class MatchRequest(BaseModel):

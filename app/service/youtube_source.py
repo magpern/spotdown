@@ -4,7 +4,8 @@ The id was validated when the job was accepted and is checked again here. A prov
 by a rate limit (from a match or an earlier download) fails the job ``rate_limited`` at once
 without calling yt-dlp. The match record that chose this video, when there is one, goes into the
 analysis' provenance; it is global data (public metadata and search results) and holds no scope,
-``client_ref`` or job id.
+``client_ref`` or job id. The video's age limit and the explicit flag of that match are evidence for
+``content.explicit`` (``explicit_calc``), reported only.
 """
 
 from __future__ import annotations
@@ -32,6 +33,8 @@ class YoutubeAudio:
     source: Dict[str, Any]
     fetch_s: float
     expected: Tuple[float, str]  # (duration, "match" or "metadata") for the decoded check
+    age_limit: Optional[int] = None
+    match_explicit: Optional[bool] = None
 
 
 def _sha256(path: Path) -> str:
@@ -76,10 +79,16 @@ def fetch_youtube(
     if media is None:
         raise JobFailure(Reason.UNSUPPORTED_MEDIA)
     source: Dict[str, Any] = {"kind": "youtube", "ref": video_id}
-    choice = store.get_choice(video_id, clock())
+    now = clock()
+    choice = store.get_choice(video_id, now)
+    match_explicit = None
     if choice is not None:
         source["match"] = choice[0]
         expected = (choice[1], "match")
+        match_explicit = store.choice_explicit(video_id, now)
     else:
         expected = (got.metadata_duration_s, "metadata")
-    return YoutubeAudio(got.path, media, _sha256(got.path), source, time.monotonic() - t0, expected)
+    fetch_s = time.monotonic() - t0
+    return YoutubeAudio(
+        got.path, media, _sha256(got.path), source, fetch_s, expected, got.age_limit, match_explicit
+    )

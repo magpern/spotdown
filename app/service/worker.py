@@ -20,7 +20,16 @@ from typing import Any, Callable, Dict, Optional, Tuple
 from ..config import Settings, get_settings
 from ..youtube import match_calc
 from ..youtube.ytdlp_client import YtDlpClient
-from . import analysis_doc, cache_policy, media_policy, sandbox, sweep, url_fetch, url_policy
+from . import (
+    analysis_doc,
+    cache_policy,
+    explicit_calc,
+    media_policy,
+    sandbox,
+    sweep,
+    url_fetch,
+    url_policy,
+)
 from .alignment_store import Aligning, aligning_for
 from .failure_policy import JobFailure, Reason, outcome_for
 from .store import Store
@@ -61,6 +70,8 @@ class Sourced:
     source: Dict[str, Any]
     timings: Dict[str, float]
     expected: Optional[Tuple[float, str]] = None  # for the decoded duration check (youtube)
+    age_limit: Optional[int] = None  # explicit-signal evidence (youtube)
+    match_explicit: Optional[bool] = None
 
 
 def _source(
@@ -96,8 +107,16 @@ def _source(
         )
     if job["source_kind"] == "youtube":
         got = fetch_youtube(job["source_ref"], settings, store, work, youtube)
+        timings = {"fetch": got.fetch_s}
         return Sourced(
-            got.path, got.media, got.sha256, got.source, {"fetch": got.fetch_s}, got.expected
+            got.path,
+            got.media,
+            got.sha256,
+            got.source,
+            timings,
+            got.expected,
+            got.age_limit,
+            got.match_explicit,
         )
     raise JobFailure(Reason.SOURCE_MISSING)
 
@@ -194,6 +213,11 @@ def execute_job(
             analysis_id=analysis_id,
             timings_s=timings,
             created_at=_now(),
+            content_evidence=explicit_calc.gather(
+                caller=job.get("explicit"),
+                caller_match=sourced.match_explicit,
+                age_limit=sourced.age_limit,
+            ),
         )
         store.finish_job_done(job_id, analysis_id, scope, doc, _aligning(job, doc, scope))
     except JobFailure as failure:

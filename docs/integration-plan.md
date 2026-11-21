@@ -13,7 +13,8 @@ the external-corpus runner (#20, PR #28) and hardening (PR #23). #6 stays open o
 harness is merged. Open spotdown work: #29 hostile-input hardening and #30 global cache retention
 purge (90 days unused or a version change, with an operator takedown; classbeat ADR 0040, amendment
 "#1296 accepted"). classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
-`ALLOW_YTDLP_SOURCING` stays off by default in code and is switched on only by the owner. Quality gates file `quality/quality_gates.json` is at v4; the document version is 6.3
+`ALLOW_YTDLP_SOURCING` stays off by default in code and is switched on only by the owner. Quality gates file `quality/quality_gates.json` is at v4; the document version is 6.4 (6.4 added the reported `content.explicit`
+signal, spotdown#36)
 and the core analyzer version is 6. The quality thresholds are set by the amendment in classbeat
 ADR 0040 (Accepted); see that ADR for the numbers.
 
