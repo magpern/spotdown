@@ -88,6 +88,19 @@ Set `SERVE_UI=false` in `.env` to run API-only — the JSON endpoints, `/files`,
 (`GET /` then returns `{"service":"spotdown","ui":"disabled"}`). Useful when
 another frontend or service consumes the API.
 
+## Local files in the web UI
+
+On Linux and macOS (and in the container) the page also takes a local mp3, m4a or wav file (ADR
+0002). It goes through the same checks as service-mode uploads: the container is recognised by its
+bytes and checked whole, `MAX_UPLOAD_BYTES` caps it, and the analysis runs in the sandbox. One file
+is analysed at a time per installation (a second gets `429`), and reading an upload must finish
+within `STANDALONE_UPLOAD_READ_S` (150 s). Like every standalone route it needs a session and passes
+the sign-in checks ("Signing in": `Host`, `Origin`, `X-Spotdown-UI`); its one content type is
+`application/octet-stream`. No file name is
+kept, the file is deleted after the analysis, and the waveform is drawn from the file in the
+browser. The result is cached by the file's sha256 and is read again only by uploading the same
+bytes.
+
 ## Run it
 
 ```bash
@@ -144,8 +157,8 @@ beyond loopback serve TLS and set `UI_PUBLIC_ORIGIN=https://...`. Redis is not p
   `--workers N` it allows N × 5 attempts a minute.
 - **New unsafe routes.** Every `POST`, `PUT`, `PATCH` or `DELETE` is refused with `415` unless its
   method and path are listed with their one content type in `UNSAFE_CONTENT_TYPES`
-  (`app/session_policy.py`). spotdown#49's upload route must add its row there with
-  `application/octet-stream`.
+  (`app/session_policy.py`). The local-file route (`POST /api/v1/analyze-upload`) is listed there
+  with `application/octet-stream`.
 
 ## Try it (lawful path — a direct source URL)
 
@@ -163,7 +176,7 @@ rm login.json   # the cookie in ./cookies lasts 12 h; delete it when you are don
 curl -s -b cookies -H "$O" -H "$U" -H "$J" localhost:8000/api/v1/convert \
   -d '{"source_url":"https://example.com/my-own-audio.wav","format":"mp3","bitrate":320}'
 # -> {"status":"queued","task_id":"src_...-mp3-320", ...}
-# (source_url is an API-only path; the web UI exposes only the Spotify-link flow.)
+# (source_url is an API-only path; the web UI offers the Spotify-link flow and local files.)
 
 # 2) poll until done
 curl -s -b cookies -H "$U" localhost:8000/api/v1/tasks/<task_id>

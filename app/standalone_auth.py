@@ -72,7 +72,7 @@ async def _read_capped(scope: Scope, receive: Receive) -> tuple[int, bytes]:
     and while reading), 400 for a malformed ``Content-Length`` or a disconnect."""
     length = _header(scope, b"content-length")
     if length is not None:
-        if not length.isdigit():
+        if not (length.isascii() and length.isdigit()):  # isdigit alone accepts "²"
             return 400, b""
         if int(length) > LOGIN_BODY_MAX:
             return 413, b""

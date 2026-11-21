@@ -20,7 +20,13 @@ from .core.analyser import ANALYZER_VERSION, SR, analyse_signal
 from .core.signal_calc import tempo_candidates
 from .standalone_doc import standalone_document
 
-__all__ = ["ALIGN_TOLERANCE_S", "ANALYZER_VERSION", "V1_RESPONSE_VERSION", "analyze_track"]
+__all__ = [
+    "ALIGN_TOLERANCE_S",
+    "ANALYZER_VERSION",
+    "V1_RESPONSE_VERSION",
+    "analyze_track",
+    "v1_response",
+]
 
 # Version of the standalone v1 response, next to the core ANALYZER_VERSION in the cache key
 # (ADR 0001, Decision 2). Rows cached before it existed count as 1. Raise it with any change to the
@@ -55,6 +61,28 @@ def fill_labels(segments: list, core: dict) -> None:
 def analyze_track(file_path: Path, track_id: str, spotify_duration_s: Optional[int] = None) -> dict:
     y, sr = librosa.load(str(file_path), sr=SR, mono=True)
     core = analyse_signal(y, int(sr))
+    return v1_response(
+        core,
+        track_id=track_id,
+        sha256=_sha256(file_path),
+        codec=file_path.suffix.lstrip(".").lower() or "unknown",
+        sample_rate_hz=int(sr),
+        spotify_duration_s=spotify_duration_s,
+    )
+
+
+def v1_response(
+    core: dict,
+    *,
+    track_id: str,
+    sha256: str,
+    codec: str,
+    sample_rate_hz: int,
+    spotify_duration_s: Optional[int],
+) -> dict:
+    """The v1 response of a core-analyser result on a signal at ``sample_rate_hz`` (also used by
+    the standalone local-file route, whose core result comes from the sandbox)."""
+    sr = sample_rate_hz
     duration = core["duration_s"]
     content_start = core["content_start_s"]
     content_end = core["content_end_s"]
@@ -83,9 +111,9 @@ def analyze_track(file_path: Path, track_id: str, spotify_duration_s: Optional[i
     bpm = core["bpm"]
     document = standalone_document(
         core,
-        sha256=_sha256(file_path),
-        codec=file_path.suffix.lstrip(".").lower() or "unknown",
-        sample_rate_hz=int(sr),
+        sha256=sha256,
+        codec=codec,
+        sample_rate_hz=sr,
         track_id=track_id,
         spotify_duration_s=spotify_duration_s,
         created_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

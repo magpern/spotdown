@@ -26,13 +26,16 @@ _MAC_CONTEXT = b"spotdown-session-v1"
 
 JSON = "application/json"
 OCTET_STREAM = "application/octet-stream"
+# The standalone local-file route (ADR 0002; app/upload_route.py), defined here once.
+UPLOAD_PATH = "/api/v1/analyze-upload"
 # The only unsafe requests that are let through, each with its one exact content type. Every
 # other unsafe request gets 415 (default deny), so a later route cannot ship with a CORS-simple
-# type by omission. spotdown#49 adds its upload route here with OCTET_STREAM.
+# type by omission.
 UNSAFE_CONTENT_TYPES = {
     ("POST", "/api/v1/convert"): JSON,
     ("POST", "/login"): JSON,
     ("POST", "/logout"): JSON,
+    ("POST", UPLOAD_PATH): OCTET_STREAM,
 }
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 

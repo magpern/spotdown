@@ -74,3 +74,5 @@
   .tl-ctl button { padding:4px 12px; font-size:12px; }
   #waveform text { font-size:10px; fill:var(--muted); font-family:inherit; }
   #waveform text.on { fill:#fff; }
+  .drop { border: 1px dashed var(--line); border-radius: 8px; padding: 16px; color: var(--muted); font-size: 14px; }
+  .drop.over { border-color: var(--accent); color: var(--fg); }
