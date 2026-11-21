@@ -1,8 +1,16 @@
 # ADR 0002: local-file input is in the standalone UI, through the hostile-input checks
 
-**Status:** Proposed (2026-11-21). It becomes Accepted when its Opus review passes. The Architect
-then sets it to Accepted, citing the PASS comment, in the same follow-up PR as ADR 0001 (right after
-this one merges, before #45 starts).
+**Status:** Accepted (2026-11-21), after the Opus review of PR #51 passed at `dbb0b8b`
+([`Agent review (opus): PASS`](https://github.com/magpern/spotdown/pull/51#issuecomment-7064226062)). The same follow-up PR amended it for that review's
+non-blocking findings:
+- N5: upload results are not readable through `GET /api/v1/analyze`;
+- N6: a deadline on reading the body;
+- N7: what the `Origin` check compares, a TLS proxy, and the checks stop browsers only;
+- N8: the route is POSIX-only.
+
+ADR 0003 hardens the rest of the standalone app (spotdown#52). Under it, every standalone route,
+this upload route included, sits behind an always-on token. The checks below are defence in depth
+on top of that session, and ADR 0003 item 6 defines the expected origin they use.
 
 **Issue:** spotdown#44. It is built in spotdown#49 (Opus Developer), and its waveform part in
 spotdown#48.
@@ -47,21 +55,26 @@ Constraints:
 1. **The standalone UI accepts the local file**, in standalone mode only. The new route (for example
    `POST /api/v1/analyze-upload`) is registered only when the standalone UI is served (`serve_ui`),
    and never in service mode. The UI is not served in service mode.
-2. **The browser cannot reach the route from another site.** The route is exempt from the CORS
-   middleware and makes three request checks. The checks run before the slot of item 3 is taken and
-   before any byte of the body is read. A failed check answers `415` for the content type and `403`
-   otherwise, and nothing is written.
-   - **Outside the wildcard CORS.** The CORS middleware does not apply to the route's path: a
-     preflight for it gets no `Access-Control-Allow-*` headers, and its answers carry none. A
-     cross-site page can therefore neither send the request (the preflight fails) nor read a
-     response.
+2. **The browser cannot reach the route from another site.** Behind ADR 0003's session, the route
+   makes four request checks: the content type, `X-Spotdown-UI` (ADR 0003 item 6), `Origin` and
+   `Host`. They run before the slot of item 3 is taken and before any byte of the body is read. A
+   failed check answers `415` for the content type and `403` otherwise, and nothing is written.
+   - **No CORS.** Standalone mode installs no CORS middleware (ADR 0003 item 6). A preflight for the
+     route gets no `Access-Control-Allow-*` headers, and its answers carry none. A cross-site page can
+     therefore neither send the request (the preflight fails) nor read a response.
    - **A non-simple content type.** `Content-Type` must be exactly `application/octet-stream`.
      Every other type is `415`, including the CORS-simple `text/plain`,
      `application/x-www-form-urlencoded` and `multipart/form-data`. A cross-site form post or a
      simple `fetch` therefore cannot reach the decoder.
-   - **A same-origin `Origin`.** `Origin` must be present and equal to the request's own origin
-     (scheme, `Host` and port). A missing `Origin` is rejected: browsers send it on every `POST`, and
-     this route is for the UI only.
+   - **A same-origin `Origin`.** `Origin` must be present and must equal the expected origin
+     exactly: scheme, host and port, compared as strings after lowercasing the scheme and host.
+     - **Expected origin** (ADR 0003 item 6): `ui_public_origin` if it is set, as one exact origin
+       such as `https://spotdown.example`, which is then the only origin accepted. Otherwise it is
+       `http://` plus the request's `Host` header, which must pass the next check.
+     - It is never taken from the scheme uvicorn sees or from forwarded headers. Behind a
+       TLS-terminating proxy the operator sets `ui_public_origin`.
+     - A missing `Origin` is rejected: browsers send it on every `POST`, and this route is for the
+       UI only.
    - **An expected `Host`** (against DNS rebinding). `Host` must be in a new setting
      `ui_allowed_hosts`, which defaults to `localhost`, `127.0.0.1` and `[::1]` (any port). An
      operator who opens the UI under another name adds it there.
@@ -74,6 +87,18 @@ Constraints:
      read.
    - A declared `Content-Length` over `max_upload_bytes` is `413` before the body is read. A body
      that grows past the cap while streaming is cut off with `413`.
+   - **Read deadline.** Reading the body has a total deadline, a new setting
+     `standalone_upload_read_s`.
+     - The default is 150 s. The minimum supported upload rate is therefore 60 MiB per 150 s, about
+       0.4 MiB/s (3.4 Mbit/s). A slower client can send a smaller file.
+     - When the deadline passes, the answer is `408`, so a client that trickles bytes cannot hold the
+       slot. The `408` leaves through the same `finally` as every other exit (cleanup below).
+     - The sandbox's own deadlines bound the analysis that follows.
+   - **POSIX only.** The slot needs `fcntl`, and the sandbox it feeds already needs `resource`.
+     Both exist only on Linux and macOS. The slot module imports `fcntl` inside a guard; without it,
+     the route is not registered and the UI hides the file input. There is no unsafe fallback lock.
+     The test suite still imports on Windows: tests that need the route skip there
+     (`pytest.importorskip("fcntl")`). The container is Linux.
    - Disk in use by the route is therefore bounded: at most one partial or whole upload of at most
      `max_upload_bytes` (60 MiB), plus the sandbox's work directory for that one run, where each
      file the child writes is capped by its `RLIMIT_FSIZE`.
@@ -89,21 +114,33 @@ Constraints:
        when the standalone UI is served. The sandbox's work directory for the run is a subdirectory
        of it.
      - **Names:** random and server-chosen (`up_` prefix).
-     - **Cleanup:** the file is deleted in a `finally` when its analysis ends (success, failure,
-       rejection or a client disconnect). Crashes are covered too: whenever the slot is taken (and at
-       startup), anything left in the directory other than the lock file is deleted, files and work
-       directories alike, because with one slot anything present while nobody holds the lock is a
-       leftover. The service's `upload_ttl_s`
-       sweep is not needed there.
+     - **Cleanup:** every exit of the request goes through one `finally`: success, failure,
+       rejection, the read deadline's `408`, and a client disconnect.
+       - In that `finally`, the partial or whole file and the work directory are deleted **before**
+         the lock is released. So the next holder's leftover sweep never races the deletion.
+       - Crashes are covered too. Whenever the slot is taken, anything left in the directory other
+         than the lock file is deleted, files and work directories alike: with one slot, anything
+         present while nobody holds the lock is a leftover.
+       - **The sweep runs only while holding the lock.** At startup the app tries the lock without
+         blocking. It sweeps only if it got the lock, and skips the sweep if another worker holds it.
+         So no process ever deletes a file that another process's request is using.
+       - **The lock file is never deleted, replaced or truncated.** It is opened with `O_CREAT`
+         (never `O_TRUNC` or `O_EXCL`), the sweep excludes it by its exact name, and nothing
+         renames over it. Two holders could otherwise lock different inodes.
+       - The service's `upload_ttl_s` sweep is not needed there.
      - **No cache scope and no idempotency key:** a repeat of the same bytes is a cache hit instead.
        The result is cached in the standalone `analyses` table under `upl_<sha256>`, keyed by the
        version pair of ADR 0001. A file name never takes part.
+     - **Upload results are read only through the protected route.** `GET /api/v1/analyze/{track_id}`
+       refuses any `upl_` id with `404`, without reading the cache, so no other site can probe
+       whether this install analysed given bytes. A repeat upload of the same bytes is the only way
+       back to a cached upload result, and it passes every check of Decision 2.
 5. **Nothing is kept beyond the analysis.** No file name is kept, logged or returned, and tags are
    never read into the output. No audio is returned. Only the analysis result, under the sha256 key,
    outlives the request.
 6. **The waveform is drawn in the browser** from the file the user picked (Web Audio). The server
    never sends that audio back.
-7. **Security-critical.** It is a new caller-facing input path without authentication, so spotdown#49
+7. **Security-critical.** It is a new caller-facing input path for hostile files, so spotdown#49
    has an Opus Developer and an Opus Reviewer.
 
 ## Alternatives
@@ -121,12 +158,11 @@ Constraints:
 - **Rely on CORS alone, or on "local network only".** Rejected: the wildcard CORS allows every
   origin, and a simple request is sent before any CORS check. The binding to `0.0.0.0` and DNS
   rebinding make "local" no boundary.
-- **Narrow the CORS of the whole standalone app.** That is out of scope here: the existing routes'
-  exposure predates this ADR, and this route does not widen it. The new route simply does not rely
-  on CORS.
-- **A bounded queue of several uploads.** Rejected for now: it multiplies the disk and CPU an
-  unauthenticated caller can hold, for a single-user test tool. Raising the slot count later is a
-  reversible change.
+- **Narrow the CORS of the whole standalone app here.** Left to ADR 0003, which removes CORS from
+  standalone mode. This route never relied on CORS.
+- **A bounded queue of several uploads.** Rejected for now: it multiplies the disk and CPU that a
+  caller, or a leaked session, can hold, for a single-user test tool. Raising the slot count later is
+  a reversible change.
 - **A CSRF token in the page.** Not chosen: the `Origin` and `Host` checks with a non-simple
   content type already stop cross-site requests, without session state.
 
@@ -136,6 +172,15 @@ Constraints:
   uploads.
 - The route cannot be driven from another site: no cross-site form or `fetch` reaches the decoder,
   and a rebound host name is refused.
+- The `Origin`, `Host` and content-type checks stop **browsers** only. A non-browser caller that can
+  reach the port can forge all three. Such a caller is limited only by these:
+  - the single slot;
+  - the read deadline;
+  - the byte and decoded-length caps;
+  - the sandbox;
+  - above all, ADR 0003's always-on token: without a session the route answers `401` before any
+    of its own checks.
+- Local-file input is unavailable on Windows (outside a container), as the sandbox already is.
 - Only one local file is processed at a time per installation. A second tab gets `429` until the
   first finishes.
 - Opening the UI under a host name other than `localhost`, `127.0.0.1` or `[::1]` needs that name in
@@ -143,5 +188,6 @@ Constraints:
 - The service-mode contract and the service's surface are unchanged. classbeat is unaffected.
 - The upload checks gain a second caller, through one shared module. The tests of spotdown#49 assert
   that each check guards both routes.
-- The rest of the standalone app keeps its wildcard CORS and its lack of authentication, as before
-  this ADR. Narrowing it is a separate follow-up.
+- The rest of the standalone app keeps its wildcard CORS and its lack of authentication until
+  spotdown#52 (ADR 0003) hardens it. #52 is built before #49, so this route never ships without the
+  token.

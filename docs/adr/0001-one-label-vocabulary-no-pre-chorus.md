@@ -1,9 +1,8 @@
 # ADR 0001: one label vocabulary; no pre-chorus label in analysis-v1
 
-**Status:** Proposed (2026-11-21). It becomes Accepted when its Opus review passes. The Architect
-then sets it to Accepted, citing the PASS comment, in a PR of its own right after this one merges.
-That PR also marks #44 merged in the issue table of `docs/integration-plan.md`, and #45 starts after
-it.
+**Status:** Accepted (2026-11-21), after the Opus review of PR #51 passed at `dbb0b8b`
+([`Agent review (opus): PASS`](https://github.com/magpern/spotdown/pull/51#issuecomment-7064226062)). Decision 2 was amended in the same follow-up PR for the
+review's non-blocking finding N4: the table rebuild and the full-key `INSERT OR REPLACE`.
 
 **Issue:** spotdown#44. It is built in spotdown#45 (one vocabulary and the v1 cache key) and
 spotdown#48 (the waveform, which shades the existing `build_up` events). The numbers are spotdown's
@@ -58,15 +57,39 @@ Constraints:
 2. **The standalone v1 cache gets its own response version.**
    - A new constant `V1_RESPONSE_VERSION` sits next to the v1 formatter (`app/analyze.py`). It
      starts at 2 with this change; every cached row so far counts as version 1.
-   - The standalone cache is keyed by `(track_id, ANALYZER_VERSION, V1_RESPONSE_VERSION)`. #45
-     adds a `response_version` column with a default of 1 for existing rows (an idempotent
-     `ALTER TABLE` at `init_db`), and makes it part of the primary key.
+   - The standalone cache is keyed by `(track_id, ANALYZER_VERSION, V1_RESPONSE_VERSION)`.
+   - SQLite cannot add a column to a primary key with `ALTER TABLE`, so #45 rebuilds the `analyses`
+     table once, in one transaction at `init_db`:
+     1. create `analyses_new` with a `response_version INTEGER NOT NULL` column and
+        `PRIMARY KEY (track_id, analyzer_version, response_version)`;
+     2. copy every row with `response_version = 1`;
+     3. drop `analyses`;
+     4. rename `analyses_new` to `analyses`.
+
+     How the transaction is opened:
+     - Python's `sqlite3` opens no transaction before DDL, and `executescript` commits first. So the
+       rebuild uses individual `execute` calls (no `executescript`) inside an explicit
+       `BEGIN IMMEDIATE`.
+     - The `PRAGMA table_info(analyses)` check runs **inside** that transaction. Only when it shows
+       no `response_version` do the four steps run, then `COMMIT`. Otherwise it is `ROLLBACK` and
+       nothing changes.
+     - `BEGIN IMMEDIATE` takes the write lock first, so two processes starting at once cannot both
+       rebuild: the second waits, then finds the column and does nothing.
+     - A second start does nothing.
+     - SQLite DDL is transactional: any failure rolls the whole transaction back, and the old table
+       stays intact.
+
+     `_SCHEMA` creates a fresh database with the three-column key directly.
+   - `set_analysis` writes with `INSERT OR REPLACE` on the full three-column key. A new row
+     therefore never overwrites a row of another response version.
    - A lookup with any other pair is a miss. A miss recomputes the analysis from the converted file,
      so no cached response with the older labels is ever served, without `?refresh=true`. If the
      converted file is gone, the endpoint answers `404` as it does today for a track with no file,
      never the stale row.
-   - Old rows are left in place (reversible: lowering the constant serves them again), and are never
-     read at the new version.
+   - Old rows are left in place under `response_version = 1` and are never read at the new version.
+     This is reversible: lowering the constant serves them again, which the full-key writes keep
+     true. That holds only while the core `ANALYZER_VERSION` is unchanged. After a core bump, the
+     old rows are under the old core version and miss anyway.
    - The v2 caches, analysis-v1 and the core `analyzer_version` are untouched.
    - Any later change to the v1 response shape or its labels raises `V1_RESPONSE_VERSION`.
 3. **Pre-chorus is out of analysis-v1 for now, and it is an open item.** The `label` enum is
