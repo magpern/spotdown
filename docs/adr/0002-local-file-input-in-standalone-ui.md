@@ -118,9 +118,15 @@ Constraints:
        rejection, the read deadline's `408`, and a client disconnect.
        - In that `finally`, the partial or whole file and the work directory are deleted **before**
          the lock is released. So the next holder's leftover sweep never races the deletion.
-       - Crashes are covered too. Whenever the slot is taken (and at startup), anything left in the
-         directory other than the lock file is deleted, files and work directories alike: with one
-         slot, anything present while nobody holds the lock is a leftover.
+       - Crashes are covered too. Whenever the slot is taken, anything left in the directory other
+         than the lock file is deleted, files and work directories alike: with one slot, anything
+         present while nobody holds the lock is a leftover.
+       - **The sweep runs only while holding the lock.** At startup the app tries the lock without
+         blocking. It sweeps only if it got the lock, and skips the sweep if another worker holds it.
+         So no process ever deletes a file that another process's request is using.
+       - **The lock file is never deleted, replaced or truncated.** It is opened with `O_CREAT`
+         (never `O_TRUNC` or `O_EXCL`), the sweep excludes it by its exact name, and nothing
+         renames over it. Two holders could otherwise lock different inodes.
        - The service's `upload_ttl_s` sweep is not needed there.
      - **No cache scope and no idempotency key:** a repeat of the same bytes is a cache hit instead.
        The result is cached in the standalone `analyses` table under `upl_<sha256>`, keyed by the

@@ -73,22 +73,56 @@ recorded it as a follow-up.
      with trailing whitespace stripped. It is checked only for length: at least 32 characters.
    - **Generated.** If it is not set, the token lives at `data_dir/standalone_token`, and the
      content must be exactly 64 lowercase hex characters (with one optional trailing newline).
-     - **Created atomically.** If the file does not exist at construction, the app:
-       1. creates a temporary file in the same directory with
-          `O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW` and mode `0600`;
-       2. writes `secrets.token_hex(32)` and `fsync`s it;
-       3. runs `os.link(tmp, final)`, which is atomic and fails with `EEXIST` without replacing
-          anything;
-       4. unlinks the temporary file, whether the link succeeded or not.
-
-       A process that loses the race (`EEXIST`) reads the final file, which is always complete,
-       because it only ever appears through the link.
-     - **Never regenerated over an existing file.** A generated file that is empty, short or
-       malformed (left by a crash before the atomic create existed, or edited by hand) is not
-       overwritten. The app answers `503` (the failure rule below) and prints one console line naming
-       the file and saying "delete it and restart to generate a new token".
-     - A temporary file left by a crash is harmless. It is never read and is deleted at the next
-       construction (`standalone_token.tmp-*`).
+     - **Creation is a small state machine with one rule: no process ever deletes, replaces or
+       truncates a file another process may be using.** There is no sweep and no lock. Each
+       construction runs these steps:
+       1. **Read.** Read `data_dir/standalone_token` (the *final* file).
+          - If it holds a valid token, use it. Done.
+          - If it exists but is short or malformed, re-read every 50 ms for up to 2 s. This covers
+            the fallback in step 5, where another worker may not have finished writing. A valid token
+            within that time is used. Otherwise the result is `503`, with the console line below.
+          - If it does not exist, go to step 2.
+       2. **Create own temporary file.** Create `standalone_token.tmp-<pid>-<16 random hex>` in the
+          same directory, with `O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW` and mode `0600`. The name
+          is unique to this process, and no other process touches it.
+       3. **Write.** Write `secrets.token_hex(32)` and a newline, `fsync` the file and close it.
+       4. **Link.** Call `os.link(tmp, final)`. It is atomic and never replaces an existing file.
+          - On success, `fsync` the directory and use the token just written. The final file is the
+            same inode, complete before it appeared.
+          - On **any** failure (`EEXIST`, `ENOENT` or anything else), go back to step 1 once. If a
+            valid final file now exists, use it.
+          - If none exists and the failure was not `EEXIST`, the filesystem may not support hard
+            links (for example some Docker Desktop bind mounts). Go to step 5.
+       5. **Fallback, only when linking is unsupported.**
+          - Create the final file directly with `O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW`, mode
+            `0600`. Write the token in one `write`, then `fsync` it.
+          - If that create fails with `EEXIST`, another worker won; go to step 1, including its
+            2 s re-read.
+       6. **Clean up own file.** In a `finally`, unlink this process's own temporary file if it still
+          exists. Only its own, never a pattern.
+     - **Every interleaving converges.** Two or three workers starting together either read an
+       existing valid file, or race to `link` or to the fallback's `O_EXCL`. Exactly one of them
+       wins, because each is atomic, and every loser re-reads the winner's complete file. No step
+       deletes or changes a file another worker uses, so no worker can be left without a source or a
+       result. The fix map of PR #53 lists each interleaving and each crash point.
+     - **Crashes.** A crash before the link leaves only an orphaned temporary file; the final file
+       is absent, and the next start creates one. A crash after the link leaves a valid final file
+       and an orphan.
+       - **Orphans** are never read, hold an unused random token with mode `0600`, and are harmless.
+         `README.md` says they may be deleted by hand while spotdown is stopped.
+       - **The one crash that leaves a bad final file:** a crash between the fallback's create and
+         its write. It can happen only on filesystems without hard links, and only within that
+         window. It leaves an empty final file, which gives `503` and the console line.
+     - **Never regenerated over an existing file.** A final file that is still empty, short or
+       malformed after the re-read is not overwritten. The app answers `503` (the failure rule
+       below) and prints one console line naming the file and saying "delete it and restart to
+       generate a new token".
+     - **Symlinks.**
+       - The final file is read without `O_NOFOLLOW`. A symlink planted there makes the link
+         `EEXIST`, and its target is almost certainly not 64 hex characters, so the result is `503`
+         and fails closed. Anyone who can write `data_dir` could replace the token anyway.
+       - The owner-supplied `standalone_access_token_file` follows symlinks on purpose: Docker and
+         Kubernetes secrets are often symlinks.
    - **Console line.** At construction the app prints one line: the **path** of the token file and
      "open /login and paste it". It never prints, logs or returns the token itself.
    - **Mode bits are set, not checked.** On create the mode is `0600`. On read the mode is not
@@ -122,7 +156,8 @@ recorded it as a follow-up.
      - any other scope type is refused.
    - **Order for an `http` scope**, outermost first:
      1. the `Host` allowlist (item 6);
-     2. the token state (`503` if there is no valid token);
+     2. the token state: `503` if there is no valid token, except for `GET /healthz`, which is
+        always served (item 2);
      3. the exemptions and the session (item 1);
      4. the unsafe-method checks (item 6);
      5. `X-Spotdown-UI` (item 6).
@@ -235,9 +270,16 @@ recorded it as a follow-up.
   any page drive conversions and read results. An allowlist could do nothing under the session and
   the exact `Origin` check, so standalone mode has no CORS. A cross-origin editor preview is not
   supported; open the UI from the app itself.
-- **Write the generated token with `O_EXCL` on the final path.** Rejected: the file exists empty
-  before the token is written, so a racing worker can read a partial token, and a crash leaves an
-  empty file. Create, write, `fsync` and `link` instead.
+- **Write the generated token with `O_EXCL` on the final path.** Rejected as the main path: the
+  file exists empty before the token is written, so a racing worker can read a partial token, and a
+  crash leaves an empty file. It survives only as the fallback for filesystems without hard links,
+  with a bounded re-read.
+- **Sweep leftover temporary files at construction.** Rejected: one worker's sweep can delete
+  another's in-flight temporary file, whose link then fails (the PR #53 review at `5def3d3`). An age
+  bound only narrows the window for a paused process. Each process removes only its own file.
+- **An `flock` around create-or-read.** Not chosen: `fcntl` is POSIX-only, so Windows would need the
+  link procedure anyway, which makes two procedures to get right instead of one. The link
+  procedure alone is correct on every platform that has hard links.
 - **Regenerate a malformed generated token automatically.** Rejected: it would silently overwrite a
   file the owner may have edited, and would hide a crash. `503` with a named fix is explicit.
 - **`BaseHTTPMiddleware` for authentication.** Rejected: it passes WebSocket and other non-HTTP
