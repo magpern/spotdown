@@ -10,10 +10,12 @@ runs. Issues #2 to #5, #7 to #11 and #20 are closed: governance and the v2 contr
 mode, v2 API, caches and scoped lookups (#4, #5), the YouTube matcher and source, faked in tests (#10),
 the alignment layer (#11), section labels (#7), 8 and 16 bar phrases (#8), downbeats with meter (#9),
 the external-corpus runner (#20, PR #28) and hardening (PR #23). #6 stays open only for the real-music runs (classbeat#1298); its
-harness is merged. Open spotdown work: #29 hostile-input hardening and #30 global cache retention
-purge (90 days unused or a version change, with an operator takedown; classbeat ADR 0040, amendment
-"#1296 accepted"). classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
-`ALLOW_YTDLP_SOURCING` stays off by default in code and is switched on only by the owner. Quality gates file `quality/quality_gates.json` is at v4; the document version is 6.4 (6.4 added the reported `content.explicit`
+harness is merged. #29 hostile-input hardening (PR #32) and #30 global cache retention purge (90 days
+unused or a version change, with an operator takedown; classbeat ADR 0040, amendment "#1296
+accepted"; PR #34) are merged. Open spotdown work: #40 (lifetime of scoped entries that are never
+deleted) and the follow-ups of the 2026-11-21 real-music trial, #44 to #49 (below; ADR 0001 and ADR
+0002 in `docs/adr/`). Its first follow-up, #43, is merged (PR #50). classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
+`ALLOW_YTDLP_SOURCING` stays off by default in code and is switched on only by the owner. Quality gates file `quality/quality_gates.json` is at v5; the document version is 6.4 (6.4 added the reported `content.explicit`
 signal, spotdown#36)
 and the core analyzer version is 6. The quality thresholds are set by the amendment in classbeat
 ADR 0040 (Accepted); see that ADR for the numbers.
@@ -75,8 +77,15 @@ by default in code (`ALLOW_YTDLP_SOURCING`); switching it on is the owner's depl
 | P3 | #10 YouTube matcher and source | merged | #4, #5 |
 | P3 | #11 alignment layer | merged | #3, #5 |
 | hardening | PR #23 deferred review findings of #16 to #21 | merged | – |
-| hardening | #29 hostile-input hardening | open | – |
-| hardening | #30 global cache retention purge | open | – (builds on #5, merged) |
+| hardening | #29 hostile-input hardening (PR #32) | merged | – |
+| hardening | #30 global cache retention purge (PR #34) | merged | – (builds on #5, merged) |
+| trial follow-up | #43 docs points of the #42 review (PR #50) | merged | – |
+| trial follow-up | #44 ADR 0001 (one label vocabulary, no pre-chorus in analysis-v1), ADR 0002 (local-file input in the standalone UI) | open | – |
+| trial follow-up | #45 one label vocabulary (retire the core analyser's older labels) | open | #44 |
+| trial follow-up | #46 merge over-fine segments before labelling | open | #45 |
+| trial follow-up | #47 labels and segments on steady-energy tracks | open | #46 |
+| trial follow-up | #48 waveform view in the standalone UI | open | #45 |
+| trial follow-up | #49 local-file input in the standalone UI (Opus Developer) | open | #44, #48 |
 
 The classbeat issues SD-P4 to SD-P7 (classbeat#1301 to #1306) depend on #3, #4, #5, #6, #10 and #11;
 all but the real-music runs of #6 are merged, and classbeat#1296 is accepted, so SD-P6 is unblocked.
