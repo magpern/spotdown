@@ -111,7 +111,9 @@ function done(downloadUrl) {
 // has not converted the track. #49 can return a local file's bytes here instead.
 async function loadTrackAudio() {
   if (!currentAudioUrl) return null;
-  const r = await fetch(currentAudioUrl);
+  const path = wfAudioPath(currentAudioUrl, location.origin);  // same-origin /files/<name> only
+  if (!path) throw new Error("the download link is not a file of this server");
+  const r = await fetch(`${API_BASE}${path}`);
   if (!r.ok) throw new Error("the audio download failed (HTTP " + r.status + ")");
   return r.arrayBuffer();
 }

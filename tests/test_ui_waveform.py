@@ -231,6 +231,7 @@ def test_an_undecodable_or_missing_audio_never_blocks_the_page() -> None:
         {"ac": "ok", "loader": "null"},  # the page has no audio (track not converted here)
         {"ac": "ok", "loader": "throw"},  # the download failed
         {"ac": "ok", "loader": "bytes"},  # decodeAudioData rejects
+        {"ac": "ok", "loader": "throw", "msg": "<img src=x onerror=1>"},  # an error text is escaped
     ]
     run = subprocess.run(
         ["node", str(HARNESS), str(STATIC), "fallback"],
@@ -240,8 +241,95 @@ def test_an_undecodable_or_missing_audio_never_blocks_the_page() -> None:
         check=True,
     )
     results = json.loads(run.stdout)
-    expected = ["no Web Audio", "no audio for the track", "download failed", "unable to decode"]
+    expected = [
+        "no Web Audio",
+        "no audio for the track",
+        "download failed",
+        "unable to decode",
+        "&lt;img src=x onerror=1&gt;",
+    ]
     for res, why in zip(results, expected):
         assert "No waveform" in res["host"] and why in res["host"], res
         assert "timeline below is unaffected" in res["host"] and res["playDisabled"] is True
         assert "<svg" not in res["host"]
+
+
+def _harness(mode: str, payload: Any) -> Any:
+    run = subprocess.run(
+        ["node", str(HARNESS), str(STATIC), mode],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(run.stdout)
+
+
+@needs_node
+def test_a_stale_decode_never_overwrites_the_newer_tracks_audio() -> None:
+    """Two analyses overlap and the OLDER one finishes last (20 s buffer is newer, 99 s older)."""
+    out = _harness("stale", [{"document": _doc()}])
+    for name in ("okThenOk", "failAfterOk", "noAudioAfterOk", "decodeOkLast", "decodeFailLast"):
+        res = out[name]
+        assert res["afterNewer"]["dur"] == 20 and "<svg" in res["afterNewer"]["host"], name
+        assert res["afterOlder"] == res["afterNewer"], name  # buffer, peaks and page untouched
+        assert res["play"] is False, name
+    # A call made stale while still loading never starts decoding; one already decoding is dropped.
+    assert [out[n]["decodes"] for n in ("okThenOk", "failAfterOk", "decodeOkLast")] == [1, 1, 2]
+    assert "No waveform" not in out["failAfterOk"]["afterOlder"]["host"]
+    assert "No waveform" not in out["noAudioAfterOk"]["afterOlder"]["host"]
+    assert "No waveform" not in out["decodeFailLast"]["afterOlder"]["host"]
+    # The newer call failed first: a late older success must not replace that message.
+    late = out["okAfterFail"]
+    assert "older failure" in late["afterNewer"]["host"] and late["afterNewer"]["dur"] is None
+    assert late["afterOlder"] == late["afterNewer"] and late["play"] is True
+
+
+@needs_node
+def test_playback_uses_the_decoded_duration_and_rewinds_at_the_end() -> None:
+    out = _harness("play", [{"document": _doc()}])
+    assert out["analysisDuration"] == 40  # the analysis says 40 s, the decoded buffer 10 s
+    assert out["time0"].endswith("/ 0:10.0") and out["mid"] == "0:04.0 / 0:10.0"
+    end = out["end"]
+    assert end["playing"] is False and end["pos"] == 0 and end["label"] == "Play"
+    assert end["time"] == "0:00.0 / 0:10.0"  # rewound, not left at the elapsed 12 s
+    assert out["again"]["pos"] == 0 and out["again"]["started"] == [0, 0]
+
+
+@needs_node
+def test_peaks_are_scaled_so_the_loudest_is_one() -> None:
+    assert _one("wfColumns", [0, 0.5, 0.25, 0.125], 4, {"t0": 0, "t1": 4, "w": 4}) == [
+        0,
+        1,
+        0.5,
+        0.25,
+    ]
+
+
+@needs_node
+@pytest.mark.parametrize(
+    "url,origin,expected",
+    [
+        ("/files/track-320.mp3", "http://localhost:8000", "/files/track-320.mp3"),
+        ("http://localhost:8000/files/a.mp3", "http://localhost:8000", "/files/a.mp3"),
+        ("https://cdn.example.com/files/a.mp3", "http://localhost:8000", None),  # other origin
+        ("http://localhost:8000.evil.com/files/a.mp3", "http://localhost:8000", None),
+        ("//evil.com/files/a.mp3", "http://localhost:8000", None),
+        ("/api/v1/tasks/x", "http://localhost:8000", None),
+        ("/files/a/b.mp3", "http://localhost:8000", None),
+        ("/files/../secret", "http://localhost:8000", None),
+        ("/files/a.mp3?x=1", "http://localhost:8000", None),
+        ("/files/", "http://localhost:8000", None),
+        ("http://localhost:8000/files/a.mp3", "null", None),  # a file:// page has no origin
+        (None, "http://localhost:8000", None),
+    ],
+)
+def test_only_a_same_origin_files_path_is_fetched_as_audio(url, origin, expected) -> None:
+    assert _one("wfAudioPath", url, origin) == expected
+
+
+def test_the_audio_loader_fetches_only_the_checked_path() -> None:
+    js = (STATIC / "ui.js").read_text(encoding="utf-8")
+    body = js.split("async function loadTrackAudio")[1].split("async function analyze")[0]
+    assert "wfAudioPath(currentAudioUrl, location.origin)" in body
+    assert body.count("fetch(") == 1 and "fetch(`${API_BASE}${path}`)" in body

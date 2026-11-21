@@ -83,6 +83,19 @@ function wfMarkers(m, v) {
     beatsHidden: ticks.hidden };
 }
 
+// The only audio URL the page fetches: a /files/<name> path on its own origin (the standalone
+// download). Returns that path, or null for anything else (another origin, another path, traversal).
+function wfAudioPath(url, origin) {
+  if (typeof url !== "string") return null;
+  let p = url;
+  if (!url.startsWith("/")) {
+    const m = /^(https?:\/\/[^/?#]+)(\/.*)$/i.exec(url);
+    if (!m || m[1].toLowerCase() !== String(origin).toLowerCase()) return null;
+    p = m[2];
+  }
+  return /^\/files\/[^/?#\\]+$/.test(p) && !p.includes("..") ? p : null;
+}
+
 // Clicks to sound in [a, b): every beat, the downbeats flagged strong.
 function wfClicksBetween(beats, downbeats, a, b) {
   const key = (t) => Math.round(t * 1000), strong = new Set((downbeats || []).map(key));
