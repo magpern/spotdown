@@ -61,6 +61,9 @@
     "boundary_f_3s_all_reported",
     "segments_per_truth_section_reported",
     "segments_per_truth_section_baseline_reported",
+    "boundary_f_3s_oversplit_reported",
+    "beat_f_overall_oversplit_reported",
+    "bpm_within_2pct_fraction_oversplit_reported",
     "alignment_cases_reported",
     "alignment_overreach_reported",
     "alignment_offset_within_0_05s_reported"

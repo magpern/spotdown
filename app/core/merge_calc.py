@@ -21,6 +21,9 @@ time, so the result is deterministic). ``segments.segments`` runs them in this o
    it), so the limit is below 3; 2.5 keeps every 4-bar section of the synthetic corpus and
    removes the 1 and 2 bar slivers.
 
+The constants (0.7, 0.4, 0.6, 2.5 bars, 6 s) are fitted on the synthetic corpus only. They are
+not validated on real music: that waits for held-out evidence (spotdown#20).
+
 A boundary is never removed when it is the one standing for a protected time (a detected drop, a
 content edge or a quiet-region edge): the boundary nearest to each protected time within
 ``near_s`` is kept, so drop times stay exact.
@@ -94,7 +97,7 @@ def merge_similar(
     feats: Sequence[np.ndarray],
     keep: Sequence[float],
 ) -> "tuple[List[float], List[float]]":
-    """Pass 2: ``feats[i]`` is the mean feature vector of segment ``i``. A merged segment's vector
+    """``feats[i]`` is the mean feature vector of segment ``i``. A merged segment's vector
     is the duration-weighted mean of its parts."""
     t, nov, f = list(times), list(novelty), list(feats)
 

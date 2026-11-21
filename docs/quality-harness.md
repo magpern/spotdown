@@ -99,13 +99,27 @@ choruses. `app/core/merge_calc.py` merges over-fine segments before the groups a
 across a weak boundary; drops, content edges and quiet-region edges are never merged away).
 The owner's listening is not ground truth, so the check is synthetic: two `oversplit` fixtures
 (`corpus: oversplit`) carry fills and timbre changes inside verses and choruses (sections flagged
-`continues` in the spec), and the truth has boundaries only at the six real section changes.
-`tests/test_quality_oversplit.py` asserts at most truth sections plus one segments, and that the
-same audio with the merge switched off makes more (10 and 14 segments against 6 sections before
-the merge, 7 and 7 after). The fixtures enter no gate and are reported apart (`*_oversplit_reported`; the `all` set leaves them out, because they also hold the truth boundaries the structure analysis misses, spotdown#47); `segments_per_truth_section_reported`
-(oversplit: 1.167, was 2.0 before the merge) and
-`segments_per_truth_section_baseline_reported` (1.027, 150 segments in 146 sections, the same with
-and without the merge, so the 24 baseline fixtures are unchanged) are reported only.
+`continues` in the spec), and the truth has six sections and boundaries only at the five real
+section changes. `tests/test_quality_oversplit.py` asserts at most truth sections plus one
+segments (7), and that the same audio with the merge switched off makes more (10 and 14 segments
+against 6 sections before the merge, 7 and 7 after). 7 is at the limit, not below it: the merged
+result still has boundaries that are not truth boundaries and misses some that are (boundary F at
+3 s is about 0.55; the misses are the coarse-structure case of spotdown#47).
+
+**Which pool the fixtures are in: none.** `scoring_calc.aggregate` keeps the oversplit fixtures
+out of every gated pool (the baseline gates, the phrase gate, and the downbeat and meter gates)
+and out of the `all` reported set, so adding them moves no gate value and no floor
+(`GATED_CORPORA`, `PHRASE_CORPORA`, `REPORTED_ONLY_CORPORA`; a record of a corpus in none of the
+lists raises, so a new corpus has to be assigned). Reported only: `segments_per_truth_section_reported`
+(oversplit: 1.167, was 2.0 before the merge), `segments_per_truth_section_baseline_reported`
+(1.027, 150 segments in 146 sections, the same with and without the merge, so the 24 baseline
+fixtures are unchanged) and the `boundary_f_3s`, `beat_f_overall` and
+`bpm_within_2pct_fraction` `_oversplit_reported` values.
+
+**What this does not show.** The merge constants (0.7 similarity, 0.4 weak novelty, 0.6 strong
+novelty, 2.5 bars, 6 s) were fitted on this synthetic corpus. They are not validated on real
+music, and the 24 baseline fixtures do not exercise the merge at all (the count is the same
+without it). Held-out evidence is spotdown#20.
 
 ## Steady-energy check (spotdown#47)
 
@@ -125,7 +139,7 @@ and one 55 s part held several section changes. Two changes, checked on the synt
   The merge step of #46 stays in force.
 
 Three `steady` fixtures (`corpus: steady`; enter no gate, reported apart as `*_steady_reported`,
-left out of the `all` set): `steady-120` and `steady-140` (long pad verses, short lead choruses,
+in no gated pool (`REPORTED_ONLY_CORPORA`) and left out of the `all` set): `steady-120` and `steady-140` (long pad verses, short lead choruses,
 same drums, the verses a hair louder) and `steady-subtle-120` (chorus is the verse plus a quiet
 lead). `tests/test_quality_steady.py` asserts at most half of the labelled time is chorus, at
 least one verse, boundary F at 3 s at least 0.60 (the gate) and at most truth sections plus one

@@ -113,6 +113,17 @@ def _meter_metrics(everything: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     return out
 
 
+# Every corpus a record can come from. A gated pool is built from these lists, so a new corpus
+# must be added to one of them (and to the docs) or ``aggregate`` raises: nothing is excluded
+# from a gate by accident.
+GATED_CORPORA = ("baseline", "phrases", "meter")  # the pool of the downbeat and meter gates
+PHRASE_CORPORA = ("baseline", "phrases")  # the pool of the phrase gate (4/4 only)
+REPORTED_ONLY_CORPORA = (
+    "oversplit",
+    "steady",
+)  # in no gate and not in the ``all`` set: reported apart
+
+
 def _segment_counts(records: Sequence[Dict[str, Any]], suffix: str) -> Dict[str, float]:
     """Segments per truth section (reported only): 1.0 is as many as the truth has; above it the
     track is cut finer than the arrangement (the over-split check, spotdown#46)."""
@@ -141,9 +152,17 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
 
     The plan section 7 gates and the label gates are measured on the baseline fixtures only; the
     fixtures of an enhancement corpus (``corpus`` other than ``baseline``, for example the phrase
-    fixtures) enter only their own gate, so adding them never moves a baseline floor."""
-    everything = records
-    n = len(everything)
+    fixtures) enter only their own gate, so adding them never moves a baseline floor. The pools
+    are the ``*_CORPORA`` lists above; a record of a corpus in none of them raises. The over-split
+    and steady-energy fixtures (``REPORTED_ONLY_CORPORA``) are in no gate: only their segment
+    count and boundary, beat and BPM scores are reported (``*_oversplit_reported``,
+    ``*_steady_reported``), never phrases or meter."""
+    unknown = {r["corpus"] for r in records} - {*GATED_CORPORA, *REPORTED_ONLY_CORPORA}
+    if unknown:
+        raise ValueError(f"corpus not assigned to a gate pool: {sorted(unknown)}")
+    over = [r for r in records if r["corpus"] in REPORTED_ONLY_CORPORA]
+    everything = [r for r in records if r["corpus"] in GATED_CORPORA]
+    n = len(records)
     records = [r for r in everything if r["corpus"] == "baseline"]
     four = [r["beat_f"] for r in records if r["four_on_the_floor"]]
     tp = sum(r["drops"][0] for r in records)
@@ -156,7 +175,7 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     segs = [o for r in records for o in r["label_segments"]]
     # The phrase gate is measured on the 4/4 corpora it was set on; the 3/4 fixtures are reported
     # apart (``phrase_*_waltz_reported``) so a weak result there cannot hide in a pooled number.
-    phr = _phrase_metrics([r for r in everything if r["corpus"] in ("baseline", "phrases")])
+    phr = _phrase_metrics([r for r in everything if r["corpus"] in PHRASE_CORPORA])
     pickup = [r for r in everything if r["corpus"] == "phrases"]
     waltz = [r for r in everything if r["corpus"] == "meter"]
     out = {
@@ -186,20 +205,25 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     # Reported only, never gated: the phrase gate pools every fixture, which hides how the
     # detector does on the baseline set and on the pickup set separately.
     out.update(_segment_counts(records, "baseline"))
-    out.update(_segment_counts([r for r in everything if r["corpus"] == "oversplit"], ""))
+    out.update(_segment_counts([r for r in over if r["corpus"] == "oversplit"], ""))
+    steady = [r for r in over if r["corpus"] == "steady"]
+    out.update(_segment_counts(steady, "steady"))
     out.update(_meter_metrics(everything))
     out.update(_reported(records, "baseline") if records else {})
     out.update(_reported(pickup, "pickup") if pickup else {})
     out.update(_reported(waltz, "waltz") if waltz else {})
-    over = [r for r in everything if r["corpus"] == "oversplit"]
-    steady = [r for r in everything if r["corpus"] == "steady"]
-    # the over-split fixtures are reported apart: they hold truth boundaries the structure
-    # analysis misses (spotdown#47); the steady-energy fixtures are the check of that fix, so
-    # neither moves the floor of the others
-    out.update(_reported([r for r in everything if r not in over and r not in steady], "all"))
-    out.update(_reported(over, "oversplit") if over else {})
-    out.update(_reported(steady, "steady") if steady else {})
-    out.update(_segment_counts(steady, "steady"))
+    # the over-split fixtures are in no gated pool and not in ``all``: they hold truth
+    # boundaries that the structure analysis misses (spotdown#47), so they must not move the
+    # floor of the others; their own numbers are the ``*_oversplit_reported`` ones
+    out.update(_reported(everything, "all"))
+    for name in REPORTED_ONLY_CORPORA:
+        part = [r for r in over if r["corpus"] == name]
+        if part:
+            out[f"boundary_f_3s_{name}_reported"] = _mean([r["boundary_f"] for r in part])
+            out[f"beat_f_overall_{name}_reported"] = _mean([r["beat_f"] for r in part])
+            out[f"bpm_within_2pct_fraction_{name}_reported"] = _mean(
+                [float(r["bpm_octave_ok"]) for r in part]
+            )
     return {k: round(v, 4) for k, v in out.items()}
 
 

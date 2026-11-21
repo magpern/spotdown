@@ -78,3 +78,17 @@ def test_a_short_segment_beside_a_protected_boundary_merges_only_across_a_weak_o
     assert 40.0 not in _short(times, [1.0, 0.3, 0.3, 0.3], keep)  # weak: a variation
     assert 40.0 in _short(times, [1.0, 0.3, 0.45, 0.3], keep)  # not weak: kept as real
     assert 44.0 not in _short(times, [1.0, 0.3, 0.45, 0.3], [])  # nothing tied: the weaker goes
+
+
+def test_equal_novelty_removes_the_earlier_boundary_first() -> None:
+    # three 4 s pieces (2 bars) with equal novelty: the earlier boundary goes first, which leaves
+    # [24, 28] short and removes 24 too; the last-wins order would give [0, 20, 50]
+    assert _short([0, 20, 24, 28, 50], [1.0, 0.2, 0.2, 0.2]) == [0, 28, 50]
+
+
+def test_a_merged_vector_is_the_duration_weighted_mean_of_its_parts() -> None:
+    # A (30 s) and B (10 s) merge first; the weighted mean [0.95, 0.15] is close enough to C
+    # (cosine 0.78) to merge, the plain mean [0.9, 0.3] is not (0.66)
+    a, b, c = [1.0, 0.0], [0.8, 0.6], [0.866, -0.5]
+    times, _ = _similar([0, 30, 40, 50], [1.0, 0.1, 0.3], [a, b, c])
+    assert times == [0, 50]

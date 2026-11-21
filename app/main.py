@@ -19,29 +19,32 @@ def _healthz() -> dict:
 
 
 def create_standalone_app(settings: Settings) -> FastAPI:
-    from fastapi.middleware.cors import CORSMiddleware
-
+    """The web UI and the v1 API, all behind the token session (ADR 0003). Settings, the data
+    directories and the token are handled here, at construction, never in the lifespan: an app
+    run without a lifespan authenticates the same way. No CORS."""
     from . import db
+    from .exposure_policy import parse_allowed_hosts, parse_public_origin
     from .standalone import router
+    from .standalone_auth import StandaloneAuth
+    from .token_store import TokenSource
+
+    allowed_hosts = parse_allowed_hosts(settings.ui_allowed_hosts)  # raises on a bad entry
+    public_origin = parse_public_origin(settings.ui_public_origin)  # raises if not exact
+    settings.ensure_dirs()
+    owner_file = settings.standalone_access_token_file
+    tokens = TokenSource(owner_file or settings.standalone_token_path, owner=owner_file is not None)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        settings.ensure_dirs()
         db.init_db()
         yield
 
     app = FastAPI(title="spotdown", version="0.1.0", lifespan=lifespan)
-    # Dev convenience: allow the page to call the API when it's opened cross-origin
-    # (e.g. a local file:// editor preview hitting http://localhost:8000). Tighten
-    # allow_origins for any real deployment.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
     app.get("/healthz")(_healthz)
     app.include_router(router)
+    app.add_middleware(
+        StandaloneAuth, tokens=tokens, allowed_hosts=allowed_hosts, public_origin=public_origin
+    )
     return app
 
 

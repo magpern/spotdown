@@ -100,8 +100,8 @@ Or locally without Docker (needs `ffmpeg` on PATH + a running Redis):
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-redis-server &                                   # or: docker run -p6379:6379 redis
-uvicorn app.main:app --reload &                  # API on :8000
+redis-server &                                   # or: docker run -p127.0.0.1:6379:6379 redis
+uvicorn app.main:app --host 127.0.0.1 --no-proxy-headers &   # API on 127.0.0.1:8000
 rq worker -u redis://localhost:6379/0 spotdown   # worker (separate terminal)
 ```
 
@@ -114,28 +114,69 @@ rq worker -u redis://localhost:6379/0 spotdown   # worker (separate terminal)
 > ```
 > The Docker/Linux worker in `docker-compose.yml` is unaffected and uses the default worker.
 
+## Signing in (standalone mode)
+
+Every standalone route (the UI, `/api/...`, `/files/...` and `/docs`) needs a session; only
+`/login` and `/healthz` are open ([ADR 0003](docs/adr/0003-standalone-exposure.md)). Compose
+publishes the app on `127.0.0.1` only; set `SPOTDOWN_PUBLISH_HOST` to widen that, and for any use
+beyond loopback serve TLS and set `UI_PUBLIC_ORIGIN=https://...`. Redis is not published
+(`docker compose exec redis redis-cli`).
+
+- **The token.** On first start spotdown generates one and prints the **path** of its file (never
+  the token): `./data/standalone_token`. Read it with
+  `docker compose exec api cat /app/data/standalone_token`. On a Linux host the container runs as
+  root, so the bind-mounted file is root-owned with mode `0600`: use `sudo cat
+  data/standalone_token` or the `docker compose exec` line. Open `http://localhost:8000/login`
+  and paste it; the session lasts 12 hours.
+- **Your own token.** Set `STANDALONE_ACCESS_TOKEN_FILE` to a file holding 32 to 512 printable
+  ASCII characters without spaces, `"` or `\`. Make one with `openssl rand -hex 32`.
+- **Rotation.** Delete `data/standalone_token` (or edit your own file) and restart. Every session
+  ends. spotdown never overwrites an existing token file: a broken one gives `503` until you
+  delete it and restart.
+- **Leftover files.** `data/standalone_token.tmp-*` files are left by a crash during start-up.
+  They are never read; delete them by hand while spotdown is stopped.
+- **Other login clients.** `POST /login` takes the body `{"token":"..."}`, which must stay under
+  1 KiB. A client whose JSON encoder escapes extra characters (PHP escapes `/` as `\/`, Go escapes
+  `<` as `\u003c`) must send the token unescaped or use a token without those characters. The
+  generated hex token needs no escaping.
+- **One worker.** The login rate limit (five wrong tokens a minute, then a minute closed) is kept
+  per process. Run standalone with one uvicorn worker, as the `Dockerfile` does: with
+  `--workers N` it allows N × 5 attempts a minute.
+- **New unsafe routes.** Every `POST`, `PUT`, `PATCH` or `DELETE` is refused with `415` unless its
+  method and path are listed with their one content type in `UNSAFE_CONTENT_TYPES`
+  (`app/session_policy.py`). spotdown#49's upload route must add its row there with
+  `application/octet-stream`.
+
 ## Try it (lawful path — a direct source URL)
 
 ```bash
+O='Origin: http://localhost:8000'; U='X-Spotdown-UI: 1'; J='Content-Type: application/json'
+umask 077   # the login body and the cookie file stay readable by you only
+# 0) sign in once. The token goes into a private file, never onto a command line (where other
+#    users could see it in the process list). The file is root-owned on Linux, hence `sudo`;
+#    or read it with `docker compose exec -T api cat /app/data/standalone_token`.
+{ printf '{"token":"'; sudo cat data/standalone_token | tr -d '\n'; printf '"}'; } > login.json
+curl -s -c cookies -H "$O" -H "$U" -H "$J" localhost:8000/login --data-binary @login.json
+rm login.json   # the cookie in ./cookies lasts 12 h; delete it when you are done
+
 # 1) kick off a conversion of content you have the right to download
-curl -s -X POST localhost:8000/api/v1/convert \
-  -H 'content-type: application/json' \
+curl -s -b cookies -H "$O" -H "$U" -H "$J" localhost:8000/api/v1/convert \
   -d '{"source_url":"https://example.com/my-own-audio.wav","format":"mp3","bitrate":320}'
 # -> {"status":"queued","task_id":"src_...-mp3-320", ...}
 # (source_url is an API-only path; the web UI exposes only the Spotify-link flow.)
 
 # 2) poll until done
-curl -s localhost:8000/api/v1/tasks/<task_id>
+curl -s -b cookies -H "$U" localhost:8000/api/v1/tasks/<task_id>
 # -> {"status":"done","download_url":"http://localhost:8000/files/src_....mp3"}
 
 # 3) download
-curl -O -J localhost:8000/files/<name>
+curl -O -J -b cookies localhost:8000/files/<name>
 ```
 
 Resolving metadata from a Spotify URL always works (needs API creds for album/playlist):
 
 ```bash
-curl -s 'localhost:8000/api/Gettrack?spotify_url=https://open.spotify.com/track/XXXX'
+curl -s -b cookies -H "$U" 'localhost:8000/api/Gettrack?spotify_url=https://open.spotify.com/track/XXXX'
 ```
 
 ## How it maps to what SpotMate does
@@ -198,7 +239,7 @@ play the downloaded file itself.
     PO token. This is inherent to sourcing from YouTube, not a one-time fix.
 - **Python**: yt-dlp has deprecated Python 3.9. The Docker image uses 3.11; if you run the
   local venv on 3.9 it still works for now but will stop — use 3.11+.
-- **Abuse/rate limiting**, auth, and **file cleanup/TTL** (expire `data/files`).
+- **Abuse/rate limiting** beyond the login limit, and **file cleanup/TTL** (expire `data/files`).
 - **Storage/CDN**: swap `app/storage.py` for S3 + pre-signed, expiring URLs.
 
 ## Layout

@@ -16,13 +16,13 @@ from fastapi.testclient import TestClient
 
 from app import standalone
 from app.analyze import analyze_track
-from app.config import Settings
 from app.main import create_app
 from app.quality.fixtures_io import render_to
 from app.quality.specs import SPECS
 from app.service import analysis_doc
 
 from .service_helpers import assert_valid, canned_core
+from .standalone_helpers import generated_token, signed_in, standalone_settings
 
 STATIC = Path(__file__).resolve().parent.parent / "app" / "static"
 MISSING = object()
@@ -143,10 +143,10 @@ def test_the_document_is_schema_valid_and_aligned() -> None:
 
 
 def _client(tmp_path: Path, monkeypatch, **overrides: Any) -> TestClient:
-    settings = Settings(data_dir=tmp_path / "data", redis_url="redis://127.0.0.1:1/0", **overrides)
-    settings.ensure_dirs()
+    settings = standalone_settings(tmp_path, **overrides)
     monkeypatch.setattr(standalone, "get_settings", lambda: settings)
-    return TestClient(create_app(settings))
+    app = create_app(settings)
+    return signed_in(app, generated_token(settings))
 
 
 def test_the_ui_and_its_assets_are_served(tmp_path: Path, monkeypatch) -> None:

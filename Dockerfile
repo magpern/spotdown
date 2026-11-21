@@ -15,4 +15,6 @@ COPY app ./app
 EXPOSE 8000
 
 # Overridden by docker-compose for the worker service.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 0.0.0.0 inside the container is needed for publishing; compose publishes on 127.0.0.1. Forwarded
+# headers are ignored (ADR 0003).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
