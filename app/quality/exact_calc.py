@@ -27,7 +27,9 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
 
 OFFSET_TOL_S = 0.05
-EXACT_CORPORA = frozenset({"baseline", "phrases", "meter", "synthetic", "cc", "studio", "mix"})
+EXACT_CORPORA = frozenset(
+    {"baseline", "phrases", "meter", "oversplit", "synthetic", "cc", "studio", "mix"}
+)
 OVERREACH_CONFIDENCE = 0.9
 
 

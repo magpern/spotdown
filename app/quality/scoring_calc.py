@@ -68,6 +68,8 @@ def score_track(
         "label_segments": lab.segment_outcomes(truth["labels"], spans, c0, c1),
         "phrase_hits": phrase_hits,
         "phrase_truth": len(truth["phrases"]),
+        "n_segments": len(doc["structure"]["segments"]),
+        "n_truth_sections": len(truth["labels"]),
         **db.score(truth, doc, tol["beat_tol_s"]),
     }
 
@@ -111,6 +113,16 @@ def _meter_metrics(everything: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     return out
 
 
+def _segment_counts(records: Sequence[Dict[str, Any]], suffix: str) -> Dict[str, float]:
+    """Segments per truth section (reported only): 1.0 is as many as the truth has; above it the
+    track is cut finer than the arrangement (the over-split check, spotdown#46)."""
+    sections = sum(r.get("n_truth_sections", 0) for r in records)
+    if not sections:
+        return {}
+    name = "segments_per_truth_section" + (f"_{suffix}" if suffix else "") + "_reported"
+    return {name: sum(r.get("n_segments", 0) for r in records) / sections}
+
+
 def _reported(records: Sequence[Dict[str, Any]], suffix: str) -> Dict[str, float]:
     """Reported-only metrics over ``records``: the phrase metrics, and for a set that is not the
     baseline also the structural ones, so no fixture drops out of monitoring unseen."""
@@ -144,7 +156,7 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     segs = [o for r in records for o in r["label_segments"]]
     # The phrase gate is measured on the 4/4 corpora it was set on; the 3/4 fixtures are reported
     # apart (``phrase_*_waltz_reported``) so a weak result there cannot hide in a pooled number.
-    phr = _phrase_metrics([r for r in everything if r["corpus"] != "meter"])
+    phr = _phrase_metrics([r for r in everything if r["corpus"] in ("baseline", "phrases")])
     pickup = [r for r in everything if r["corpus"] == "phrases"]
     waltz = [r for r in everything if r["corpus"] == "meter"]
     out = {
@@ -173,11 +185,17 @@ def aggregate(records: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     }
     # Reported only, never gated: the phrase gate pools every fixture, which hides how the
     # detector does on the baseline set and on the pickup set separately.
+    out.update(_segment_counts(records, "baseline"))
+    out.update(_segment_counts([r for r in everything if r["corpus"] == "oversplit"], ""))
     out.update(_meter_metrics(everything))
     out.update(_reported(records, "baseline") if records else {})
     out.update(_reported(pickup, "pickup") if pickup else {})
     out.update(_reported(waltz, "waltz") if waltz else {})
-    out.update(_reported(everything, "all"))
+    over = [r for r in everything if r["corpus"] == "oversplit"]
+    # the over-split fixtures are reported apart: they hold the truth boundaries that the
+    # structure analysis misses (spotdown#47), so they must not move the floor of the others
+    out.update(_reported([r for r in everything if r not in over], "all"))
+    out.update(_reported(over, "oversplit") if over else {})
     return {k: round(v, 4) for k, v in out.items()}
 
 

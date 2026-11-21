@@ -164,17 +164,21 @@ def _truth(spec: Dict[str, Any], t0: float, total: float) -> Dict[str, Any]:
     at = t0
     for sec in spec["sections"]:
         end = at + sec["bars"] * bar
-        labels.append({"start": round(at, 3), "end": round(end, 3), "label": sec["label"]})
+        if sec.get("continues") and labels:  # a variation inside the section before it
+            labels[-1]["end"] = round(end, 3)
+        else:
+            labels.append({"start": round(at, 3), "end": round(end, 3), "label": sec["label"]})
         if any(k in PULSE for k in sec["layers"]):
             beats += [at + i * bar / bpb for i in range(sec["bars"] * bpb)]
             downbeats += [at + i * bar for i in range(sec["bars"])]
-        if prev is not None and set(prev) != set(sec["layers"]):
+        if prev is not None and set(prev) != set(sec["layers"]) and not sec.get("continues"):
             bounds.append(at)
         if sec.get("drop"):
             drops.append(at)
         if "riser" in sec["layers"]:
             builds.append([at, end])
-        prev = sec["layers"]
+        if not sec.get("continues"):
+            prev = sec["layers"]
         at = end
     start, stop = spec["lead_in_s"], total - spec["tail_s"]
     edges = [start, stop]
