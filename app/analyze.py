@@ -7,6 +7,8 @@ duration. This module formats both into the v1 response; the service mode does n
 
 from __future__ import annotations
 
+import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -15,8 +17,17 @@ import librosa
 from .alignment_calc import ALIGN_TOLERANCE_S, offset_hypotheses
 from .core.analyser import ANALYZER_VERSION, SR, analyse_signal
 from .core.signal_calc import tempo_candidates
+from .standalone_doc import standalone_document
 
 __all__ = ["ALIGN_TOLERANCE_S", "ANALYZER_VERSION", "analyze_track"]
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def analyze_track(file_path: Path, track_id: str, spotify_duration_s: Optional[int] = None) -> dict:
@@ -47,6 +58,15 @@ def analyze_track(file_path: Path, track_id: str, spotify_duration_s: Optional[i
         for t, a, b, c in zip(energy["t"], energy["full"], energy["percussive"], energy["low"])
     ]
     bpm = core["bpm"]
+    document = standalone_document(
+        core,
+        sha256=_sha256(file_path),
+        codec=file_path.suffix.lstrip(".").lower() or "unknown",
+        sample_rate_hz=int(sr),
+        track_id=track_id,
+        spotify_duration_s=spotify_duration_s,
+        created_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
     return {
         "track_id": track_id,
         "analyzer_version": ANALYZER_VERSION,
@@ -77,4 +97,7 @@ def analyze_track(file_path: Path, track_id: str, spotify_duration_s: Optional[i
         "build_ups": core["build_ups"],
         "energy_curve": energy_curve,
         "segments": segments,
+        # The same analysis as an analysis-v1 document (the web UI's detailed view); absent in
+        # analyses cached before it existed, and null when the builder found no tempo.
+        "document": document,
     }

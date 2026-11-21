@@ -98,7 +98,7 @@ def test_the_standalone_v1_analysis_keeps_its_shape(tmp_path: Path) -> None:
         "content_end_s", "content_duration_s", "leading_silence_s", "trailing_silence_s",
         "spotify_offset_s", "timeline_residual_s", "timeline_matches_spotify", "drops_spotify",
         "segments_aligned_to_spotify", "bpm", "bpm_candidates", "downbeat_phase", "beat_count",
-        "beat_grid", "bars", "drops", "build_ups", "energy_curve", "segments",
+        "beat_grid", "bars", "drops", "build_ups", "energy_curve", "segments", "document",
     }  # fmt: skip
     assert result["analyzer_version"] == 6
     assert result["timeline_matches_spotify"] is True
