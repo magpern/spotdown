@@ -1,8 +1,14 @@
 # ADR 0002: local-file input is in the standalone UI, through the hostile-input checks
 
-**Status:** Proposed (2026-11-21). It becomes Accepted when its Opus review passes. The Architect
-then sets it to Accepted, citing the PASS comment, in the same follow-up PR as ADR 0001 (right after
-this one merges, before #45 starts).
+**Status:** Accepted (2026-11-21), after the Opus review of PR #51 passed at `dbb0b8b`
+([`Agent review (opus): PASS`](https://github.com/magpern/spotdown/pull/51#issuecomment-7064226062)). The same follow-up PR amended it for that review's
+non-blocking findings:
+- N5: upload results are not readable through `GET /api/v1/analyze`;
+- N6: a deadline on reading the body;
+- N7: what the `Origin` check compares, a TLS proxy, and the checks stop browsers only;
+- N8: the route is POSIX-only.
+
+ADR 0003 hardens the rest of the standalone app (spotdown#52).
 
 **Issue:** spotdown#44. It is built in spotdown#49 (Opus Developer), and its waveform part in
 spotdown#48.
@@ -59,9 +65,17 @@ Constraints:
      Every other type is `415`, including the CORS-simple `text/plain`,
      `application/x-www-form-urlencoded` and `multipart/form-data`. A cross-site form post or a
      simple `fetch` therefore cannot reach the decoder.
-   - **A same-origin `Origin`.** `Origin` must be present and equal to the request's own origin
-     (scheme, `Host` and port). A missing `Origin` is rejected: browsers send it on every `POST`, and
-     this route is for the UI only.
+   - **A same-origin `Origin`.** `Origin` must be present and must equal the expected origin
+     exactly: scheme, host and port, compared as strings after lowercasing the scheme and host.
+     - **Expected origin:** the scheme uvicorn sees, plus the request's `Host` header (which must
+       pass the next check).
+     - **Behind a TLS-terminating proxy:** the scheme uvicorn sees is `http` while the browser's
+       `Origin` is `https`. The operator then either runs uvicorn with `--proxy-headers` and
+       `--forwarded-allow-ips` set to the proxy's address only, or sets `ui_public_origin` (one exact
+       origin, for example `https://spotdown.example`). When `ui_public_origin` is set, it is the
+       only origin accepted.
+     - A missing `Origin` is rejected: browsers send it on every `POST`, and this route is for the
+       UI only.
    - **An expected `Host`** (against DNS rebinding). `Host` must be in a new setting
      `ui_allowed_hosts`, which defaults to `localhost`, `127.0.0.1` and `[::1]` (any port). An
      operator who opens the UI under another name adds it there.
@@ -74,6 +88,15 @@ Constraints:
      read.
    - A declared `Content-Length` over `max_upload_bytes` is `413` before the body is read. A body
      that grows past the cap while streaming is cut off with `413`.
+   - **Read deadline.** Reading the body has a total deadline, a new setting
+     `standalone_upload_read_s` (default 120 s, enough for 60 MiB at 0.5 MB/s). When it passes, the
+     answer is `408`, the partial file is deleted and the slot is released, so a client that trickles
+     bytes cannot hold the slot. The sandbox's own deadlines bound the analysis that follows.
+   - **POSIX only.** The slot needs `fcntl`, and the sandbox it feeds already needs `resource`.
+     Both exist only on Linux and macOS. The slot module imports `fcntl` inside a guard; without it,
+     the route is not registered and the UI hides the file input. There is no unsafe fallback lock.
+     The test suite still imports on Windows: tests that need the route skip there
+     (`pytest.importorskip("fcntl")`). The container is Linux.
    - Disk in use by the route is therefore bounded: at most one partial or whole upload of at most
      `max_upload_bytes` (60 MiB), plus the sandbox's work directory for that one run, where each
      file the child writes is capped by its `RLIMIT_FSIZE`.
@@ -98,6 +121,10 @@ Constraints:
      - **No cache scope and no idempotency key:** a repeat of the same bytes is a cache hit instead.
        The result is cached in the standalone `analyses` table under `upl_<sha256>`, keyed by the
        version pair of ADR 0001. A file name never takes part.
+     - **Upload results are read only through the protected route.** `GET /api/v1/analyze/{track_id}`
+       refuses any `upl_` id with `404`, without reading the cache, so no other site can probe
+       whether this install analysed given bytes. A repeat upload of the same bytes is the only way
+       back to a cached upload result, and it passes every check of Decision 2.
 5. **Nothing is kept beyond the analysis.** No file name is kept, logged or returned, and tags are
    never read into the output. No audio is returned. Only the analysis result, under the sha256 key,
    outlives the request.
@@ -136,6 +163,15 @@ Constraints:
   uploads.
 - The route cannot be driven from another site: no cross-site form or `fetch` reaches the decoder,
   and a rebound host name is refused.
+- The `Origin`, `Host` and content-type checks stop **browsers** only. A non-browser caller that can
+  reach the port can forge all three. Such a caller is limited only by these:
+  - the single slot;
+  - the read deadline;
+  - the byte and decoded-length caps;
+  - the sandbox;
+  - ADR 0003's network defaults: loopback publishing, and a token whenever the app is reachable
+    beyond loopback.
+- Local-file input is unavailable on Windows (outside a container), as the sandbox already is.
 - Only one local file is processed at a time per installation. A second tab gets `429` until the
   first finishes.
 - Opening the UI under a host name other than `localhost`, `127.0.0.1` or `[::1]` needs that name in
@@ -143,5 +179,5 @@ Constraints:
 - The service-mode contract and the service's surface are unchanged. classbeat is unaffected.
 - The upload checks gain a second caller, through one shared module. The tests of spotdown#49 assert
   that each check guards both routes.
-- The rest of the standalone app keeps its wildcard CORS and its lack of authentication, as before
-  this ADR. Narrowing it is a separate follow-up.
+- The rest of the standalone app keeps its wildcard CORS and its lack of authentication until
+  spotdown#52 (ADR 0003) hardens it. #52 is built before #49.
