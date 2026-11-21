@@ -28,40 +28,40 @@ function timelineSvg(m, t0, t1, W) {
       `<text x="${f1(x(t)) + 2}" y="10">${fmtDur(Math.round(t))}</text>`;
   }
   // silence and fades
-  for (const r of m.silences) if (vis(r.start_s, r.end_s))
-    s += `<rect x="${f1(x(r.start_s))}" y="14" width="${f1(x(r.end_s) - x(r.start_s))}" height="${TL_H - 14}" fill="#6b7280" opacity=".22"><title>silence ${r.start_s}–${r.end_s}s</title></rect>`;
-  for (const [f, nm] of [[m.fadeIn, "fade in"], [m.fadeOut, "fade out"]]) if (f && vis(f.start_s, f.end_s))
-    s += `<rect x="${f1(x(f.start_s))}" y="${ROWS.en[0]}" width="${f1(x(f.end_s) - x(f.start_s))}" height="${ROWS.en[1]}" fill="#f59e0b" opacity=".18"><title>${nm} ${f.start_s}–${f.end_s}s (conf ${f.confidence})</title></rect>`;
+  for (const r of m.silences) if (vis(r.start, r.end))
+    s += `<rect x="${f1(x(r.start))}" y="14" width="${f1(x(r.end) - x(r.start))}" height="${TL_H - 14}" fill="#6b7280" opacity=".22"><title>silence ${r.start}–${r.end}s</title></rect>`;
+  for (const [f, nm] of [[m.fadeIn, "fade in"], [m.fadeOut, "fade out"]]) if (f && vis(f.start, f.end))
+    s += `<rect x="${f1(x(f.start))}" y="${ROWS.en[0]}" width="${f1(x(f.end) - x(f.start))}" height="${ROWS.en[1]}" fill="#f59e0b" opacity=".18"><title>${nm} ${f.start}–${f.end}s (conf ${pct(f.conf)})</title></rect>`;
   // sections (hatched = heuristic label)
   for (const g of m.sections) {
     if (!vis(g.start, g.end)) continue;
     const [y, h] = ROWS.sec, gx = x(g.start), gw = Math.max(x(g.end) - gx, 1);
-    const tip = `${g.label}${g.conf !== null ? " conf " + g.conf + " (" + g.method + ")" : ""} · boundary conf ${g.boundaryConf} · ${g.start}–${g.end}s`;
+    const tip = `${g.label}${g.conf !== null ? " conf " + pct(g.conf) + " (" + g.method + ")" : ""} · boundary conf ${pct(g.boundaryConf)} · ${g.start}–${g.end}s`;
     s += `<rect x="${f1(gx)}" y="${y}" width="${f1(gw)}" height="${h}" fill="${labelColor(g.label)}" opacity=".85" stroke="#0e1013"><title>${escapeHtml(tip)}</title></rect>`;
     if (g.method === "heuristic") s += `<rect x="${f1(gx)}" y="${y}" width="${f1(gw)}" height="${h}" fill="url(#hatch)" pointer-events="none"/>`;
-    if (gw > 70) s += `<text class="on" x="${f1(gx) + 4}" y="${y + 19}">${g.label}${g.conf !== null ? " " + g.conf.toFixed(2) : ""}</text>`;
+    if (gw > 70) s += `<text class="on" x="${f1(gx) + 4}" y="${y + 19}">${escapeHtml(g.label)}${g.conf !== null ? " " + pct(g.conf) : ""}</text>`;
   }
   // phrases
   for (const p of m.phrases) {
-    if (!vis(p.start_s, p.end_s)) continue;
-    const [y] = ROWS.phr, a = x(p.start_s) + 1, b = x(p.end_s) - 1, c = p.bars === 16 ? "#f472b6" : "#22d3ee";
-    s += `<path d="M${f1(a)},${y + 14} V${y + 6} H${f1(b)} V${y + 14}" fill="none" stroke="${c}" stroke-width="1.5" stroke-dasharray="${p.method === "heuristic" ? "4,2" : "none"}"><title>${p.bars}-bar phrase conf ${p.confidence} (${p.method})</title></path>`;
+    if (!vis(p.start, p.end)) continue;
+    const [y] = ROWS.phr, a = x(p.start) + 1, b = x(p.end) - 1, c = p.bars === 16 ? "#f472b6" : "#22d3ee";
+    s += `<path d="M${f1(a)},${y + 14} V${y + 6} H${f1(b)} V${y + 14}" fill="none" stroke="${c}" stroke-width="1.5" stroke-dasharray="${p.method === "heuristic" ? "4,2" : "none"}"><title>${p.bars}-bar phrase conf ${pct(p.conf)} (${escapeHtml(p.method)})</title></path>`;
     if (b - a > 26) s += `<text x="${f1((a + b) / 2 - 8)}" y="${y + 4}">${p.bars} bar</text>`;
   }
   // events
   for (const e of m.events) {
-    if (!vis(e.start_s, e.end_s || e.start_s)) continue;
-    const [y, h] = ROWS.evt, ex = x(e.start_s), sz = 5 + 7 * e.strength;
-    const tip = `${e.kind} strength ${e.strength} conf ${e.confidence} @ ${e.start_s}s`;
+    if (!vis(e.start, e.end ?? e.start)) continue;
+    const [y, h] = ROWS.evt, ex = x(e.start), sz = 5 + 7 * e.strength;
+    const tip = escapeHtml(`${e.kind} strength ${pct(e.strength)} conf ${pct(e.conf)} @ ${e.start}s`);
     if (e.kind === "build_up") {
-      s += `<rect x="${f1(ex)}" y="${y + h - 4 - 16 * e.strength}" width="${f1(x(e.end_s) - ex)}" height="${4 + 16 * e.strength}" fill="#f59e0b" opacity=".7"><title>${tip}</title></rect>`;
+      s += `<rect x="${f1(ex)}" y="${y + h - 4 - 16 * e.strength}" width="${f1(x(e.end) - ex)}" height="${4 + 16 * e.strength}" fill="#f59e0b" opacity=".7"><title>${tip}</title></rect>`;
     } else if (e.kind === "drop") {
       s += `<path d="M${f1(ex - sz)},${y + 2} h${2 * sz} l${-sz},${sz + 6} z" fill="#1db954"><title>${tip}</title></path>` +
         `<line x1="${f1(ex)}" y1="${ROWS.en[0]}" x2="${f1(ex)}" y2="${bottom("en")}" stroke="#1db954" stroke-dasharray="3,2"/>`;
     } else {
       s += `<path d="M${f1(ex)},${y + 2} l${sz},${sz} l${-sz},${sz} l${-sz},${-sz} z" fill="#a78bfa"><title>${tip}</title></path>`;
     }
-    s += `<text x="${f1(ex) + 2}" y="${y + h}">${e.strength.toFixed(2)}</text>`;
+    s += `<text x="${f1(ex) + 2}" y="${y + h}">${pct(e.strength)}</text>`;
   }
   // energy
   const [ey, eh] = ROWS.en, en = m.energy;
@@ -100,7 +100,7 @@ function timelineSvg(m, t0, t1, W) {
 function timelineLegend(m) {
   const labels = [...new Set(m.sections.map((g) => g.label))];
   const sw = (c, t) => `<span><i style="background:${c}"></i>${t}</span>`;
-  return `<div class="legend">` + labels.map((l) => sw(labelColor(l), l)).join("") +
+  return `<div class="legend">` + labels.map((l) => sw(labelColor(l), escapeHtml(l))).join("") +
     `<span class="tag">hatched = heuristic label</span>` +
     sw("#f59e0b", "percussive / build-up") + sw("#60a5fa", "full energy") + sw("#f472b6", "low band") +
     sw("#1db954", "drop · bar line") + sw("#a78bfa", "breakdown") + sw("#9aa3af", "beat") +

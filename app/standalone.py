@@ -38,6 +38,8 @@ UI_ASSETS = {
 }
 
 
+# Any other single-segment route of this router must be registered BEFORE this one (it matches
+# every single-segment path); tests/test_ui_fields.py checks the order.
 @router.get("/{name}", include_in_schema=False)
 def ui_asset(name: str):
     """The page's own stylesheet and scripts (a fixed list, so no path is ever built from input)."""

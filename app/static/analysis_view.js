@@ -2,9 +2,10 @@
 // The "Audio analysis" card: stats, timeline with a window control, and the detail tables.
 let tlModel = null, tlWindow = { start: 0, len: 0 };  // len 0 = whole track
 
-const pct = (v) => (v === null || v === undefined ? "—" : v.toFixed(2));
+const pct = (v) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(2) : "—");
 const tm = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 const tag = (method) => (method === "heuristic" ? `<span class="tag">heuristic</span>` : "");
+const esc = (v) => escapeHtml(v === null || v === undefined ? "" : String(v));
 
 function drawTimeline() {
   const el = $("tlHost");
@@ -37,7 +38,7 @@ function wireTimeline() {
 }
 
 function statsHtml(m) {
-  const meter = m.meter ? `${m.meter.beats_per_bar}/4` : "—";
+  const meter = m.meter ? `${m.meter.bpb}/4` : "—";
   const cells = [
     [m.tempo.bpm, "BPM"], [meter, "Meter"], [fmtDur(Math.round(m.duration)), "Length"],
     [m.drops.length, "Drops"], [m.sections.length, "Sections"], [m.phrases.length, "Phrases"],
@@ -47,9 +48,9 @@ function statsHtml(m) {
 }
 
 function tempoHtml(m) {
-  const cand = m.tempo.candidates.map((c) => `${c.bpm} (${pct(c.confidence)})`).join(", ");
+  const cand = m.tempo.candidates.map((c) => `${c.bpm} (${pct(c.conf)})`).join(", ");
   const meter = m.meter
-    ? `${m.meter.beats_per_bar}/4 conf ${pct(m.meter.confidence)} ${tag(m.meter.method)}`
+    ? `${m.meter.bpb}/4 conf ${pct(m.meter.conf)} ${tag(m.meter.method)}`
     : "not claimed (gate not passed)";
   const bars = m.downbeats ? `${m.downbeats.length} bars, downbeat conf ${pct(m.downbeatConf)}` : "no downbeats";
   return `<div class="hint">Tempo ${m.tempo.bpm} BPM, confidence ${pct(m.tempo.conf)}, stability ${pct(m.tempo.stability)}.
@@ -57,8 +58,8 @@ function tempoHtml(m) {
 }
 
 function signalHtml(m) {
-  const reg = m.silences.map((r) => `${tm(r.start_s)}–${tm(r.end_s)}`).join(", ") || "none";
-  const fade = (f, n) => (f ? `${n} ${tm(f.start_s)}–${tm(f.end_s)} (conf ${pct(f.confidence)})` : `no ${n}`);
+  const reg = m.silences.map((r) => `${tm(r.start)}–${tm(r.end)}`).join(", ") || "none";
+  const fade = (f, n) => (f ? `${n} ${tm(f.start)}–${tm(f.end)} (conf ${pct(f.conf)})` : `no ${n}`);
   return `<div class="hint">Content ${tm(m.contentStart)}–${tm(m.contentEnd)} of ${tm(m.duration)} ·
     silence: ${reg} · ${fade(m.fadeIn, "fade in")}, ${fade(m.fadeOut, "fade out")}.</div>`;
 }
@@ -67,7 +68,7 @@ function alignmentHtml(m) {
   const a = m.alignment;
   if (!a) return `<div class="hint">Alignment: none (no Spotify duration known).</div>`;
   if (a.result !== "ok") {
-    const h = a.hypotheses.map((x) => `${escapeHtml(x.name)} residual ${x.residual_s}s`).join("; ");
+    const h = a.hypotheses.map((x) => `${esc(x.name)} residual ${pct(x.residual)}s`).join("; ");
     return `<div class="hint"><span class="badge warn">alignment failed</span> ${h}. Times are file-clock only.</div>`;
   }
   return `<div class="hint"><span class="badge ok">aligned</span> Spotify time = file time ${a.offset >= 0 ? "+" : "−"} ${Math.abs(a.offset)}s ·
@@ -75,33 +76,35 @@ function alignmentHtml(m) {
 }
 
 function sectionsHtml(m) {
-  const ref = m.alignment && m.alignment.offset !== undefined;
-  const rows = m.sections.map((g) => `<tr><td><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${labelColor(g.label)}"></span> ${escapeHtml(g.label)}${tag(g.method)}</td>
+  const ref = m.alignment && m.alignment.offset != null;
+  const rows = m.sections.map((g) => `<tr><td><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${labelColor(g.label)}"></span> ${esc(g.label)}${tag(g.method)}</td>
     <td>${tm(g.start)}–${tm(g.end)}</td>${ref ? `<td>${g.refStart === null ? "" : tm(g.refStart) + "–" + tm(g.refEnd)}</td>` : ""}
-    <td>${pct(g.conf)}</td><td>${g.method || "—"}</td><td>${pct(g.boundaryConf)}</td></tr>`).join("");
+    <td>${pct(g.conf)}</td><td>${esc(g.method) || "—"}</td><td>${pct(g.boundaryConf)}</td></tr>`).join("");
   return `<table class="t"><tr><th>Section</th><th>File clock</th>${ref ? "<th>Spotify clock</th>" : ""}<th>Label conf</th><th>Method</th><th>Boundary conf</th></tr>${rows}</table>`;
 }
 
 function eventsHtml(m) {
-  const rows = m.events.map((e) => `<tr><td>${e.kind.replace("_", "-")}</td><td>${tm(e.start_s)}${e.end_s !== undefined ? "–" + tm(e.end_s) : ""}</td>
-    <td>${pct(e.strength)}</td><td>${pct(e.confidence)}</td></tr>`).join("") || `<tr><td colspan="4">none</td></tr>`;
-  const ph = m.phrases.map((p) => `<tr><td>${p.bars}-bar phrase${tag(p.method)}</td><td>${tm(p.start_s)}–${tm(p.end_s)}</td><td></td><td>${pct(p.confidence)}</td></tr>`).join("");
+  const rows = m.events.map((e) => `<tr><td>${esc(e.kind.replace("_", "-"))}</td><td>${tm(e.start)}${e.end != null ? "–" + tm(e.end) : ""}</td>
+    <td>${pct(e.strength)}</td><td>${pct(e.conf)}</td></tr>`).join("") || `<tr><td colspan="4">none</td></tr>`;
+  const ph = m.phrases.map((p) => `<tr><td>${esc(p.bars)}-bar phrase${tag(p.method)}</td><td>${tm(p.start)}–${tm(p.end)}</td><td></td><td>${pct(p.conf)}</td></tr>`).join("");
   return `<table class="t"><tr><th>Event</th><th>Time</th><th>Strength</th><th>Conf</th></tr>${rows}${ph}</table>`;
 }
 
 // "explicit" glyph: Material Symbols (Google), Apache License 2.0, https://www.apache.org/licenses/LICENSE-2.0
 const EXPLICIT_ICON = `<svg viewBox="0 -960 960 960" width="18" height="18" fill="currentColor" aria-hidden="true" style="vertical-align:-4px"><path d="M360-280h240v-80H440v-80h160v-80H440v-80h160v-80H360v400ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Z"/></svg>`;
 
-function evidenceText(ev) {
-  const items = Array.isArray(ev) ? ev : ev ? [ev] : [];
-  return items.map((i) => (typeof i === "string" ? i : [i.source, i.detail || i.text || i.term].filter(Boolean).join(": ") || JSON.stringify(i))).join("\n");
-}
+const EVIDENCE_SOURCES = {
+  caller: "caller's explicit flag", caller_match: "explicit flag of the matched track",
+  youtube_age_limit: "YouTube age limit",
+};
+const evidenceText = (ev) =>
+  ev.map((i) => `${EVIDENCE_SOURCES[i.source] || i.source}: ${JSON.stringify(i.value)}`).join("\n");
 
 // Report only: never hides or dims anything.
 function explicitHtml(m) {
   const x = m.explicit;
   if (!x) return "";
-  const tip = escapeHtml(`method ${x.method}, confidence ${pct(x.confidence)}` + (evidenceText(x.evidence) ? "\n" + evidenceText(x.evidence) : ""));
+  const tip = escapeHtml(`method ${x.method}, confidence ${pct(x.conf)}` + (x.evidence.length ? "\nevidence:\n" + evidenceText(x.evidence) : ""));
   if (x.value === "yes") return `<div class="hint" title="${tip}"><span class="badge warn" style="font-size:13px">${EXPLICIT_ICON} Explicit</span> flagged (hover for evidence and source)</div>`;
   if (x.value === "no") return `<div class="hint dim" title="${tip}">explicit: not flagged</div>`;
   return `<div class="hint" title="${tip}">explicit: unknown</div>`;
@@ -120,7 +123,7 @@ function renderAnalysis(d) {
     <div class="viz-label">Timeline</div>${timelineControls(m)}<div id="tlHost"></div>${timelineLegend(m)}${APPROX_NOTE}
     <div class="grid2"><div><div class="viz-label">Sections</div>${sectionsHtml(m)}</div>
     <div><div class="viz-label">Events &amp; phrases</div>${eventsHtml(m)}</div></div>
-    <div class="foot">${escapeHtml(m.prov.analyzer)} analyzer ${escapeHtml(m.prov.version)} · document ${escapeHtml(m.prov.schema)} · ${escapeHtml(m.prov.created)}</div>`;
+    <div class="foot">${escapeHtml(m.prov.analyzer)} analyzer ${escapeHtml(m.prov.version)} · document ${escapeHtml(m.prov.schema)} · source ${escapeHtml(m.prov.source)} (standalone: a YouTube match) · ${escapeHtml(m.prov.created)}</div>`;
   wireTimeline();
 }
 window.addEventListener("resize", drawTimeline);

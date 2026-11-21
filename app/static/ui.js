@@ -10,7 +10,9 @@ let currentTrackId = null;
 function showStatus(html, isErr) {
   statusCard.style.display = "block";
   statusEl.className = "status" + (isErr ? " err" : "");
-  statusEl.innerHTML = html;
+  // Errors are plain text (they carry server detail and exception messages); only our own
+  // literal markup (spinner, download link) comes in as html.
+  statusEl.innerHTML = isErr ? escapeHtml(html) : html;
 }
 function fmtDur(s) {
   if (s === null || s === undefined) return null;
@@ -20,7 +22,7 @@ function fmtDur(s) {
 function renderTrack(t) {
   currentTrackId = t.id || null;
   trackCard.style.display = "block";
-  const cover = t.cover_url ? `<img src="${t.cover_url}" alt="">` : `<img alt="">`;
+  const cover = safeUrl(t.cover_url) ? `<img src="${escapeHtml(t.cover_url)}" alt="">` : `<img alt="">`;
   const artist = (t.artists && t.artists.length) ? t.artists.join(", ") : "";
   const rows = [
     ["Title", t.title],
@@ -34,8 +36,8 @@ function renderTrack(t) {
     `<div class="mrow"><span class="mk">${k}</span>` +
     `<span class="mv">${v ? escapeHtml(String(v)) : '<span class="dim">—</span>'}</span></div>`
   ).join("");
-  const link = t.spotify_url
-    ? `<a class="dl" href="${t.spotify_url}" target="_blank" rel="noopener">Open on Spotify ↗</a>` : "";
+  const link = safeUrl(t.spotify_url)
+    ? `<a class="dl" href="${escapeHtml(t.spotify_url)}" target="_blank" rel="noopener">Open on Spotify ↗</a>` : "";
   const sparse = !artist || !t.album || t.duration_s == null;
   const hint = sparse
     ? `<div class="hint">Only title + cover come from Spotify's public oEmbed endpoint. ` +
@@ -46,7 +48,9 @@ function renderTrack(t) {
     <div class="a">${escapeHtml(artist || t.album || "")}</div></div></div>
     <div class="meta">${meta}</div>${link}${hint}`;
 }
-function escapeHtml(s){return (s||"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function escapeHtml(s){return (s === null || s === undefined ? "" : String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// Only http(s) links from the server go into href/src (never javascript: or data:).
+function safeUrl(u){return typeof u === "string" && /^https?:\/\//i.test(u);}
 
 async function lookup() {
   const url = $("url").value.trim();
@@ -96,7 +100,9 @@ async function poll(taskId) {
 }
 
 function done(downloadUrl) {
-  showStatus(`Done. <a class="dl" href="${downloadUrl}" download>⬇ Download file</a>`);
+  if (!safeUrl(downloadUrl) && !(typeof downloadUrl === "string" && /^\/(?!\/)/.test(downloadUrl)))
+    return showStatus("The server returned an unusable download link.", true);
+  showStatus(`Done. <a class="dl" href="${escapeHtml(downloadUrl)}" download>⬇ Download file</a>`);
 }
 
 async function analyze() {

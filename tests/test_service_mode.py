@@ -25,6 +25,8 @@ STANDALONE_PATHS = [
     ("GET", "/docs"),
     ("GET", "/redoc"),
     ("GET", "/openapi.json"),
+    # the UI page's own stylesheet and scripts
+    *[("GET", f"/{name}") for name in standalone.UI_ASSETS],
 ]
 
 

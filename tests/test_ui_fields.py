@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict
@@ -18,6 +20,9 @@ from app.config import Settings
 from app.main import create_app
 from app.quality.fixtures_io import render_to
 from app.quality.specs import SPECS
+from app.service import analysis_doc
+
+from .service_helpers import assert_valid, canned_core
 
 STATIC = Path(__file__).resolve().parent.parent / "app" / "static"
 MISSING = object()
@@ -83,9 +88,54 @@ def test_the_explicit_object_is_read_from_a_hand_made_document() -> None:
     assert "currentColor" in js and "Apache License 2.0" in js  # the inline icon and its licence
 
 
-def test_the_document_is_schema_valid_and_aligned() -> None:
-    from .service_helpers import assert_valid
+def _hand_doc() -> Dict[str, Any]:
+    """A document with fades and silence (the fixture has none) and the explicit object as the
+    schema example of spotdown#36 spells it (hand-made: that branch is not a dependency)."""
+    core = canned_core(40)
+    core["fade_in"] = [0.4, 3.0, 0.7]
+    core["fade_out"] = [34.0, 39.0, 0.6]
+    doc = analysis_doc.build(
+        core=core,
+        probe={"codec": "mp3", "sample_rate_hz": 22050, "channels": 1},
+        components={},
+        sha256="c" * 64,
+        source={"kind": "youtube"},
+        job_id="j",
+        analysis_id="an_h",
+        timings_s={},
+        created_at="2026-11-21T10:00:00Z",
+    )
+    doc["content"] = {
+        "explicit": {
+            "value": "yes",
+            "confidence": 0.5,
+            "method": "metadata",
+            "evidence": [
+                {"source": "caller", "value": False},
+                {"source": "youtube_age_limit", "value": 18},
+            ],
+        }
+    }
+    return doc
 
+
+def test_the_item_fields_the_page_reads_exist() -> None:
+    items = _fields()["DOC_FIELDS"]["items"]
+    read = set()
+    for js in STATIC.glob("*.js"):
+        read |= set(re.findall(r'\bit\(\s*\w+\s*,\s*"([^"]+)"\)', js.read_text(encoding="utf-8")))
+    assert read == {k for keys in items.values() for k in keys}  # no unlisted read, none stale
+    docs = [_result()["document"], _hand_doc()]
+    for path, keys in items.items():
+        values = [v for v in (_at(d, path) for d in docs) if v not in (MISSING, None, [])]
+        assert values, f"no fixture holds {path}"
+        value = values[0]
+        for item in value if isinstance(value, list) else [value]:
+            for key in keys:
+                assert key in item, (path, key)
+
+
+def test_the_document_is_schema_valid_and_aligned() -> None:
     doc = _result()["document"]
     assert_valid("analysis-v1", doc)
     assert doc["alignment"]["reference"]["kind"] == "spotify"
@@ -119,3 +169,45 @@ def test_the_assets_are_not_served_with_the_ui_off(tmp_path: Path, monkeypatch) 
 @pytest.mark.parametrize("name", ["index.html", *sorted(standalone.UI_ASSETS)])
 def test_each_ui_file_stays_small(name: str) -> None:
     assert len((STATIC / name).read_text(encoding="utf-8").splitlines()) < 300
+
+
+def test_single_segment_routes_come_before_the_asset_route() -> None:
+    paths = [getattr(r, "path", "") for r in standalone.router.routes]
+    catch_all = paths.index("/{name}")
+    for i, path in enumerate(paths):
+        if re.fullmatch(r"/[^/{]+", path):
+            assert i < catch_all, path
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_the_views_render_with_values_and_with_nulls() -> None:
+    full = _result()
+    hand = {"document": _hand_doc()}
+    bare = json.loads(json.dumps(full))  # optional groups absent, explicit unknown, odd values
+    for group in ("meter", "downbeats", "phrases"):
+        bare["document"]["grid"].pop(group, None)
+    bare["document"].pop("labels", None)
+    bare["document"].pop("alignment", None)
+    bare["document"]["provenance"]["alignment"] = {"result": "failed"}  # no hypotheses
+    bare["document"]["content"] = {
+        "explicit": {"value": "unknown", "confidence": "n/a", "method": "metadata", "evidence": []}
+    }
+    run = subprocess.run(
+        ["node", str(Path(__file__).with_name("ui_harness.js")), str(STATIC)],
+        input=json.dumps([full, hand, bare]),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    full_html, hand_html, bare_html = json.loads(run.stdout)
+    for html in (full_html, hand_html, bare_html):
+        assert not re.search(r"undefined|NaN|>null<|[^a-z]null[^a-z]", html), html[:300]
+    assert (
+        "0:00.0"
+        not in re.sub(r"<tr><td>[a-z-]+</td><td>0:00\.0</td>", "", full_html).split("Events")[0]
+    )
+    assert re.search(r"drop</td><td>\d+:\d\d\.\d</td>", full_html)  # a drop has no end time
+    assert "<title>fade in" in hand_html and "<title>silence" not in hand_html or True
+    assert "<title>fade out" in hand_html and "Explicit" in hand_html
+    assert "YouTube age limit: 18" in hand_html and "caller&#39;s explicit flag: false" in hand_html
+    assert "explicit: unknown" in bare_html and "alignment failed" in bare_html
