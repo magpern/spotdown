@@ -7,7 +7,6 @@ from typing import Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .origin_policy import DEFAULT_ALLOWED_HOSTS
 from .service.cache_policy import GLOBAL_REFERENCE_TTL_S
 from .service.retention_policy import ANALYSIS_UNUSED_TTL_S
 
@@ -21,14 +20,19 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     # False -> API only (do not serve the web UI at GET /).
     serve_ui: bool = True
-    # Standalone UI (ADR 0002, ADR 0003 item 6): the Host names it is opened under (comma
-    # separated; host names or IP literals, IPv6 bracketed, any port) and, behind a TLS proxy,
-    # its one public origin (``https://host[:port]``). Empty: ``http://`` plus the Host.
-    ui_allowed_hosts: str = DEFAULT_ALLOWED_HOSTS
-    ui_public_origin: str = ""
     # Local-file analysis in the standalone UI (ADR 0002): the deadline on reading the body
     # (60 MiB in 150 s is about 0.4 MiB/s).
     standalone_upload_read_s: float = Field(default=150.0, gt=0)
+
+    # Standalone exposure (ADR 0003). Every standalone route needs a session made from the access
+    # token: the owner's file below, else one generated once at data_dir/standalone_token.
+    standalone_access_token_file: Optional[Path] = None
+    # Host names the standalone app answers to (comma separated DNS names, IPv4 literals or
+    # bracketed IPv6 literals, any port). Checked at construction.
+    ui_allowed_hosts: str = "localhost,127.0.0.1,[::1]"
+    # The exact http(s)://host[:port] browsers use, behind a TLS proxy for example. Empty:
+    # http:// plus the request's Host. https makes the cookie __Host- and Secure.
+    ui_public_origin: str = ""
 
     # Conversion defaults
     default_bitrate: int = 320
@@ -75,6 +79,10 @@ class Settings(BaseSettings):
     # A global (public-source) analysis, its source links and match record are purged after this
     # long without a read, or when the analyzer version changes (ADR 0040 §7). At least a day.
     global_analysis_ttl_s: float = Field(default=ANALYSIS_UNUSED_TTL_S, ge=86400)
+
+    @property
+    def standalone_token_path(self) -> Path:
+        return self.data_dir / "standalone_token"
 
     @property
     def files_dir(self) -> Path:

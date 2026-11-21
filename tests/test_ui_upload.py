@@ -37,7 +37,9 @@ def test_the_picked_file_is_sent_as_octet_stream_with_the_ui_header() -> None:
     post = got["post"]
     assert post["url"] == "/api/v1/analyze-upload" and post["method"] == "POST"
     assert post["headers"] == {"Content-Type": "application/octet-stream", "X-Spotdown-UI": "1"}
-    assert post["credentials"] == "same-origin" and post["bodyIsFile"] is True
+    assert post["credentials"] == "same-origin" and post["mode"] == "same-origin"
+    assert post["bodyIsFile"] is True
+    assert got["probe"]["opts"]["mode"] == "same-origin"
     assert "secret-name" not in json.dumps(post)  # no file name in the request
     assert got["rendered"] == 1 and got["login"] is None
 
@@ -59,6 +61,12 @@ def test_a_401_goes_to_login() -> None:
 def test_the_input_stays_hidden_without_the_route(probe: int) -> None:
     got = _run(200, probe)
     assert got["shown"] is False and "card" not in got  # display never set
+    assert got["login"] == ("/login" if probe == 401 else None)  # api(): 401 means signed out
+
+
+def test_upload_js_makes_no_request_of_its_own() -> None:
+    js = (STATIC / "upload.js").read_text(encoding="utf-8")
+    assert "fetch(" not in js and "http" not in js  # only ui.js's same-origin api() helper
 
 
 def test_the_input_is_hidden_until_the_route_answers() -> None:

@@ -1,7 +1,10 @@
 """POST /api/v1/analyze-upload: the session, the cross-site checks, no CORS, where it is registered
 and that upload results are not readable through GET /api/v1/analyze (ADR 0002, spotdown#49).
 
-Every check runs before the slot and before any body byte; a refused request writes nothing.
+The session, ``Host``, ``Origin``, content-type and ``X-Spotdown-UI`` checks are ADR 0003's auth
+middleware (the real one, signed in through the real ``POST /login``); the route adds the
+declared-length cap. Every check runs before the slot and before any body byte; a refused request
+writes nothing.
 """
 
 from __future__ import annotations
@@ -84,6 +87,27 @@ def test_the_401_holds_through_asgi_transport_without_lifespan(settings, monkeyp
     assert left(settings) == [LOCK]
 
 
+def test_a_broken_token_is_503_and_nothing_is_read_or_taken(tmp_path: Path, monkeypatch) -> None:
+    bad = tmp_path / "owner_token"
+    bad.write_text("short\n", encoding="utf-8")  # breaks the owner-token rule (length)
+    settings = standalone_settings(tmp_path, standalone_access_token_file=bad)
+    app = make_app(settings, monkeypatch, session=False)
+    taken: List[Any] = []
+    real = upload_slot.try_acquire
+    monkeypatch.setattr(upload_slot, "try_acquire", lambda d: taken.append(d) or real(d))
+    body = Unread()
+    assert _post(app, GOOD, body).status_code == 503
+    assert not body.read and taken == [] and left(settings) == [LOCK]
+
+
+def test_a_forged_or_stale_cookie_is_401(settings, monkeypatch) -> None:
+    from .upload_helpers import with_cookie
+
+    app = make_app(settings, monkeypatch, session=False)
+    forged = with_cookie(app, "spotdown_session=99999999999." + "0" * 64)
+    assert _post(forged, GOOD).status_code == 401 and left(settings) == [LOCK]
+
+
 def test_the_availability_probe_needs_the_session_too(settings, monkeypatch) -> None:
     client = TestClient(make_app(settings, monkeypatch, session=False), base_url=BASE)
     assert client.get(PATH, headers={"X-Spotdown-UI": "1"}).status_code == 401
@@ -145,8 +169,8 @@ def test_the_public_origin_is_the_only_one_accepted(tmp_path: Path, monkeypatch)
     settings = standalone_settings(
         tmp_path, ui_public_origin="https://spotdown.example", ui_allowed_hosts="spotdown.example"
     )
-    app = make_app(settings, monkeypatch)
     base = "https://spotdown.example"
+    app = make_app(settings, monkeypatch, base=base)
     http = _post(app, {**GOOD, "Origin": "http://spotdown.example"}, base=base)
     assert http.status_code == 403
     ok = _post(app, {**GOOD, "Origin": "https://spotdown.example"}, base=base)
@@ -167,7 +191,15 @@ def test_a_preflight_gets_no_cors_headers(settings, monkeypatch) -> None:
         assert not [h for h in pre.headers if h.lower().startswith("access-control-")]
 
 
+def test_the_route_has_its_one_content_type_in_the_default_deny_table() -> None:
+    from app.session_policy import OCTET_STREAM, UNSAFE_CONTENT_TYPES
+
+    assert UNSAFE_CONTENT_TYPES[("POST", PATH)] == OCTET_STREAM
+    assert ("GET", PATH) not in UNSAFE_CONTENT_TYPES
+
+
 def test_a_declared_over_size_length_is_413_unread(settings, monkeypatch) -> None:
+    """The route's own check: the middleware does not cap the body."""
     app = make_app(settings, monkeypatch)
     for declared in (str(settings.max_upload_bytes + 1), "12x"):
         body = Unread()

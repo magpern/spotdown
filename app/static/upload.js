@@ -1,16 +1,14 @@
 // Local-file analysis (ADR 0002): a file picker and drop zone, shown only when the server offers
-// the route. The file goes as application/octet-stream with X-Spotdown-UI and the session cookie,
-// and no file name; the waveform is drawn from the picked file itself (the server never sends
-// audio back). A 401 on the upload goes to /login.
+// the route. Every request goes through ui.js's same-origin api() helper: the file is the body,
+// sent as application/octet-stream with X-Spotdown-UI and the session cookie and no file name,
+// and a 401 goes to /login. The waveform is drawn from the picked file itself (the server never
+// sends audio back).
 const UPLOAD_PATH = "/api/v1/analyze-upload";
 const fileCard = $("fileCard"), fileInput = $("file"), dropZone = $("drop");
 
-function toLogin() { location.assign("/login"); }
-
 async function uploadAvailable() {
   try {
-    const r = await fetch(UPLOAD_PATH, { headers: { "X-Spotdown-UI": "1" }, credentials: "same-origin" });
-    return r.ok;
+    return (await api(UPLOAD_PATH)).ok;
   } catch (e) { return false; }
 }
 
@@ -19,11 +17,7 @@ async function analyzeFile(file) {
   fileInput.disabled = true;
   showStatus('<span class="spin"></span>Analyzing the file… (this can take a while)');
   try {
-    const r = await fetch(UPLOAD_PATH, {
-      method: "POST", credentials: "same-origin", body: file,
-      headers: { "Content-Type": "application/octet-stream", "X-Spotdown-UI": "1" },
-    });
-    if (r.status === 401) return toLogin();
+    const r = await api(UPLOAD_PATH, { method: "POST", binary: file });
     const d = await r.json();
     if (!r.ok) return showStatus("Analysis failed: " + (d.detail || ("HTTP " + r.status)), true);
     // The waveform (spotdown#48) is decoded from the user's own file, never fetched from the server.

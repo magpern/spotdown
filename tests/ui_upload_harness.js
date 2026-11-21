@@ -16,7 +16,7 @@ const ctx = {
   location: { protocol: "http:", assigned: null, assign(u) { this.assigned = u; } },
   fetch: async (url, opts) => {
     calls.push({ url, opts: opts || {} });
-    const probe = !opts || !opts.method;
+    const probe = !opts || !opts.method || opts.method === "GET";
     const code = probe ? probeStatus : status;
     return { ok: code === 200, status: code, json: async () => (code === 200 ? { probe, bpm: 120 } : { detail: "no" }) };
   },
@@ -50,7 +50,7 @@ ctx.picked = picked;
   process.stdout.write(JSON.stringify({ viewPasses,
     shown, card: els.fileCard.style.display, probe: calls[0],
     post: post && { url: post.url, method: post.opts.method, headers: post.opts.headers,
-      credentials: post.opts.credentials, bodyIsFile: post.opts.body === picked },
+      credentials: post.opts.credentials, mode: post.opts.mode, bodyIsFile: post.opts.body === picked },
     waveform, fetchedForAudio, rendered: rendered.length, login: ctx.location.assigned,
   }));
 })();

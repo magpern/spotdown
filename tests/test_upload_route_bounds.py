@@ -30,7 +30,6 @@ from .upload_helpers import (  # noqa: E402
     left,
     make_app,
     standalone_settings,
-    with_session,
 )
 
 WAV = mf.wav(seconds=0.5)
@@ -325,7 +324,7 @@ def test_a_startup_sweep_while_another_worker_uploads_deletes_nothing(
             while len(left(settings)) < 2:
                 await asyncio.sleep(0.01)
             during = left(settings)
-            other = with_session(create_app(settings))  # another worker starts up
+            other = create_app(settings)  # another worker starts up
             assert left(settings) == during and lock.stat().st_ino == inode
             assert other is not None
             gate.set()

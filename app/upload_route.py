@@ -3,14 +3,15 @@
 Registered only when the standalone UI is served and ``fcntl`` (the slot) and ``resource`` (the
 sandbox) exist; never in service mode. Every step, in order:
 
-1. **Session.** ADR 0003's auth middleware answers ``401`` (``503`` for a token problem) before
-   this route runs. As defence in depth the route also refuses (``401``) a request the middleware
-   did not mark as authenticated in ``scope[SESSION_SCOPE_KEY]``, so the route never serves
-   without a session, whatever the middleware stack.
-2. **Request checks** (ADR 0002 Decision 2), before the slot and before any body byte:
-   ``Content-Type`` exactly ``application/octet-stream`` (``415``), ``X-Spotdown-UI: 1``, one
-   allowed ``Host`` and one same-origin ``Origin`` (``403``), a declared ``Content-Length`` over
-   ``max_upload_bytes`` (``413``).
+1. **Session and request checks: ADR 0003's auth middleware** (``app/standalone_auth.py``), which
+   ``create_standalone_app`` installs around every standalone route, runs before this route and
+   reads no body byte: the ``Host`` allowlist (``403``), the token state (``503``), the session
+   (``401``), the same-origin ``Origin`` (``403``) and the exact content type, which is
+   ``application/octet-stream`` for this route alone (``UNSAFE_CONTENT_TYPES``, ``415``), then
+   ``X-Spotdown-UI: 1`` (``403``). These are ADR 0002 Decision 2's checks; they have this one
+   implementation.
+2. **The declared length**, the one check the middleware does not make: a ``Content-Length`` over
+   ``max_upload_bytes`` (or not a number) is ``413``, before the slot and before any body byte.
 3. **The slot** (``upload_slot``): ``429`` with ``Retry-After`` if it is taken; the body is not
    read. Leftovers are swept while holding it.
 4. **The body**, under the cap (``413``) and the read deadline ``standalone_upload_read_s``
@@ -18,8 +19,8 @@ sandbox) exist; never in service mode. Every step, in order:
    ``upl_<sha256>``, or the sandboxed analysis (``upload_job``).
 5. **One ``finally``**, on a thread of its own and awaited under a shield: kill the child if it
    may still run and wait for it, delete the file and the work directory, and only then release
-   the slot. A child that cannot be shown
-   to have exited keeps the slot and its files until a restart.
+   the slot. A child that cannot be shown to have exited keeps the slot and its files until a
+   restart.
 
 No file name is kept, logged or returned, no tag is read into the output, and no audio is returned.
 """
@@ -31,7 +32,7 @@ import logging
 import secrets
 import threading
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, Optional
+from typing import Any, Dict, Optional
 
 import anyio
 import anyio.to_thread
@@ -39,14 +40,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.requests import ClientDisconnect
 
-from . import origin_policy, upload_slot
+from . import upload_slot
 from .config import Settings
 from .service import hostile_input
+from .session_policy import UPLOAD_PATH
 
-PATH = "/api/v1/analyze-upload"
-# Set to True in the ASGI scope by the standalone auth middleware (ADR 0003) for a request with a
-# valid session. Anything else is refused here.
-SESSION_SCOPE_KEY = "spotdown.session"
+PATH = UPLOAD_PATH
 RETRY_AFTER_S = 10
 UPLOAD_PREFIX = "upl_"
 
@@ -77,30 +76,11 @@ def _answer(status: int, detail: str, headers: Optional[Dict[str, str]] = None) 
     return JSONResponse({"detail": detail}, status_code=status, headers=headers)
 
 
-def _one(request: Request, name: str) -> Optional[str]:
-    values = request.headers.getlist(name)
-    return values[0] if len(values) == 1 else None
-
-
-def _refusal(request: Request, settings: Settings, hosts: FrozenSet[str]) -> Optional[JSONResponse]:
-    """The first failed check before the slot, or None. Reads no body byte."""
-    if request.scope.get(SESSION_SCOPE_KEY) is not True:
-        return _answer(401, "sign in first")
-    ctype = _one(request, "content-type")
-    if ctype is None or ctype.strip().lower() != "application/octet-stream":
-        return _answer(415, "send application/octet-stream")
-    if _one(request, "x-spotdown-ui") != "1":
-        return _answer(403, "not from the spotdown page")
-    host = _one(request, "host")
-    if not origin_policy.host_allowed(host, hosts):
-        return _answer(403, "this host name is not allowed")
-    if not origin_policy.origin_matches(_one(request, "origin"), settings.ui_public_origin, host):
-        return _answer(403, "cross-origin request refused")
-    if hostile_input.declared_too_large(
+def _too_large(request: Request, settings: Settings) -> bool:
+    """The declared length against the cap, before the slot. Reads no body byte."""
+    return hostile_input.declared_too_large(
         request.headers.get("content-length"), settings.max_upload_bytes
-    ):
-        return _answer(413, hostile_input.TOO_LARGE[1])
-    return None
+    )
 
 
 class _Run:
@@ -220,20 +200,17 @@ async def _finish(slot: upload_slot.Slot, run: _Run) -> None:
 
 
 def register(app: FastAPI, settings: Settings) -> bool:
-    """Adds the route if it is available (True). A bad host setting raises here."""
+    """Adds the route if it is available (True). Called by ``create_standalone_app`` only,
+    which wraps every route in the auth middleware."""
     if not available(settings):
         return False
-    hosts = origin_policy.parse_allowed_hosts(settings.ui_allowed_hosts)
-    if settings.ui_public_origin and not origin_policy.parse_origin(settings.ui_public_origin):
-        raise ValueError("ui_public_origin must be scheme://host[:port]")
     directory = settings.standalone_uploads_dir
     directory.mkdir(parents=True, exist_ok=True)
     upload_slot.startup_sweep(directory)
 
     async def analyze_upload(request: Request):
-        refused = _refusal(request, settings, hosts)
-        if refused is not None:
-            return refused
+        if _too_large(request, settings):
+            return _answer(413, hostile_input.TOO_LARGE[1])
         slot = upload_slot.try_acquire(directory)
         if slot is None:
             return _answer(
@@ -246,10 +223,8 @@ def register(app: FastAPI, settings: Settings) -> bool:
         finally:
             await _finish(slot, run)
 
-    def upload_available(request: Request):
+    def upload_available() -> Dict[str, bool]:
         """The UI shows the file input only when this answers (the route is registered)."""
-        if request.scope.get(SESSION_SCOPE_KEY) is not True:
-            return _answer(401, "sign in first")
         return {"available": True}
 
     app.add_api_route(PATH, analyze_upload, methods=["POST"], include_in_schema=False)

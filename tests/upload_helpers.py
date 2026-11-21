@@ -1,5 +1,6 @@
-"""Helpers for the standalone local-file route tests (ADR 0002): settings, an app with a stand-in
-session, the headers the page sends, and a fake sandbox. No network, no real account."""
+"""Helpers for the standalone local-file route tests (ADR 0002): settings, the real app (behind
+ADR 0003's auth middleware) signed in through the real ``POST /login``, the headers the page
+sends, and a fake sandbox. No network, no real account."""
 
 from __future__ import annotations
 
@@ -8,14 +9,16 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app import db, standalone, upload_slot
 from app.config import Settings
 from app.main import create_app
 from app.service import sandbox
-from app.upload_route import PATH, SESSION_SCOPE_KEY
+from app.upload_route import PATH
 
 from .service_helpers import fake_analyser_result
+from .standalone_helpers import generated_token
 
 BASE = "http://localhost:8000"
 ORIGIN = "http://localhost:8000"
@@ -37,24 +40,38 @@ def standalone_settings(tmp_path: Path, **overrides: Any) -> Settings:
     return Settings(**values)
 
 
-def with_session(app: Any) -> Callable:
-    """A stand-in for ADR 0003's auth middleware (spotdown#52): it marks every http request as
-    authenticated, as the real middleware does for a valid session."""
+def with_cookie(app: Any, cookie: str) -> Callable:
+    """The app as a signed-in browser reaches it: every request carries the session cookie that
+    a real ``POST /login`` set. The real middleware still checks it."""
+    raw = (b"cookie", cookie.encode("latin-1"))
 
-    async def marked(scope: Dict[str, Any], receive: Any, send: Any) -> None:
+    async def browser(scope: Dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] == "http":
-            scope = {**scope, SESSION_SCOPE_KEY: True}
+            scope = {**scope, "headers": [*scope.get("headers", []), raw]}
         await app(scope, receive, send)
 
-    return marked
+    return browser
 
 
-def make_app(settings: Settings, monkeypatch: pytest.MonkeyPatch, session: bool = True) -> Any:
+def make_app(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, session: bool = True, base: str = BASE
+) -> Any:
+    """``create_app`` (the auth middleware included), and, with ``session``, signed in through
+    the real ``POST /login`` from ``base``."""
     for module in (db, standalone):
         monkeypatch.setattr(module, "get_settings", lambda: settings)
     app = create_app(settings)
     db.init_db()
-    return with_session(app) if session else app
+    if not session:
+        return app
+    login = TestClient(app, base_url=base)
+    res = login.post(
+        "/login",
+        json={"token": generated_token(settings)},
+        headers={"X-Spotdown-UI": "1", "Origin": base, "Content-Type": "application/json"},
+    )
+    assert res.status_code == 204, res.text
+    return with_cookie(app, res.headers["set-cookie"].split(";", 1)[0])
 
 
 def left(settings: Settings) -> List[str]:
