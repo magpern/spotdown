@@ -89,6 +89,7 @@ def _migrate_analyses() -> None:
                 conn.execute(step)
             conn.execute("COMMIT")
         except BaseException:
+            # Defensive: close() discards an open transaction anyway, so this is not tested.
             if conn.in_transaction:
                 conn.execute("ROLLBACK")
             raise

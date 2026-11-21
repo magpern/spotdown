@@ -151,7 +151,8 @@ curl -s 'localhost:8000/api/Gettrack?spotify_url=https://open.spotify.com/track/
 
 Runs [librosa](https://librosa.org) MIR on the highest-bitrate converted file for the track
 and returns JSON you can build a cycling class (or anything beat-timed) from. Cached per
-`analyzer_version` and v1 response version (a change to this response recomputes once); pass `?refresh=true` to recompute. First call per process is slow
+`analyzer_version` and v1 response version (a change to this response recomputes once);
+pass `?refresh=true` to recompute. First call per process is slow
 (~10s) while numba JIT-compiles; cached calls are instant.
 
 Fields:
@@ -168,7 +169,8 @@ Fields:
 - `build_ups` — the climb before each drop; where to ramp effort up.
 - `segments` — beat-synchronous sections with `energy_full`, `energy_struct`, a repetition
   `group` (repeats share an id), and a **heuristic** `label` (the document's
-  vocabulary: intro/verse/chorus/bridge/breakdown/outro, or `unlabelled`). `label_method: "heuristic"` — reason from the numbers, not the label.
+  vocabulary: intro/verse/chorus/bridge/breakdown/outro, or `unlabelled`).
+  `label_method: "heuristic"` — reason from the numbers, not the label.
 
 **Timeline caveat (important):** the audio is a YouTube match, so its timeline may not equal
 Spotify's. Every timestamp is on the *analyzed file*. The result reports

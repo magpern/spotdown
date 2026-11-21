@@ -14,6 +14,7 @@ import sqlite3
 import threading
 from functools import lru_cache
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List
 
 import pytest
@@ -170,33 +171,61 @@ def _rows_old(settings: Settings) -> List[tuple]:
         return conn.execute("SELECT track_id, analyzer_version, json FROM analyses").fetchall()
 
 
-def test_two_concurrent_init_db_calls_rebuild_once(tmp_path, monkeypatch) -> None:
+def test_a_second_init_db_waits_on_the_lock_and_does_not_rebuild_again(
+    tmp_path, monkeypatch
+) -> None:
+    """Deterministic: connection A holds ``BEGIN IMMEDIATE`` with the rebuild applied but not
+    committed; ``init_db`` runs in a thread. The thread has made its decision (its ``PRAGMA`` read,
+    or just before its own ``BEGIN IMMEDIATE`` is sent) when the event fires; only then A commits.
+    A check outside the transaction would have read the old columns and rebuild a second time."""
     settings = _settings(tmp_path, monkeypatch)
-    _old_db(settings, rows=3000)
+    _old_db(settings)
     with sqlite3.connect(settings.db_path) as conn:
+        conn.executescript(db._SCHEMA)  # the schema step of init_db is then a no-op
         conn.execute("CREATE TABLE rebuild_log (n INTEGER)")
-    # Each rebuild logs itself inside its own transaction: two rebuilds would log twice.
-    monkeypatch.setattr(
-        db, "_REBUILD_STEPS", db._REBUILD_STEPS + ("INSERT INTO rebuild_log VALUES (1)",)
-    )
-    gate, errors = threading.Barrier(2), []
+    steps = db._REBUILD_STEPS + ("INSERT INTO rebuild_log VALUES (1)",)  # logs each rebuild
+    monkeypatch.setattr(db, "_REBUILD_STEPS", steps)
+    at_begin = threading.Event()
+
+    class Watched:
+        def __init__(self, conn: sqlite3.Connection) -> None:
+            self._conn = conn
+
+        def execute(self, sql: str, *args: Any) -> Any:
+            if sql == "BEGIN IMMEDIATE":
+                at_begin.set()  # the migration's own connection, about to take the lock
+            return self._conn.execute(sql, *args)
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self._conn, name)
+
+    def connect(*args: Any, **kwargs: Any) -> Any:
+        conn = sqlite3.connect(*args, **kwargs)
+        return Watched(conn) if kwargs.get("isolation_level", "") is None else conn
+
+    monkeypatch.setattr(db, "sqlite3", SimpleNamespace(connect=connect, Row=sqlite3.Row))
+    errors: List[BaseException] = []
 
     def start() -> None:
         try:
-            gate.wait()
             db.init_db()
         except BaseException as exc:  # noqa: BLE001 - reported to the main thread
             errors.append(exc)
 
-    threads = [threading.Thread(target=start) for _ in range(2)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    assert errors == []
+    holder = sqlite3.connect(settings.db_path, isolation_level=None)
+    holder.execute("BEGIN IMMEDIATE")
+    for step in steps:
+        holder.execute(step)
+    thread = threading.Thread(target=start)
+    thread.start()
+    assert at_begin.wait(10)
+    holder.execute("COMMIT")
+    holder.close()
+    thread.join(30)
+    assert not thread.is_alive() and errors == []
     with sqlite3.connect(settings.db_path) as conn:
         assert conn.execute("SELECT count(*) FROM rebuild_log").fetchone()[0] == 1
-    assert len(_rows(settings)) == 3000 and {r[2] for r in _rows(settings)} == {1}
+    assert _rows(settings) == [("t1", ANALYZER_VERSION, 1, OLD_ROW)]
 
 
 # --- the key ----------------------------------------------------------------------------------
