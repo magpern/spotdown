@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     analysis_id   TEXT,
     created_at    REAL NOT NULL,
     updated_at    REAL NOT NULL,
-    reference     TEXT
+    reference     TEXT,
+    explicit      INTEGER
 );
 """
 
@@ -63,6 +64,8 @@ class Store(CacheStore, AlignmentStore, MatchStore, RetentionStore, UploadStore)
             conn.executescript(_SCHEMA)
             if "reference" not in {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}:
                 conn.execute("ALTER TABLE jobs ADD COLUMN reference TEXT")  # before spotdown#11
+            if "explicit" not in {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}:
+                conn.execute("ALTER TABLE jobs ADD COLUMN explicit INTEGER")  # before spotdown#36
             cache_schema.create(conn)
             match_store.create(conn)
 
@@ -72,8 +75,8 @@ class Store(CacheStore, AlignmentStore, MatchStore, RetentionStore, UploadStore)
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO jobs (job_id, cache_scope, client_ref, source_kind, source_ref,"
-                " upload_id, fetch_url, status, created_at, updated_at, reference)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)",
+                " upload_id, fetch_url, status, created_at, updated_at, reference, explicit)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)",
                 (
                     job["job_id"],
                     job.get("cache_scope"),
@@ -85,6 +88,7 @@ class Store(CacheStore, AlignmentStore, MatchStore, RetentionStore, UploadStore)
                     now,
                     now,
                     _reference(job),
+                    None if job.get("explicit") is None else int(job["explicit"]),
                 ),
             )
 
@@ -99,6 +103,7 @@ class Store(CacheStore, AlignmentStore, MatchStore, RetentionStore, UploadStore)
             return None
         job = dict(row)
         job["reference"] = json.loads(job["reference"]) if job["reference"] else None
+        job["explicit"] = None if job["explicit"] is None else bool(job["explicit"])
         return job
 
     def get_job_in_scope(self, job_id: str, scope: Optional[str]) -> Optional[Dict[str, Any]]:

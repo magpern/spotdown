@@ -106,6 +106,7 @@ def _failure(exc: BaseException) -> JobFailure:
 class Downloaded:
     path: Path
     metadata_duration_s: float
+    age_limit: Optional[int] = None  # the video's age restriction, evidence for content.explicit
 
 
 class YtDlpClient:
@@ -145,6 +146,7 @@ class YtDlpClient:
                     f"https://www.youtube.com/watch?v={video_id}", download=False
                 )
                 duration = _checked(info, video_id, max_bytes, max_duration_s)
+                age_limit = age_limit_of(info)
                 ydl.process_ie_result(info, download=True)
         except JobFailure:
             raise
@@ -155,7 +157,16 @@ class YtDlpClient:
             raise JobFailure(Reason.TOO_LARGE if not produced else Reason.PROVIDER_ERROR)
         if produced[0].stat().st_size > max_bytes:
             raise JobFailure(Reason.TOO_LARGE)
-        return Downloaded(produced[0], duration)
+        return Downloaded(produced[0], duration, age_limit)
+
+
+def age_limit_of(info: Dict[str, Any]) -> Optional[int]:
+    """yt-dlp's ``age_limit`` of the video (0 when unrestricted), or None when it is not a whole
+    number of years. Only reported (``explicit_calc``); it never refuses a download."""
+    value = info.get("age_limit")
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 99:
+        return None
+    return value
 
 
 def _checked(info: Any, video_id: str, max_bytes: int, max_duration_s: float) -> float:

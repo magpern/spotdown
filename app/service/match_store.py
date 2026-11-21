@@ -2,7 +2,8 @@
 match record of each chosen video. All of it is global (public search results, no scope): it is
 never keyed on, and never holds, a ``cache_scope``, a ``client_ref`` or a job id.
 
-A match record holds the requested (Spotify-catalogue) title, artists and duration, so it lives
+A match record holds the requested (Spotify-catalogue) title, artists and duration, with the
+caller's optional explicit flag beside it, so it lives
 ``GLOBAL_REFERENCE_TTL_S`` (ADR 0040 §7): an expired record is never read and is purged when a
 record is next stored. Within its lifetime the latest match that chose a video wins.
 """
@@ -29,13 +30,20 @@ CREATE TABLE IF NOT EXISTS match_choices (
     video_id   TEXT PRIMARY KEY,
     record     TEXT NOT NULL,
     duration_s REAL NOT NULL,
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    explicit   INTEGER
 );
 """
 
 
 def create(conn: sqlite3.Connection) -> None:
     conn.executescript(MATCH_SCHEMA)
+    if "explicit" not in {r[1] for r in conn.execute("PRAGMA table_info(match_choices)")}:
+        conn.execute("ALTER TABLE match_choices ADD COLUMN explicit INTEGER")  # before spotdown#36
+
+
+def _flag(value: Any) -> Optional[bool]:
+    return None if value is None else bool(value)
 
 
 class MatchStore(SqliteBase):
@@ -79,16 +87,29 @@ class MatchStore(SqliteBase):
 
     # ---- match record of a chosen video (for provenance) ----
     def put_choice(
-        self, video_id: str, record: Dict[str, Any], duration_s: float, now: float
+        self,
+        video_id: str,
+        record: Dict[str, Any],
+        duration_s: float,
+        now: float,
+        explicit: Optional[bool] = None,
     ) -> None:
+        """Stores the match record, the requested duration and the caller's explicit flag (None
+        when it sent none); the latest match that chose the video replaces all three."""
         with self._conn() as conn:
             conn.execute(
                 "DELETE FROM match_choices WHERE created_at <= ?", (now - self.global_ttl_s,)
             )
             conn.execute(
-                "INSERT OR REPLACE INTO match_choices (video_id, record, duration_s, created_at)"
-                " VALUES (?, ?, ?, ?)",
-                (video_id, json.dumps(record, separators=(",", ":")), duration_s, now),
+                "INSERT OR REPLACE INTO match_choices"
+                " (video_id, record, duration_s, created_at, explicit) VALUES (?, ?, ?, ?, ?)",
+                (
+                    video_id,
+                    json.dumps(record, separators=(",", ":")),
+                    duration_s,
+                    now,
+                    None if explicit is None else int(explicit),
+                ),
             )
 
     def get_choice(self, video_id: str, now: float) -> Optional[Tuple[Dict[str, Any], float]]:
@@ -101,3 +122,12 @@ class MatchStore(SqliteBase):
                 (video_id, now - self.global_ttl_s),
             ).fetchone()
         return (json.loads(row["record"]), float(row["duration_s"])) if row else None
+
+    def choice_explicit(self, video_id: str, now: float) -> Optional[bool]:
+        """The explicit flag of the latest unexpired match that chose ``video_id``, or None."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT explicit FROM match_choices WHERE video_id = ? AND created_at > ?",
+                (video_id, now - self.global_ttl_s),
+            ).fetchone()
+        return _flag(row["explicit"]) if row else None

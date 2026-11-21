@@ -3,7 +3,8 @@
 Times stay on the file's own clock. The confidences are first, documented estimates (beat
 regularity, energy contrast); the quality harness (spotdown#6) calibrates them. Optional groups
 (meter, downbeats, alignment) are left out until their gates pass: the meter is never
-assumed to be 4/4. Section labels are always ``heuristic`` and, until their gate passes
+assumed to be 4/4. ``content.explicit`` is a reported metadata signal (``explicit_calc``), never a
+gate. Section labels are always ``heuristic`` and, until their gate passes
 (``label_calc.GATE_PASSED``, held-out evidence), capped at 0.4.
 """
 
@@ -14,13 +15,15 @@ import json
 from typing import Any, Dict, List, Optional, Sequence
 
 from ..core import ANALYZER_VERSION, HOP, SR
+from . import explicit_calc
 from .meter_doc import meter_grid
 from .structure_doc import clip as _clip
 from .structure_doc import labels, phrases, structure
 
 ANALYZER_NAME = "spotdown"
-# The core analyser's version, then this document mapping's version (1: section labels, 2: phrases).
-ANALYZER_VERSION_V2 = f"{ANALYZER_VERSION}.3"
+# The core analyser's version, then this document mapping's version (1: section labels, 2: phrases,
+# 3: meter and downbeats, 4: the content group with the explicit signal).
+ANALYZER_VERSION_V2 = f"{ANALYZER_VERSION}.4"
 MEASURED_CONFIDENCE = 0.9
 
 
@@ -150,6 +153,7 @@ def build(
     analysis_id: str,
     timings_s: Dict[str, float],
     created_at: str,
+    content_evidence: Sequence[Dict[str, Any]] = (),
 ) -> Dict[str, Any]:
     duration = round(core["duration_s"], 3)
     start = round(core["content_start_s"], 3)
@@ -229,6 +233,7 @@ def build(
         "grid": grid,
         "structure": structure(core),
         "events": _events(core),
+        "content": explicit_calc.content(content_evidence),
     }
     if found := labels(core):
         doc["labels"] = found
