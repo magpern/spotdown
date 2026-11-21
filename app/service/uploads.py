@@ -1,28 +1,26 @@
 """``PUT /v2/uploads``: stream audio bytes to a temporary file under a size cap.
 
 The body is read chunk by chunk and refused once it passes ``MAX_UPLOAD_BYTES``; only mp3, mp4 and
-wav are kept, recognised by their bytes and then checked whole (``container_io``: truncated,
-malformed or mixed files and insane streams are refused). No file name is kept. A refused upload
+wav are kept, recognised by their bytes and then checked whole (``hostile_input``, shared with
+the standalone local-file route: truncated, malformed or mixed files and insane streams are
+refused). No file name is kept. A refused upload
 leaves no file and no row. The file is deleted after the job that uses it, or once its TTL passes
 unused.
 """
 
 from __future__ import annotations
 
-import hashlib
 import secrets
 import time
 from pathlib import Path
 
-import anyio.to_thread
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from ..config import Settings
-from . import container_io, media_policy
+from . import hostile_input
 from . import idempotency_policy as idem
 from .api_models import scope_problem
-from .container_policy import InvalidMedia
 from .errors import ApiError
 from .store import Store
 
@@ -53,43 +51,24 @@ async def receive_upload(
     ctype = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if ctype != "application/octet-stream":
         raise ApiError(415, "unsupported_media_type", "send application/octet-stream")
-    declared = request.headers.get("content-length")
-    if declared is not None and (
-        not declared.isdigit() or int(declared) > settings.max_upload_bytes
+    if hostile_input.declared_too_large(
+        request.headers.get("content-length"), settings.max_upload_bytes
     ):
-        raise ApiError(413, "too_large", "the upload is larger than the limit")
+        raise ApiError(413, *hostile_input.TOO_LARGE)
 
     purge_expired_uploads(settings, store)
     upload_id = "up_" + secrets.token_hex(16)
     final = upload_path(settings, upload_id)
     part = final.with_name(upload_id + ".part")
-    digest = hashlib.sha256()
-    size = 0
-    head = b""
     try:
-        with part.open("wb") as out:
-            async for chunk in request.stream():
-                if not chunk:
-                    continue
-                size += len(chunk)
-                if size > settings.max_upload_bytes:
-                    raise ApiError(413, "too_large", "the upload is larger than the limit")
-                if len(head) < media_policy.SNIFF_BYTES:
-                    head += chunk[: media_policy.SNIFF_BYTES - len(head)]
-                digest.update(chunk)
-                out.write(chunk)
-        media = media_policy.sniff(head)
-        if media is None:
-            raise ApiError(415, "unsupported_media_type", "only mp3, mp4 and wav are accepted")
-        try:  # the whole structure, off the event loop (it reads the file)
-            await anyio.to_thread.run_sync(
-                container_io.inspect_file, part, media, settings.analysis_max_decoded_s
-            )
-        except InvalidMedia:
-            raise ApiError(
-                415, "unsupported_media_type", "not a well-formed mp3, mp4 or wav file"
-            ) from None
-        req_hash = idem.request_hash(ENDPOINT, {"sha256": digest.hexdigest(), "bytes": size})
+        try:  # the shared hostile-input checks (ADR 0002, Decision 4)
+            got = await hostile_input.stream_to(request.stream(), part, settings.max_upload_bytes)
+            media = await hostile_input.check_file(part, got.head, settings.analysis_max_decoded_s)
+        except hostile_input.Refused as refused:
+            status = 413 if refused.kind == "too_large" else 415
+            raise ApiError(status, refused.kind, refused.detail) from None
+        digest, size = got.sha256, got.size
+        req_hash = idem.request_hash(ENDPOINT, {"sha256": digest, "bytes": size})
         recorded = store.idem_get(scope, idem_key)
         verdict = idem.decide(recorded, req_hash)
         if verdict == "conflict":
@@ -99,9 +78,9 @@ async def receive_upload(
         if recorded is not None:  # the same upload again: the first response, nothing new kept
             part.unlink(missing_ok=True)
             return JSONResponse(recorded.body, status_code=recorded.status)
-        answer = {"upload_id": upload_id, "sha256": digest.hexdigest(), "bytes": size}
+        answer = {"upload_id": upload_id, "sha256": digest, "bytes": size}
         part.rename(final)
-        store.add_upload(upload_id, scope, digest.hexdigest(), size, media, settings.upload_ttl_s)
+        store.add_upload(upload_id, scope, digest, size, media, settings.upload_ttl_s)
         if not store.idem_put(scope, idem_key, req_hash, 201, answer):
             # A concurrent upload with the same key won: its response for the same bytes (this
             # one's file and row are dropped), 409 for other bytes.

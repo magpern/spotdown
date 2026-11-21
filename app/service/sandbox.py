@@ -17,7 +17,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Optional
 
 from . import sandbox_child as child
 from .failure_policy import JobFailure, Reason
@@ -26,6 +26,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _ENV_ALLOWLIST = ("PATH", "LANG", "LC_ALL", "NUMBA_CACHE_DIR")
 _THREAD_VARS = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMBA_NUM_THREADS")
 RESULT_MAX_BYTES = 64 * 1024 * 1024
+# How long ``kill_group`` waits for the killed child to be reaped.
+KILL_GRACE_S = 5.0
 
 
 @dataclass(frozen=True)
@@ -79,8 +81,18 @@ def _reason_for(returncode: int, cpu_used_s: float, limits: Limits) -> Reason:
     return Reason.ANALYSIS
 
 
-def run_analysis(audio: Path, media: str, work: Path, limits: Limits) -> Dict[str, Any]:
-    """The child's result (``core``, ``probe``, ``components``, ``timings_s``) or JobFailure."""
+def run_analysis(
+    audio: Path,
+    media: str,
+    work: Path,
+    limits: Limits,
+    on_start: Optional[Callable[[subprocess.Popen], None]] = None,
+) -> Dict[str, Any]:
+    """The child's result (``core``, ``probe``, ``components``, ``timings_s``) or JobFailure.
+
+    ``on_start`` receives the child as soon as it exists, so a caller on another thread can kill
+    it (``kill_group``) when its request is cancelled. If the hook raises, the child is killed
+    and reaped before the exception leaves."""
     result = work / "result.json"
     result.unlink(missing_ok=True)
     cpu_before = _children_cpu_s()
@@ -108,12 +120,14 @@ def run_analysis(audio: Path, media: str, work: Path, limits: Limits) -> Dict[st
         close_fds=True,
     )
     try:
+        if on_start is not None:
+            on_start(proc)
         returncode = proc.wait(timeout=limits.wall_s)
     except subprocess.TimeoutExpired:
-        _kill_group(proc)
+        kill_group(proc)
         raise JobFailure(Reason.DEADLINE) from None
     finally:
-        _kill_group(proc)
+        kill_group(proc)
     if returncode != child.EXIT_OK:
         raise JobFailure(_reason_for(returncode, _children_cpu_s() - cpu_before, limits))
     try:
@@ -124,13 +138,13 @@ def run_analysis(audio: Path, media: str, work: Path, limits: Limits) -> Dict[st
         result.unlink(missing_ok=True)
 
 
-def _kill_group(proc: subprocess.Popen) -> None:
+def kill_group(proc: subprocess.Popen) -> None:
     """Ends the child and anything it started (a decoder), if still running."""
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         pass
     try:
-        proc.wait(timeout=5)
+        proc.wait(timeout=KILL_GRACE_S)
     except subprocess.TimeoutExpired:
         pass

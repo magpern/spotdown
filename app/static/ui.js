@@ -1,13 +1,15 @@
 const $ = (id) => document.getElementById(id);
 // Same-origin requests only (ADR 0003): the page is served by the app itself, behind its session.
 // Every API call carries X-Spotdown-UI; a 401 means the session is gone, so sign in again.
+// A binary body (a local file, ADR 0002) goes as application/octet-stream, the route's one type.
 async function api(path, opts) {
   const o = opts || {};
   const headers = Object.assign({ "X-Spotdown-UI": "1" }, o.headers || {});
   if (o.json !== undefined) headers["Content-Type"] = "application/json";
+  else if (o.binary !== undefined) headers["Content-Type"] = "application/octet-stream";
   const r = await fetch(path, {
     method: o.method || "GET", headers, credentials: "same-origin", mode: "same-origin",
-    body: o.json !== undefined ? JSON.stringify(o.json) : undefined,
+    body: o.json !== undefined ? JSON.stringify(o.json) : o.binary,
   });
   if (r.status === 401) { location.assign("/login"); throw new Error("Signed out"); }
   return r;
@@ -115,7 +117,7 @@ function done(downloadUrl) {
 }
 
 // The converted file the server already offered for download (no new endpoint); null if this page
-// has not converted the track. #49 can return a local file's bytes here instead.
+// has not converted the track. A local-file analysis passes its own loader (upload.js).
 async function loadTrackAudio() {
   if (!currentAudioUrl) return null;
   const path = wfAudioPath(currentAudioUrl, location.origin);  // same-origin /files/<name> only

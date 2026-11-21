@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     # False -> API only (do not serve the web UI at GET /).
     serve_ui: bool = True
+    # Local-file analysis in the standalone UI (ADR 0002): the deadline on reading the body
+    # (60 MiB in 150 s is about 0.4 MiB/s).
+    standalone_upload_read_s: float = Field(default=150.0, gt=0)
 
     # Standalone exposure (ADR 0003). Every standalone route needs a session made from the access
     # token: the owner's file below, else one generated once at data_dir/standalone_token.
@@ -105,12 +108,20 @@ class Settings(BaseSettings):
     def work_dir(self) -> Path:
         return self.data_dir / "work"
 
+    @property
+    def standalone_uploads_dir(self) -> Path:
+        """The standalone local-file route's one slot: its lock file, the upload in transit and
+        the sandbox's work directory (ADR 0002, Decision 4)."""
+        return self.data_dir / "standalone_uploads"
+
     def ensure_dirs(self) -> None:
         self.files_dir.mkdir(parents=True, exist_ok=True)
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
         if self.service_mode:
             self.uploads_dir.mkdir(parents=True, exist_ok=True)
             self.work_dir.mkdir(parents=True, exist_ok=True)
+        elif self.serve_ui:
+            self.standalone_uploads_dir.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache

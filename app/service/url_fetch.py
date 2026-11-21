@@ -184,7 +184,8 @@ def _stream_to(
     response: httpx.Response, dest: Path, max_bytes: int, end: float, ref: str
 ) -> Fetched:
     declared = response.headers.get("content-length")
-    if declared and declared.isdigit() and int(declared) > max_bytes:
+    # ASCII first: ``isdigit`` accepts digits such as "²" that ``int`` refuses.
+    if declared and declared.isascii() and declared.isdigit() and int(declared) > max_bytes:
         raise JobFailure(Reason.TOO_LARGE)
     digest = hashlib.sha256()
     size = 0

@@ -119,6 +119,8 @@ Constraints:
        rejection, the read deadline's `408`, and a client disconnect.
        - In that `finally`, the partial or whole file and the work directory are deleted **before**
          the lock is released. So the next holder's leftover sweep never races the deletion.
+         If a deletion fails once the child has exited, the error is logged and the lock is still
+         released; the next holder's sweep retries it (spotdown#49).
        - **The child first.** The blocking `sandbox.run_analysis` runs in a worker thread. If the
          request is cancelled while it runs, the `finally` does these steps in order:
          1. kills the child's process group (through a cancel hook on the existing `_kill_group`);
