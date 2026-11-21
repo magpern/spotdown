@@ -4,11 +4,12 @@
 // tests/test_ui_fields.py checks the list against a real document, so a renamed field fails the
 // test rather than rendering a guess. "optional" groups are the ones the analyser withholds
 // until their gates pass (meter, downbeats, phrases, labels) or that need a reference (alignment).
+// "items" lists the fields read inside array items and nested objects, through the it() helper.
 /*fields:begin*/
 const DOC_FIELDS = {
   "required": [
     "schema_version", "provenance.analyzer.name", "provenance.analyzer.analyzer_version",
-    "provenance.created_at", "provenance.source.kind", "signal.duration_s", "signal.content_start_s", "signal.content_end_s",
+    "provenance.created_at", "signal.duration_s", "signal.content_start_s", "signal.content_end_s",
     "signal.silence_regions", "signal.fade_in", "signal.fade_out", "signal.energy.full.step_s",
     "signal.energy.full.values", "signal.energy.percussive.values", "signal.energy.low_band.values",
     "tempo.bpm", "tempo.confidence", "tempo.stability", "tempo.half_double_candidates",
@@ -21,7 +22,6 @@ const DOC_FIELDS = {
     "provenance.alignment.hypotheses"
   ],
   "report_only": ["content.explicit"],
-  // Fields read inside array items and nested objects, as `it(item, "key")`.
   "items": {
     "structure.segments": ["id", "start_s", "end_s", "boundary_confidence"],
     "labels": ["segment_id", "label", "confidence", "method"],
@@ -121,7 +121,7 @@ function buildModel(d) {
     prov: {
       analyzer: docAt(doc, "provenance.analyzer.name"),
       version: docAt(doc, "provenance.analyzer.analyzer_version"),
-      source: docAt(doc, "provenance.source.kind"), schema: docAt(doc, "schema_version"), created: docAt(doc, "provenance.created_at"),
+      schema: docAt(doc, "schema_version"), created: docAt(doc, "provenance.created_at"),
     },
   };
 }

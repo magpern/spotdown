@@ -6,9 +6,10 @@ confidence, events, tempo stability, fades and the alignment come from one place
 diverge. Pure: no I/O. Nothing here changes an analysis result or the v2 contract.
 
 The provenance describes the analysed signal (mono, at the analysis rate), not the stored file.
-Its source kind is ``youtube`` because the standalone audio is a YouTube match downloaded by the
-converter; the video id and the match record are not known here, so neither ``ref`` nor ``match``
-is given.
+Its ``source.kind`` is ``upload`` only as a schema-valid placeholder: the standalone audio is a
+YouTube match downloaded by the converter, but the schema's ``youtube`` kind needs the video id,
+which is not known here, and it has no kind for this case. Nothing displays it (the page says
+"a YouTube match" itself) and it must not be read as the audio's origin.
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ def standalone_document(
             probe={"codec": codec, "sample_rate_hz": sample_rate_hz, "channels": 1},
             components=_components(),
             sha256=sha256,
-            source={"kind": "youtube"},
+            source={"kind": "upload"},
             job_id="standalone",
             analysis_id=STANDALONE_ID,
             timings_s={},

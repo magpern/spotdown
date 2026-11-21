@@ -123,7 +123,7 @@ function renderAnalysis(d) {
     <div class="viz-label">Timeline</div>${timelineControls(m)}<div id="tlHost"></div>${timelineLegend(m)}${APPROX_NOTE}
     <div class="grid2"><div><div class="viz-label">Sections</div>${sectionsHtml(m)}</div>
     <div><div class="viz-label">Events &amp; phrases</div>${eventsHtml(m)}</div></div>
-    <div class="foot">${escapeHtml(m.prov.analyzer)} analyzer ${escapeHtml(m.prov.version)} · document ${escapeHtml(m.prov.schema)} · source ${escapeHtml(m.prov.source)} (standalone: a YouTube match) · ${escapeHtml(m.prov.created)}</div>`;
+    <div class="foot">${escapeHtml(m.prov.analyzer)} analyzer ${escapeHtml(m.prov.version)} · document ${escapeHtml(m.prov.schema)} · standalone analysis of a YouTube match · ${escapeHtml(m.prov.created)}</div>`;
   wireTimeline();
 }
 window.addEventListener("resize", drawTimeline);

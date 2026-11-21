@@ -99,7 +99,7 @@ def _hand_doc() -> Dict[str, Any]:
         probe={"codec": "mp3", "sample_rate_hz": 22050, "channels": 1},
         components={},
         sha256="c" * 64,
-        source={"kind": "youtube"},
+        source={"kind": "upload"},
         job_id="j",
         analysis_id="an_h",
         timings_s={},
@@ -130,9 +130,9 @@ def test_the_item_fields_the_page_reads_exist() -> None:
         values = [v for v in (_at(d, path) for d in docs) if v not in (MISSING, None, [])]
         assert values, f"no fixture holds {path}"
         value = values[0]
-        for item in value if isinstance(value, list) else [value]:
-            for key in keys:
-                assert key in item, (path, key)
+        # An optional key (a build-up's end_s) need only occur in one item of the list.
+        found = {k for item in (value if isinstance(value, list) else [value]) for k in item}
+        assert set(keys) <= found, (path, set(keys) - found)
 
 
 def test_the_document_is_schema_valid_and_aligned() -> None:
@@ -171,6 +171,11 @@ def test_each_ui_file_stays_small(name: str) -> None:
     assert len((STATIC / name).read_text(encoding="utf-8").splitlines()) < 300
 
 
+def test_the_hand_made_document_is_schema_valid() -> None:
+    """The explicit object the page reads is the real schema's (spotdown#39), not a guess."""
+    assert_valid("analysis-v1", _hand_doc())
+
+
 def test_single_segment_routes_come_before_the_asset_route() -> None:
     paths = [getattr(r, "path", "") for r in standalone.router.routes]
     catch_all = paths.index("/{name}")
@@ -202,12 +207,9 @@ def test_the_views_render_with_values_and_with_nulls() -> None:
     full_html, hand_html, bare_html = json.loads(run.stdout)
     for html in (full_html, hand_html, bare_html):
         assert not re.search(r"undefined|NaN|>null<|[^a-z]null[^a-z]", html), html[:300]
-    assert (
-        "0:00.0"
-        not in re.sub(r"<tr><td>[a-z-]+</td><td>0:00\.0</td>", "", full_html).split("Events")[0]
-    )
+    assert "–0:00.0" not in full_html  # a drop has no end: it must not render as a range
     assert re.search(r"drop</td><td>\d+:\d\d\.\d</td>", full_html)  # a drop has no end time
-    assert "<title>fade in" in hand_html and "<title>silence" not in hand_html or True
+    assert "<title>fade in" in hand_html and "<title>silence" in hand_html
     assert "<title>fade out" in hand_html and "Explicit" in hand_html
     assert "YouTube age limit: 18" in hand_html and "caller&#39;s explicit flag: false" in hand_html
     assert "explicit: unknown" in bare_html and "alignment failed" in bare_html
