@@ -341,7 +341,7 @@ and treat `heuristic` ones as hints.
 | `events` | build-ups, drops, breakdowns and transitions (hard stop, fade, tempo change), each with strength and confidence | yes |
 | `labels` | intro, verse, chorus, bridge, outro, breakdown per labelled segment, each with a label confidence; always `heuristic` (analyzer `5.1`: present when the content has two or more segments, confidence at most 0.4, see below) | optional |
 | `alignment` | reference (kind, id, duration), offset, residual, confidence, carried recording-match confidence | optional |
-| `content` | `explicit`: `yes`, `no` or `unknown`, with confidence, method `metadata` and the evidence (document version `6.4`, see below) | optional |
+| `content` | `explicit`: `yes`, `no` or `unknown`, with confidence, method `metadata` and the evidence (first shipped as document version `6.4`, mapping version 4; see below) | optional |
 
 **Labels (spotdown#7).** Rule-based, from the segment structure alone (energy, repetition group, position, detected drops): a chorus starts at a drop or belongs to the loudest repeating group, the first and last other segments are intro and outro, a much quieter middle segment is a breakdown, a middle segment right after a chorus with another chorus to come is a bridge, the rest are verses (a build into a drop is a verse, the pre-chorus). Silence around the content is not labelled. The label gates (`label_accuracy`, `label_overconfidence`) pass on the synthetic corpus but are only regression checks there (the rules were written on it), so no label confidence exceeds 0.4; the cap is not raised until held-out evidence exists (spotdown#20: CC-licensed fixtures or the owner corpus). Treat every label as a hint. The schema is unchanged (`labels` was already optional and `heuristic`).
 
@@ -371,7 +371,7 @@ checks that the value agrees with the evidence. The evidence is the one known wh
 made: a cache hit or a reuse of equal bytes returns the stored analysis unchanged, without the new
 request's flag, so a caller that knows its own flag combines it itself. A global (`youtube`)
 analysis is read by every scope, so its caller flags are visible to every scope; they name no
-caller. Analyses made before document version `6.4` have no `content` group: absent means not
+caller. Analyses made before mapping version 4 (document version `6.4`) have no `content` group: absent means not
 reported, not `unknown` evidence.
 
 Baseline fields are those the integration depends on; labels, phrases, downbeats and meter are
@@ -419,7 +419,7 @@ the running version is `7.4`: core version 7 merges over-fine segments before th
 labels are made, `app/core/merge_calc.py`, spotdown#46; the schema is unchanged). Optional fields
 added to analysis-v1 so far: `provenance.source.decoded_duration_check` (spotdown#18), the
 alignment hypotheses' `name` and `chosen` (spotdown#21) and `content` (spotdown#36, document
-version `6.4`). A consumer that validates against an older copy of the schema rejects a document
+version `6.4`, mapping version 4). A consumer that validates against an older copy of the schema rejects a document
 carrying a newer optional field (the schema forbids unknown properties), so it updates its copy;
 one that only reads the fields it knows is unaffected.
 
