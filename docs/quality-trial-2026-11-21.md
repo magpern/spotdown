@@ -1,10 +1,18 @@
 # Real-music trial, 2026-11-21 (informal, owner-observed)
 
-**Status: not a quality measurement.** One reviewer listened to spotdown's own output on a handful of
-tracks and said whether it matched what they heard. Nothing here is ground truth, nothing is a gate
-pass or fail, and none of it may be copied into `quality/fixtures/cc/catalog.json` as truth. The owner
-(not a musician) decided on 2026-11-21 to stop this effort and tune on the finished product instead
-(classbeat#1298 stays open for a later corpus decision).
+**Status: not a quality measurement.** One reviewer listened to spotdown's own output on a handful
+of tracks and said whether it matched what they heard. Nothing here is ground truth, nothing is a
+gate pass or fail, and none of it may be copied into `quality/fixtures/cc/catalog.json` as truth.
+The owner, a non-expert listener, decided on 2026-11-21 to stop this effort and tune on the finished
+product instead (classbeat#1298 stays open for a later corpus decision).
+
+This trial changes nothing that classbeat#1298 requires (the real-music corpus, which gates the
+real-music runs and classbeat's default switch to spotdown); any change to #1298 is the owner's or
+the Architect's follow-up on the classbeat side. spotdown#6 stays open only for those real-music
+runs, as the "Merged state" paragraph and the P2 row of the issue table in
+[`integration-plan.md`](integration-plan.md) say. Labels, phrases and downbeats stay heuristic, with
+every confidence capped at 0.4 until held-out evidence exists (spotdown#20; see
+[`quality-harness.md`](quality-harness.md)).
 
 ## What was done
 - **Synthetic runner (Phase 0):** all 23 gates pass, run in a Linux container (native macOS cannot run
@@ -38,8 +46,10 @@ pass or fail, and none of it may be copied into `quality/fixtures/cc/catalog.jso
 Drop timing on vocal songs (spotdown reported none on `p02`; one on `p03`), edges, calibration (ECE),
 robustness, time and memory on real audio, and any per-gate number. n is 4 tracks and one reviewer.
 
-## Candidate follow-ups (the Architect's call; none is scheduled)
-1. Merge over-fine segments before labelling, and re-check the chorus rule on tracks with steady energy.
-2. Decide whether a pre-chorus label is wanted, or document that it is not.
-3. Expose one label vocabulary and drop the older one from the core result.
-4. Show the analysis on a waveform in the UI and accept a local file in service mode (the cloud agent's UI work).
+## Follow-ups (scheduled by the Architect on 2026-11-21)
+1. Merge over-fine segments before labelling (spotdown#46), and re-check the chorus rule on tracks with
+   steady energy (spotdown#47).
+2. Decide whether a pre-chorus label is wanted, or document that it is not (ADR 0001, spotdown#44).
+3. Expose one label vocabulary and drop the older one from the core result (spotdown#45).
+4. Show the analysis on a waveform in the UI (spotdown#48) and accept a local file (spotdown#49; where
+   the file is accepted is ADR 0002, spotdown#44).
