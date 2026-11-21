@@ -8,7 +8,9 @@ non-blocking findings:
 - N7: what the `Origin` check compares, a TLS proxy, and the checks stop browsers only;
 - N8: the route is POSIX-only.
 
-ADR 0003 hardens the rest of the standalone app (spotdown#52).
+ADR 0003 hardens the rest of the standalone app (spotdown#52). Under it, every standalone route,
+this upload route included, sits behind an always-on token. The checks below are defence in depth
+on top of that session, and ADR 0003 item 6 defines the expected origin they use.
 
 **Issue:** spotdown#44. It is built in spotdown#49 (Opus Developer), and its waveform part in
 spotdown#48.
@@ -67,13 +69,11 @@ Constraints:
      simple `fetch` therefore cannot reach the decoder.
    - **A same-origin `Origin`.** `Origin` must be present and must equal the expected origin
      exactly: scheme, host and port, compared as strings after lowercasing the scheme and host.
-     - **Expected origin:** the scheme uvicorn sees, plus the request's `Host` header (which must
-       pass the next check).
-     - **Behind a TLS-terminating proxy:** the scheme uvicorn sees is `http` while the browser's
-       `Origin` is `https`. The operator then either runs uvicorn with `--proxy-headers` and
-       `--forwarded-allow-ips` set to the proxy's address only, or sets `ui_public_origin` (one exact
-       origin, for example `https://spotdown.example`). When `ui_public_origin` is set, it is the
-       only origin accepted.
+     - **Expected origin** (ADR 0003 item 6): `ui_public_origin` if it is set, as one exact origin
+       such as `https://spotdown.example`, which is then the only origin accepted. Otherwise it is
+       `http://` plus the request's `Host` header, which must pass the next check.
+     - It is never taken from the scheme uvicorn sees or from forwarded headers. Behind a
+       TLS-terminating proxy the operator sets `ui_public_origin`.
      - A missing `Origin` is rejected: browsers send it on every `POST`, and this route is for the
        UI only.
    - **An expected `Host`** (against DNS rebinding). `Host` must be in a new setting
@@ -135,7 +135,7 @@ Constraints:
    outlives the request.
 6. **The waveform is drawn in the browser** from the file the user picked (Web Audio). The server
    never sends that audio back.
-7. **Security-critical.** It is a new caller-facing input path without authentication, so spotdown#49
+7. **Security-critical.** It is a new caller-facing input path for hostile files, so spotdown#49
    has an Opus Developer and an Opus Reviewer.
 
 ## Alternatives
@@ -156,9 +156,9 @@ Constraints:
 - **Narrow the CORS of the whole standalone app.** That is out of scope here: the existing routes'
   exposure predates this ADR, and this route does not widen it. The new route simply does not rely
   on CORS.
-- **A bounded queue of several uploads.** Rejected for now: it multiplies the disk and CPU an
-  unauthenticated caller can hold, for a single-user test tool. Raising the slot count later is a
-  reversible change.
+- **A bounded queue of several uploads.** Rejected for now: it multiplies the disk and CPU that a
+  caller, or a leaked session, can hold, for a single-user test tool. Raising the slot count later is
+  a reversible change.
 - **A CSRF token in the page.** Not chosen: the `Origin` and `Host` checks with a non-simple
   content type already stop cross-site requests, without session state.
 
@@ -174,8 +174,8 @@ Constraints:
   - the read deadline;
   - the byte and decoded-length caps;
   - the sandbox;
-  - ADR 0003's network defaults: loopback publishing, and a token whenever the app is reachable
-    beyond loopback.
+  - above all, ADR 0003's always-on token: without a session the route answers `401` before any
+    of its own checks.
 - Local-file input is unavailable on Windows (outside a container), as the sandbox already is.
 - Only one local file is processed at a time per installation. A second tab gets `429` until the
   first finishes.
@@ -185,4 +185,5 @@ Constraints:
 - The upload checks gain a second caller, through one shared module. The tests of spotdown#49 assert
   that each check guards both routes.
 - The rest of the standalone app keeps its wildcard CORS and its lack of authentication until
-  spotdown#52 (ADR 0003) hardens it. #52 is built before #49.
+  spotdown#52 (ADR 0003) hardens it. #52 is built before #49, so this route never ships without the
+  token.
