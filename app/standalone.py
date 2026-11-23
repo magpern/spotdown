@@ -10,7 +10,7 @@ import json as _json
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from . import db, jobs, spotify
 from .config import get_settings
@@ -26,7 +26,16 @@ router = APIRouter()
 def index():
     if not get_settings().serve_ui:
         return {"service": "spotdown", "ui": "disabled", "api_docs": "/docs"}
-    return FileResponse(STATIC_DIR / "index.html")
+    return HTMLResponse(_index_html(get_settings().default_bitrate))
+
+
+def _index_html(default_bitrate: int) -> str:
+    """index.html with the configured default bitrate preselected (DEFAULT_BITRATE)."""
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    option = f"<option>{default_bitrate}</option>"
+    if option not in html:  # a default outside the listed choices: add it
+        html = html.replace('<select id="bitrate">', f'<select id="bitrate">{option}', 1)
+    return html.replace(option, f"<option selected>{default_bitrate}</option>", 1)
 
 
 UI_ASSETS = {
