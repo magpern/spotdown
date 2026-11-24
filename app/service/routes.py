@@ -1,7 +1,7 @@
 """The v2 routes of this phase: ``PUT /v2/uploads``, ``POST /v2/analyses``, ``GET /v2/jobs/{id}``.
 
 Sources: ``upload``, ``url`` and ``youtube`` (``source_ref`` ``youtube:<video id>``, ``422
-source_disabled`` unless ``ALLOW_YTDLP_SOURCING=true``; its ``cache_scope`` is optional and its
+source_disabled`` with ``ALLOW_YTDLP_SOURCING=false``; its ``cache_scope`` is optional and its
 analysis is global). A ``reference`` adds the alignment layer (spotdown#11): the job ends on an
 aligned analysis, ``alignment_failed`` when no offset maps the file onto it. Lookups,
 ``GET /v2/analyses/{id}`` and the scope deletion are in ``cache_routes``; the matcher in
@@ -63,7 +63,7 @@ def replay(store: Any, scope: str, key: str, req_hash: str) -> Optional[JSONResp
 
 
 def _youtube_ref(source_ref: str, settings: Any) -> str:
-    """The 11-character video id of ``youtube:<id>``; the source is off unless enabled."""
+    """The 11-character video id of ``youtube:<id>``; refused when the source is turned off."""
     kind, sep, ref = source_ref.partition(":")
     if not sep or kind != "youtube":
         raise ApiError(422, "invalid_request", "source_ref must be youtube:<video id>")

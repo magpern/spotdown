@@ -35,6 +35,7 @@ def standalone_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "analysis_wall_timeout_s": 120,
         "analysis_max_cpu_s": 60,
         "analysis_max_decoded_s": 60.0,
+        "allow_ytdlp_sourcing": False,  # on by default in code; no upload test sources YouTube
     }
     values.update(overrides)
     return Settings(**values)

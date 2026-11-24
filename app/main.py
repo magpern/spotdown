@@ -83,7 +83,7 @@ def create_service_app(
     app.state.service_key = key
     app.state.store = Store(settings.service_db_path, settings.global_reference_ttl_s)
     app.state.dispatch = dispatch or rq_dispatcher(settings)
-    app.state.youtube = YtDlpClient()  # used only when ALLOW_YTDLP_SOURCING=true
+    app.state.youtube = YtDlpClient()  # unused with ALLOW_YTDLP_SOURCING=false
     # The Web API with both Spotify settings, the public pages with neither; one alone fails.
     app.state.spotify = resolver_from_settings(
         settings.spotify_client_id, settings.spotify_client_secret_file

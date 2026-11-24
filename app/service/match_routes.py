@@ -1,9 +1,9 @@
 """``POST /v2/match``: metadata to ranked YouTube candidates. No download, no analysis.
 
-The matcher is the ``youtube`` source's, so it is ``422 source_disabled`` unless the operator set
-``ALLOW_YTDLP_SOURCING=true``. ``cache_scope`` is optional (global sources only); when given it
-must be valid and only decides which cached analyses a candidate may report. ``Idempotency-Key``
-is optional; when given it behaves as on ``POST /v2/analyses``.
+The matcher is the ``youtube`` source's, so it is ``422 source_disabled`` when the operator set
+``ALLOW_YTDLP_SOURCING=false`` (on by default). ``cache_scope`` is optional (global sources only);
+when given it must be valid and only decides which cached analyses a candidate may report.
+``Idempotency-Key`` is optional; when given it behaves as on ``POST /v2/analyses``.
 """
 
 from __future__ import annotations

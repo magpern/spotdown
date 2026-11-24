@@ -17,7 +17,11 @@ LOGIN_HEADERS = {**UI_HEADERS, "Content-Type": "application/json"}
 
 
 def standalone_settings(tmp_path: Path, **overrides: Any) -> Settings:
-    values: dict = {"data_dir": tmp_path / "data", "redis_url": "redis://127.0.0.1:1/0"}
+    values: dict = {
+        "data_dir": tmp_path / "data",
+        "redis_url": "redis://127.0.0.1:1/0",
+        "allow_ytdlp_sourcing": False,  # on by default in code; no standalone test sources YouTube
+    }
     values.update(overrides)
     return Settings(**values)
 

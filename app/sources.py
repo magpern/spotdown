@@ -67,7 +67,7 @@ def _best_match(entries: list, meta: TrackMeta) -> Optional[dict]:
 def source_from_spotify(meta: TrackMeta, dest_dir: Path, basename: str) -> Path:
     """Find a matching audio source for a Spotify track and download it.
 
-    GATED: disabled unless ALLOW_YTDLP_SOURCING=true. See README for why.
+    GATED: disabled with ALLOW_YTDLP_SOURCING=false (on by default). See README.
     Matching is by title+artist and (when known) duration within MAX_DURATION_DRIFT_S.
     """
     settings = get_settings()

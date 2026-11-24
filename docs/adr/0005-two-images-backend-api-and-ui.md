@@ -123,8 +123,8 @@ the service.
      `Idempotency-Key`. It is a worker job, polled with `GET /v2/jobs/{id}` until `audio_id` comes
      back.
    - `GET /v2/audio/{audio_id}` answers `audio/mpeg` as an attachment.
-   - Only `youtube:` refs, gated by `ALLOW_YTDLP_SOURCING` as every YouTube path is (off by default
-     in code; switching it on stays the owner's deployment choice).
+   - Only `youtube:` refs, gated by `ALLOW_YTDLP_SOURCING` as every YouTube path is. *Amended (owner,
+     2026-11-24, spotdown#86):* the setting is on by default in code; `false` turns it off.
    - Files are kept `AUDIO_TTL_S` (default a day) and then swept.
    - Returning the mp3 is **the owner's explicit direction** (2026-11-24). Every other `/v2` route
      still never returns audio, and analysis audio is still deleted after every job.

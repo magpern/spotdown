@@ -2,5 +2,5 @@
 
 Pure rules (``normalise_policy``, ``match_calc``, ``error_policy``) are kept apart from the one
 module that drives yt-dlp (``ytdlp_client``). Agents and CI never call YouTube: every test fakes
-yt-dlp, and the source is off unless the operator sets ``ALLOW_YTDLP_SOURCING=true``.
+yt-dlp. The source is on by default and off with ``ALLOW_YTDLP_SOURCING=false``.
 """

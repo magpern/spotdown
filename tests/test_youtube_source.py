@@ -1,6 +1,6 @@
-"""The ``youtube`` source of ``POST /v2/analyses`` with a faked yt-dlp: off by default, the
-11-character id only, a global analysis shared by every scope, provenance that names no caller,
-the decoded duration check and every failure status."""
+"""The ``youtube`` source of ``POST /v2/analyses`` with a faked yt-dlp: off when the operator
+turns it off, the 11-character id only, a global analysis shared by every scope, provenance that
+names no caller, the decoded duration check and every failure status."""
 
 from __future__ import annotations
 
@@ -31,8 +31,8 @@ def analyse(stack: YoutubeStack, scope: Any = None, ref: str = SOURCE) -> Any:
 
 
 @pytest.mark.parametrize("scope", [None, SCOPE])
-def test_the_source_is_off_by_default(tmp_path: Path, scope) -> None:
-    off = Stack(tmp_path)
+def test_the_source_is_off_when_the_operator_turns_it_off(tmp_path: Path, scope) -> None:
+    off = Stack(tmp_path, allow_ytdlp_sourcing=False)
     body: Dict[str, Any] = {"source_ref": SOURCE, **({"cache_scope": scope} if scope else {})}
     res = off.post(body)
     assert res.status_code == 422 and res.json()["error"]["code"] == "source_disabled"

@@ -82,8 +82,9 @@ The deploy file fixes `SERVICE_MODE=true`, `SERVE_UI=false`,
 per line. `spotdown.env.example` lists each setting with its default:
 
 - `URL_ALLOWED_HOSTS`: the hosts the `url` source may fetch from. Empty turns that source off.
-- `ALLOW_YTDLP_SOURCING`: YouTube. Off by default. Turning it on accepts a terms-of-service risk and
-  is the operator's decision (README, "Service mode").
+- `ALLOW_YTDLP_SOURCING`: YouTube. On by default (owner, 2026-11-24); `false` turns every YouTube
+  path off (README, "Service mode"). Turning it on accepts a terms-of-service risk and is the
+  operator's decision. See the upgrade note below: an unset flag used to mean off.
 - `SPOTDOWN_UI`: the web UI ([ADR 0004](../adr/0004-ui-switch-independent-of-service-mode.md)).
   Off by default, and the image and the deploy file leave it off (`SERVE_UI=false` does not
   control it in service mode). `on` serves the static page at `/` next to `/v2` to every caller on
@@ -125,6 +126,11 @@ SPOTDOWN_VERSION=$V docker compose exec api python -m app.service.takedown youtu
 ```
 
 ## Upgrade, pin and roll back
+
+**Upgrade note, YouTube sourcing (spotdown#86).** From this change on, an unset
+`ALLOW_YTDLP_SOURCING` means **on**: a stack whose `spotdown.env` does not set it starts calling
+YouTube after the upgrade. Before you upgrade, set it explicitly in `spotdown.env`, `true` or
+`false`. `ALLOW_YTDLP_SOURCING=false` keeps the old behaviour (every YouTube path off).
 
 1. Read the release notes of every version between the running one and the new one, and back up
    `spotdown-data` (stack stopped).

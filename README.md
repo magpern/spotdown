@@ -38,8 +38,11 @@ matching audio with `yt-dlp`, then transcodes it. So a "Spotify download" is rea
 violates YouTube's and Spotify's Terms of Service.** Operating such a service publicly
 carries real legal exposure.
 
-Because of that, the **YouTube-sourcing path is OFF by default** (`ALLOW_YTDLP_SOURCING=false`):
-with it off, a Spotify link resolves metadata only and the convert step refuses. The pipeline
+The **YouTube-sourcing path is ON by default** (`ALLOW_YTDLP_SOURCING=true`, owner decision,
+2026-11-24). Set `ALLOW_YTDLP_SOURCING=false` to turn it off: then a Spotify link resolves metadata
+only and the convert step refuses. Turning it on is the operator's terms-of-service decision.
+**Upgrading:** an unset flag used to mean off and now means on, so set it explicitly (`true` or
+`false`) before you upgrade; `false` keeps the old behaviour. The pipeline
 is identical for lawful inputs, which you drive through the `source_url` field instead — a
 direct URL to content you own / Creative-Commons / public-domain / licensed / your own uploads
 / podcasts with permission. `source_url` bypasses Spotify and the YouTube search entirely and
@@ -91,7 +94,7 @@ anyway stores it outside the page's control.
   `SCOPED_RETENTION_TTL_S` (default 90 days), with scoped job records unchanged that long, so a
   scope that is never deleted keeps nothing for ever (docs/contract-v2.md, "Retention of scoped
   entries").
-- **YouTube (off by default).** With `ALLOW_YTDLP_SOURCING=true`, `POST /v2/match` turns
+- **YouTube (on by default).** With `ALLOW_YTDLP_SOURCING=true` (the default), `POST /v2/match` turns
   `{title, artists, duration_s, isrc?}` into ranked YouTube candidates (recording-match confidence,
   band, duration check, up to 2 alternates; no download), and `POST /v2/analyses` accepts
   `source_ref: "youtube:<11-character video id>"`. With the setting off both are

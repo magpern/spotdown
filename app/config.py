@@ -56,7 +56,9 @@ class Settings(BaseSettings):
     spotify_client_secret_file: Optional[Path] = None
 
     # Sourcing
-    allow_ytdlp_sourcing: bool = False
+    # YouTube sourcing (yt-dlp): on by default (owner, 2026-11-24, spotdown#86). False turns every
+    # YouTube path off: POST /v2/match, source_ref youtube:..., POST /v2/audio, standalone sourcing.
+    allow_ytdlp_sourcing: bool = True
     source_search_results: int = 5
     # POST /v2/match: how many tracks of one batch are searched at the same time.
     match_concurrency: int = 4
