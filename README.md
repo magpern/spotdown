@@ -82,7 +82,11 @@ anyway stores it outside the page's control.
   alignment) expire after `GLOBAL_REFERENCE_TTL_S` (default 3 days). Global analyses and their links
   are purged after `GLOBAL_ANALYSIS_TTL_S` (default 90 days) without a read or when the analyzer
   version changes; a takedown by source is `python -m app.service.takedown youtube:<video id>`
-  (operator command, counts only; docs/contract-v2.md, "Retention of global analyses").
+  (operator command, counts only; docs/contract-v2.md, "Retention of global analyses"). Scoped
+  analyses (with their links and alignments) are purged by the same rules after
+  `SCOPED_RETENTION_TTL_S` (default 90 days), with scoped job records unchanged that long, so a
+  scope that is never deleted keeps nothing for ever (docs/contract-v2.md, "Retention of scoped
+  entries").
 - **YouTube (off by default).** With `ALLOW_YTDLP_SOURCING=true`, `POST /v2/match` turns
   `{title, artists, duration_s, isrc?}` into ranked YouTube candidates (recording-match confidence,
   band, duration check, up to 2 alternates; no download), and `POST /v2/analyses` accepts
@@ -117,7 +121,16 @@ kept, the file is deleted after the analysis, and the waveform is drawn from the
 browser. The result is cached by the file's sha256 and is read again only by uploading the same
 bytes.
 
-## Run it
+## Install from the Docker image (production)
+
+spotdown is delivered as the private image `ghcr.io/magpern/spotdown` (`linux/amd64`,
+`linux/arm64`; tags `X.Y.Z`, `X.Y` and `sha-<short>`, never `latest`). Each GitHub Release carries a
+`compose.yaml` pinned through `SPOTDOWN_VERSION`, a `spotdown.env.example` and `SHA256SUMS`. The
+image runs as uid 10001 in service mode, the service key is a Docker secret file, data lives in one
+volume, and no port is published: [docs/runbooks/docker-image.md](docs/runbooks/docker-image.md)
+covers install, settings, upgrade and pinning.
+
+## Run it (development)
 
 ```bash
 cp .env.example .env         # fill in SPOTIFY_CLIENT_ID/SECRET for full metadata (optional)
@@ -287,4 +300,7 @@ app/
   jobs.py        the worker pipeline
   youtube/       service-mode matcher (pure scoring) and the yt-dlp driver
   service/       service mode (/v2): routes, worker, caches, sandbox
+  healthcheck.py the container healthcheck (api /healthz, worker Redis ping)
+deploy/          the production compose file and settings example (release assets)
+scripts/release-assets.sh  the release's asset list and SHA256SUMS
 ```

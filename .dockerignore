@@ -1,0 +1,19 @@
+# Allowlist: the build context is only what the Dockerfile copies (requirements.txt and app/).
+# Everything else, .env, data/, secrets/, audio, caches and the git history among it, never
+# reaches the builder, so it can never be baked into a layer.
+*
+!requirements.txt
+!app/
+# ...and nothing generated or local inside app/.
+**/__pycache__
+**/*.pyc
+**/*.pyo
+app/**/*.wav
+app/**/*.mp3
+app/**/*.mp4
+app/**/*.m4a
+app/**/*.flac
+app/**/*.ogg
+app/**/*.webm
+app/**/*.db
+app/**/.env*

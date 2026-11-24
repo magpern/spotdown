@@ -170,7 +170,7 @@ def test_reading_a_global_alignment_renews_its_analysis(store: Store, clock: Clo
     assert present(store, "al")["analyses"] == 1
 
 
-def test_a_scoped_read_never_touches_a_scoped_entry_and_scoped_rows_are_never_purged(
+def test_the_global_purge_never_selects_a_scoped_entry_however_old(
     store: Store, clock: Clock
 ) -> None:
     with store._conn() as conn:

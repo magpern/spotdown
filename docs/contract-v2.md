@@ -293,17 +293,51 @@ removes them, so they are purged too (classbeat ADR 0040 §7):
   (`alignments=… analyses=… links=… match_records=…`). It only accepts a global source reference,
   and a second run reports zeros.
 - **Where it runs.** The purge runs in the worker's sweep before each job (the same path that purges
-  expired match records and alignments) and is idempotent. Scoped data is never selected: a scope
-  deletion never touches a global entry, and the purge never touches a scoped one.
+  expired match records and alignments) and is idempotent. A scope deletion never touches a global
+  entry, and neither this purge nor a takedown ever selects a scoped one: scoped entries have their
+  own lifetime ("Retention of scoped entries" below).
 - **Nothing left behind.** Audio is never kept. The purge overwrites the freed database pages
   (`secure_delete`) and truncates the write-ahead log, so a purged document is not left in the
   database files. A job row that ended on a purged analysis keeps its id and answers `404` when
   the analysis is fetched; the same request analyses again. Job rows (they hold the video id and
-  the analysis id, not the analysis) and idempotency records are not part of a takedown or of this
-  purge: those of a scope go with it, but a scope-less `youtube` job and the `/v2/match`
-  idempotency records (scope `""`) persist. A lifetime for them is a known follow-up.
+  the analysis id, not the analysis) are not part of a takedown or of this purge: those of a scope
+  go with it or with the scoped retention below, but a scope-less `youtube` job persists. A
+  lifetime for it is a known follow-up. Idempotency records past their 24-hour window are purged by
+  the sweep in every scope, `""` included.
 - **Backups** are outside this service: a takedown does not reach a copy of `service.db` made
   earlier, so the operator rotates those by their own schedule.
+
+### Retention of scoped entries
+
+A scope is removed with `DELETE /v2/scopes/{scope}`, but a scope that is never deleted (classbeat's
+shared studio-track scope, for example) must not keep everything for ever (spotdown#40). So scoped
+entries have a bounded lifetime too, by the same rules as global analyses:
+
+- **Unused for 90 days.** A scoped analysis not read for `SCOPED_RETENTION_TTL_S` (default 90 days,
+  at least one day) is purged with the source links and alignments of its own scope. A read in its
+  scope renews it: a lookup by source or by sha256 that hits it, an analysis request answered by it
+  (at the request or by the worker reusing equal bytes), `GET /v2/analyses/{id}` of it or of an
+  alignment built on it. A read from another scope finds nothing and renews nothing. The renewal is
+  written at most once an hour.
+- **Analyzer version change.** A scoped analysis of another `analyzer_version` than the running one
+  can never be a hit again and is purged at the next sweep, however recently it was read.
+- **Job and idempotency records.** A scoped job record that is not `running` and has not changed for
+  `SCOPED_RETENTION_TTL_S` is purged; polling it then answers `404`. Idempotency records go once their
+  24-hour window has passed (they are never served after it).
+- **Uploads.** The upload TTL sweep (`UPLOAD_TTL_S`, plus the longest a job can run for a claimed
+  upload whose job was lost) also runs in the worker's sweep, not only on upload requests, so no
+  upload row or file outlives it because no new upload arrives.
+- **In use is never purged.** A running job's record and its upload are never deleted (the stale-job
+  sweep fails the job once its lease ends, and removes its upload then). A job that reuses a scoped
+  analysis renews it when it finds it and checks it again, in the transaction that ends the job; if
+  it was purged meanwhile (by a worker of a newer analyzer version) the job fails as
+  `source_unavailable` instead of ending on a missing id, and the same request analyses again.
+- **Where it runs, and what it never selects.** In the worker's sweep before each job, after the
+  global purge, idempotent, with the same `secure_delete` and log truncation (nothing of a purged
+  document is left in the database files) and no audio kept. Only rows with a non-empty scope are
+  selected, and every delete is bound to the entry's own scope: a global row, or a row of another
+  scope, is never touched. `takedown` still accepts only a global `youtube:` reference, and
+  `DELETE /v2/scopes/{scope}` is unchanged.
 
 ### Lookups
 
@@ -323,7 +357,8 @@ Both are limited to the caller's scope and return `{"schema_version": "lookup-v1
 
 Delete everything held for the scope: analyses, source-reference links, uploads, jobs, run records and
 idempotency records. Idempotent: `204` whether or not the scope existed. Global (public) entries are not
-touched (see "Retention of global analyses" for their own lifetime).
+touched (see "Retention of global analyses" for their own lifetime). A scope that is never deleted
+still keeps nothing for ever (see "Retention of scoped entries").
 
 ## Schemas
 

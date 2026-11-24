@@ -19,7 +19,8 @@ from .alignment_store import Aligning, AlignmentStore, aligning_for, store_align
 from .cache_policy import GLOBAL_REFERENCE_TTL_S
 from .cache_store import CacheStore, insert_analysis, put_link
 from .match_store import MatchStore
-from .retention_store import RetentionStore
+from .retention_store import touch_analysis
+from .scope_retention_store import ScopeRetentionStore
 from .upload_store import UploadStore
 
 _SCHEMA = """
@@ -50,7 +51,7 @@ def _reference(job: Dict[str, Any]) -> Optional[str]:
     return json.dumps(ref, sort_keys=True) if ref is not None else None
 
 
-class Store(CacheStore, AlignmentStore, MatchStore, RetentionStore, UploadStore):
+class Store(CacheStore, AlignmentStore, MatchStore, ScopeRetentionStore, UploadStore):
     def __init__(
         self,
         path: Path,
@@ -193,13 +194,19 @@ class Store(CacheStore, AlignmentStore, MatchStore, RetentionStore, UploadStore)
         source_ref: Optional[str],
         aligning: Optional[Aligning] = None,
     ) -> bool:
-        """Marks the job done with an analysis that already exists, and links its source."""
+        """Marks the job done with an analysis that already exists, and links its source. False
+        (nothing stored) when the job is gone or the analysis was purged meanwhile; the job's
+        read renews the analysis."""
         now = time.time()
         with self._conn() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            if not self._mark_done(conn, job_id, analysis_id, now, aligning):
+            exists = conn.execute(
+                "SELECT 1 FROM analyses WHERE analysis_id = ?", (analysis_id,)
+            ).fetchone()
+            if exists is None or not self._mark_done(conn, job_id, analysis_id, now, aligning):
                 conn.execute("ROLLBACK")
                 return False
+            touch_analysis(conn, analysis_id, self.clock())
             put_link(conn, source_kind, source_ref, scope, analysis_id, now)
             conn.execute("COMMIT")
         return True

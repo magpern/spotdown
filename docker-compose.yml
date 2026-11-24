@@ -8,8 +8,15 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    # Development only (docs/runbooks/docker-image.md is the production install). The image
+    # defaults to service mode as uid 10001 with its data in /data; this file keeps the standalone
+    # UI on the host's ./data bind mount, which the image's user cannot write, hence root (ADR 0003).
+    user: "0:0"
     environment:
       REDIS_URL: redis://redis:6379/0
+      DATA_DIR: /app/data
+      SERVICE_MODE: ${SERVICE_MODE:-false}
+      SERVE_UI: ${SERVE_UI:-true}
     # Loopback only unless SPOTDOWN_PUBLISH_HOST widens it (ADR 0003); the app never reads it.
     ports:
       - "${SPOTDOWN_PUBLISH_HOST:-127.0.0.1}:8000:8000"
@@ -22,8 +29,15 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    # Development only (docs/runbooks/docker-image.md is the production install). The image
+    # defaults to service mode as uid 10001 with its data in /data; this file keeps the standalone
+    # UI on the host's ./data bind mount, which the image's user cannot write, hence root (ADR 0003).
+    user: "0:0"
     environment:
       REDIS_URL: redis://redis:6379/0
+      DATA_DIR: /app/data
+      SERVICE_MODE: ${SERVICE_MODE:-false}
+      SERVE_UI: ${SERVE_UI:-true}
     command: rq worker -u redis://redis:6379/0 spotdown
     volumes:
       - ./data:/app/data

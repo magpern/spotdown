@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 from . import cache_policy as policy
 from . import idempotency_policy as idem
 from .cache_policy import CacheEntry
-from .retention_store import touch_global
+from .retention_store import touch_analysis
 from .sqlite_base import SqliteBase
 
 _ENTRY_COLUMNS = "a.analysis_id, a.cache_scope, a.sha256, a.analyzer_version, a.fingerprint"
@@ -87,9 +87,14 @@ class CacheStore(SqliteBase):
         return [_entry(r) for r in rows]
 
     def find_by_sha(self, scope: str, sha256: str, version: str) -> Optional[CacheEntry]:
-        return policy.content_hit(
+        """A content hit in ``scope``; the hit is a read and renews its entry."""
+        hit = policy.content_hit(
             self.entries_by_sha(scope, sha256), scope=scope, sha256=sha256, analyzer_version=version
         )
+        if hit is not None:
+            with self._conn() as conn:
+                touch_analysis(conn, hit.analysis_id, self.clock())
+        return hit
 
     def find_global_by_sha(self, sha256: str, version: str) -> Optional[CacheEntry]:
         """A global (``youtube``) analysis of these exact bytes, for reuse by a global source."""
@@ -101,7 +106,7 @@ class CacheStore(SqliteBase):
             ).fetchall()
             hits = [e for e in map(_entry, rows) if policy.usable(e, None, version)]
             if hits:
-                touch_global(conn, hits[0].analysis_id, self.clock())
+                touch_analysis(conn, hits[0].analysis_id, self.clock())
         return hits[0] if hits else None
 
     def find_by_source(
@@ -117,8 +122,8 @@ class CacheStore(SqliteBase):
             ).fetchone()
             found = _entry(row) if row else None
             hit = policy.source_hit(found, kind=kind, cache_scope=scope, analyzer_version=version)
-            if hit is not None and hit.scope is None:
-                touch_global(conn, hit.analysis_id, self.clock())
+            if hit is not None:
+                touch_analysis(conn, hit.analysis_id, self.clock())
         return hit
 
     def get_analysis_in_scope(self, analysis_id: str, scope: Optional[str]) -> Optional[Dict]:
@@ -128,8 +133,7 @@ class CacheStore(SqliteBase):
             ).fetchone()
             if row is None or not policy.readable_in(row["cache_scope"], scope):
                 return None
-            if row["cache_scope"] is None:
-                touch_global(conn, analysis_id, self.clock())
+            touch_analysis(conn, analysis_id, self.clock())
         return json.loads(row["doc"])
 
     # ---- idempotency ----

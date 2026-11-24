@@ -13,7 +13,8 @@ the external-corpus runner (#20, PR #28) and hardening (PR #23). #6 stays open o
 harness is merged. #29 hostile-input hardening (PR #32) and #30 global cache retention purge (90 days
 unused or a version change, with an operator takedown; classbeat ADR 0040, amendment "#1296
 accepted"; PR #34) are merged. Open spotdown work: #40 (lifetime of scoped entries that are never
-deleted) and the follow-ups of the 2026-11-21 real-music trial, #46 to #49, #52 and #54 (below).
+deleted; option 1 decided 2026-11-24: the same 90-days-unused and version-change purge as global
+analyses, with their job and idempotency records) and the follow-ups of the 2026-11-21 real-music trial, #46 to #49, #52 and #54 (below).
 Merged so far: #43 (PR #50); #44 (PR #51: ADR 0001 and ADR 0002, Accepted); ADR 0003 (PR #53, for
 #52); and #45 (PR #55, one label vocabulary and the v1 response version in the cache key). All the
 ADRs are in `docs/adr/`. Build order: #54, #46, #47, #48, #52, #49, one PR at a time. classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
@@ -82,6 +83,7 @@ by default in code (`ALLOW_YTDLP_SOURCING`); switching it on is the owner's depl
 | hardening | PR #23 deferred review findings of #16 to #21 | merged | – |
 | hardening | #29 hostile-input hardening (PR #32) | merged | – |
 | hardening | #30 global cache retention purge (PR #34) | merged | – (builds on #5, merged) |
+| hardening | #40 scoped retention: 90 days unused or a version change, old job and idempotency records | open | #30 |
 | trial follow-up | #43 docs points of the #42 review (PR #50) | merged | – |
 | trial follow-up | #44 ADR 0001 (one label vocabulary, no pre-chorus in analysis-v1), ADR 0002 (local-file input in the standalone UI) (PR #51) | merged | – |
 | trial follow-up | #45 one label vocabulary (retire the core analyser's older labels) (PR #55) | merged | #44 |

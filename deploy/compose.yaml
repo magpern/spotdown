@@ -1,0 +1,105 @@
+# spotdown, production install from the released image (docs/runbooks/docker-image.md).
+# Published as a release asset byte for byte (scripts/release-assets.sh); SHA256SUMS lists it.
+#
+#   SPOTDOWN_VERSION=1.2.3 docker compose -f compose.yaml up -d --wait
+#
+# - The image is pinned: SPOTDOWN_VERSION is required (X.Y.Z, or X.Y to follow patch releases)
+#   and there is no `latest`.
+# - No port is published. Callers (classbeat) reach http://spotdown-api:8000 by joining the
+#   external network named by SPOTDOWN_SERVICE_NETWORK; Redis is on a network only the api and
+#   the worker share.
+# - The service key is a Docker secret file, mounted into the api only, never an env value.
+# - Everything else is read-only: data lives in the `spotdown-data` volume, caches in a tmpfs.
+
+name: spotdown
+
+x-spotdown: &spotdown
+  image: ghcr.io/magpern/spotdown:${SPOTDOWN_VERSION:?set SPOTDOWN_VERSION to a released version, e.g. 1.2.3}
+  restart: unless-stopped
+  # Optional tunables (MAX_UPLOAD_BYTES, ANALYSIS_*, URL_ALLOWED_HOSTS, ALLOW_YTDLP_SOURCING, ...):
+  # spotdown.env.example lists them. It never holds the service key.
+  env_file:
+    - path: ./spotdown.env
+      required: false
+  read_only: true
+  tmpfs:
+    - /tmp:size=512m,mode=1777
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  volumes:
+    - spotdown-data:/data
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:7.4.12-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - redis-data:/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    <<: *spotdown
+    # The fixed names below override spotdown.env: service mode, the key file and Redis are not
+    # tunables.
+    environment:
+      SERVICE_MODE: "true"
+      SERVE_UI: "false"
+      SERVICE_KEY_FILE: /run/secrets/spotdown_service_key
+      DATA_DIR: /data
+      REDIS_URL: redis://redis:6379/0
+    secrets:
+      - spotdown_service_key
+    networks:
+      backend: {}
+      service:
+        aliases: [spotdown-api]
+      egress: {}
+
+  worker:
+    <<: *spotdown
+    environment:
+      SERVICE_MODE: "true"
+      SERVE_UI: "false"
+      DATA_DIR: /data
+      REDIS_URL: redis://redis:6379/0
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "spotdown"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.healthcheck", "worker"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks: [backend, egress]
+
+networks:
+  # Redis, the api and the worker; no route out.
+  backend:
+    internal: true
+  # The callers' network, created by the operator (`docker network create --internal spotdown`)
+  # and joined by classbeat. Only the api is on it.
+  service:
+    external: true
+    name: ${SPOTDOWN_SERVICE_NETWORK:-spotdown}
+  # Outbound for the `url` and (when the operator enables it) `youtube` sources only.
+  egress: {}
+
+volumes:
+  spotdown-data:
+  redis-data:
+
+secrets:
+  spotdown_service_key:
+    # Owned by uid 10001, mode 0400 (the runbook's `install` line). Never committed.
+    file: ${SPOTDOWN_SERVICE_KEY_FILE:-./secrets/spotdown_service_key}

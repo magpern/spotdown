@@ -17,3 +17,22 @@ quality/**/*.mp3
 quality/**/*.flac
 quality/**/*.ogg
 quality/**/*.m4a
+
+# build artifacts and local deploy files
+*.whl
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+*.tar
+*.tar.gz
+sbom*.json
+release-assets/
+.coverage
+htmlcov/
+.mypy_cache/
+.pyright/
+# the deploy's own files: the service key and the operator's tunables, never committed
+secrets/
+spotdown.env

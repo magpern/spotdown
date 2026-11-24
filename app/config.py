@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     # A global (public-source) analysis, its source links and match record are purged after this
     # long without a read, or when the analyzer version changes (ADR 0040 §7). At least a day.
     global_analysis_ttl_s: float = Field(default=ANALYSIS_UNUSED_TTL_S, ge=86400)
+    # A scoped analysis (with its links and alignments) is purged after this long without a read,
+    # or when the analyzer version changes; a scoped job record after this long unchanged
+    # (spotdown#40: a scope that is never deleted must not keep everything). At least a day.
+    scoped_retention_ttl_s: float = Field(default=ANALYSIS_UNUSED_TTL_S, ge=86400)
 
     @property
     def ui_enabled(self) -> bool:
