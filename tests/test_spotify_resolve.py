@@ -18,6 +18,7 @@ from app.service.spotify_policy import LinkError, parse_link
 from .service_helpers import AUTH, client_for, service_settings
 from .spotify_fakes import (
     ALBUM_ID,
+    LIVE_ROW,
     PLAYLIST_ID,
     TRACK_ID,
     FakeSpotify,
@@ -87,7 +88,8 @@ def test_a_track(tmp_path: Path) -> None:
 def test_an_album(tmp_path: Path) -> None:
     fake = FakeSpotify()
     body = _resolve(_client(tmp_path, fake), f"spotify:album:{ALBUM_ID}").json()
-    assert body["listed"] == 12 and body["total"] is None and body["truncated"] is False
+    # The page states no count: whether more exist is unknown, never a guessed false.
+    assert body["listed"] == 12 and body["total"] is None and body["truncated"] is None
     assert [t["spotify_id"] for t in body["tracks"]] == [sid(n) for n in range(12)]
     assert {t["album"] for t in body["tracks"]} == {"The Album"}
     assert body["tracks"][3]["artists"] == ["Artist 3", "Guest 3"]
@@ -113,12 +115,55 @@ def test_a_short_playlist_page_reports_the_shortfall(tmp_path: Path) -> None:
     assert (body["listed"], body["total"], body["truncated"]) == (100, 742, True)
 
 
-@pytest.mark.parametrize("rows,truncated", [(500, False), (501, True), (650, True)])
+@pytest.mark.parametrize("rows,truncated", [(500, None), (501, True), (650, True)])
 def test_at_most_500_tracks(tmp_path: Path, rows, truncated) -> None:
     fake = FakeSpotify(playlist_rows=rows)
     body = _resolve(_client(tmp_path, fake), f"spotify:playlist:{PLAYLIST_ID}").json()
     assert len(body["tracks"]) == 500
     assert body["listed"] == rows and body["truncated"] is truncated
+
+
+def test_the_live_artist_separator_is_split(tmp_path: Path) -> None:
+    """The live subtitle is "HUGEL,\u00a0Ultra Naté": a comma and a no-break space."""
+    fake = FakeSpotify()
+    fake.pages[f"/embed/playlist/{PLAYLIST_ID}"] = embed_html(
+        {"type": "playlist", "trackList": [LIVE_ROW]}
+    )
+    body = _resolve(_client(tmp_path, fake), f"spotify:playlist:{PLAYLIST_ID}").json()
+    assert body["tracks"] == [
+        {
+            "spotify_id": "4vTsKN15Kqo3Geo9r7FhAN",
+            "title": "Movin' To The Sun",
+            "artists": ["HUGEL", "Ultra Nat\u00e9"],
+            "album": None,
+            "duration_ms": 142200,
+            "isrc": None,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "subtitle,artists",
+    [
+        ("A,\u00a0B", ["A", "B"]),
+        ("A, B", ["A", "B"]),
+        ("A,B", ["A", "B"]),
+        ("A ,\u00a0 B,\t,C", ["A", "B", "C"]),
+        ("Solo", ["Solo"]),
+        (",\u00a0", []),
+    ],
+)
+def test_artist_separators(subtitle, artists) -> None:
+    row = {"uri": f"spotify:track:{TRACK_ID}", "title": "t", "subtitle": subtitle}
+    track = spotify_page.track_of(row)
+    assert track is not None and track["artists"] == artists
+
+
+def test_a_page_without_a_count_reports_truncated_unknown(tmp_path: Path) -> None:
+    """The live playlist entity has no count key: total and truncated are null, not false."""
+    fake = FakeSpotify(playlist_rows=50)  # the live embed listed 50 rows
+    body = _resolve(_client(tmp_path, fake), f"spotify:playlist:{PLAYLIST_ID}").json()
+    assert (body["listed"], body["total"], body["truncated"]) == (50, None, None)
 
 
 def test_missing_fields_are_null_or_empty_and_still_200(tmp_path: Path) -> None:
@@ -144,7 +189,7 @@ def test_missing_fields_are_null_or_empty_and_still_200(tmp_path: Path) -> None:
         ],
         "listed": 2,
         "total": None,
-        "truncated": False,
+        "truncated": None,
     }
 
 

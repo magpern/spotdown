@@ -22,6 +22,7 @@ _NEXT_DATA = re.compile(
 )
 _TRACK_URI = re.compile(r"spotify:track:([0-9A-Za-z]{22})")
 _TOTAL_KEYS = ("totalCount", "trackCount", "total")
+_ARTIST_SEP = re.compile(r",\s*")  # str pattern: \s is Unicode, so U+00A0 is whitespace
 MAX_SEARCH_DEPTH = 12
 
 MAX_TITLE = 300
@@ -86,9 +87,11 @@ def _artists(item: Dict[str, Any]) -> List[str]:
             n for a in listed if isinstance(a, dict) and (n := _text(a.get("name"), MAX_ARTIST))
         ]
     elif isinstance(item.get("subtitle"), str):
-        # The track list gives the artists as one line, "A, B". An artist whose own name holds
-        # ", " is split too; the matcher scores on the first name.
-        names = [n for part in item["subtitle"].split(", ") if (n := _text(part, MAX_ARTIST))]
+        # The track list gives the artists as one line, "A,\u00a0B" (live: a comma and a
+        # no-break space; any whitespace is accepted). An artist whose own name holds a comma is
+        # split too; the matcher scores on the first name.
+        parts = _ARTIST_SEP.split(item["subtitle"])
+        names = [n for part in parts if (n := _text(part, MAX_ARTIST))]
     return names[:MAX_ARTISTS]
 
 

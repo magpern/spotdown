@@ -116,12 +116,20 @@ def answer(
     """The resolve answer: at most MAX_TRACKS tracks, ``listed`` (the usable tracks read),
     ``total`` (what Spotify says there are, when it says) and ``truncated`` (some were left out:
     over the cap, or, for a page, fewer listed than the stated total; for the API, rows left
-    unread, ``more``)."""
+    unread, ``more``). A page that states no total cannot say whether more exist: ``truncated``
+    is then None (unknown), unless the cap already cut it."""
     listed = len(tracks)
     if kind == "track":
         total = listed
-    short = (total is not None and total > listed) if more is None else more
-    truncated = listed > MAX_TRACKS or short
+    truncated: Optional[bool]
+    if listed > MAX_TRACKS:
+        truncated = True
+    elif more is not None:
+        truncated = more
+    elif total is None:
+        truncated = None  # a public page without a count: unknown, never a guessed false
+    else:
+        truncated = total > listed
     return {
         "tracks": tracks[:MAX_TRACKS],
         "listed": listed,

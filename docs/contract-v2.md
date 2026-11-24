@@ -192,10 +192,14 @@ Response `200`:
 - **A page that gives less is not a failure.** A field Spotify does not state is `null` (`album`,
   `duration_ms`, `isrc`) or `[]` (`artists`). The public pages state no ISRC, so `isrc` is
   always `null` on that path. `listed` is how many usable tracks the page listed, `total` how many it says there are
-  (`null` when it does not say; `1` for a track), and `truncated` is true when some were left out:
-  over 500, fewer listed than `total` (an embed page lists only the first part of a long
-  playlist), or, on the API path, rows left unread after 1000. At most 500 tracks, in Spotify's
-  order.
+  (`null` when it does not say; `1` for a track). `truncated` is `true` when some were left out:
+  over 500, fewer listed than a stated `total`, or, on the API path, rows left unread after 1000.
+  It is `null` (unknown, never a guessed `false`) when a public page states no count. At most 500
+  tracks, in Spotify's order.
+- **Without credentials, a playlist or album is what the embed page shows.** The embed page lists
+  only its first part (a live check saw 50 rows) and states no count, so the answer cannot say
+  whether more exist: `total` and `truncated` are `null`. **Full playlists need the credentials
+  path.**
 - **Failures:** no usable track at all, an error status (a 404 for an unknown or private item
   too), a timeout, a redirect or an oversized body is `502 provider_error` with the fixed message `the Spotify request failed` (no
   upstream text).

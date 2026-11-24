@@ -26,6 +26,17 @@ ALBUM_ID = "1DFixLWuPkv3KT3TnV35m3"
 PLAYLIST_ID = "37i9dQZF1DXcBWIGoYBM5M"
 
 
+# The first row of a real playlist embed page, as the owner-authorized live check returned it
+# (2026-11-24): the artists are separated by a comma and a no-break space (U+00A0).
+LIVE_ROW = {
+    "uri": "spotify:track:4vTsKN15Kqo3Geo9r7FhAN",
+    "title": "Movin' To The Sun",
+    "subtitle": "HUGEL,\u00a0Ultra Nat\u00e9",
+    "duration": 142200,
+    "entityType": "track",
+}
+
+
 def sid(n: int) -> str:
     return f"t{n:021d}"
 
@@ -35,7 +46,7 @@ def row(n: int) -> Dict[str, Any]:
         "uri": f"spotify:track:{sid(n)}",
         "uid": f"uid{n}",
         "title": f"Song {n}",
-        "subtitle": f"Artist {n}, Guest {n}",
+        "subtitle": f"Artist {n},\u00a0Guest {n}",  # the live separator: comma, no-break space
         "isExplicit": False,
         "duration": 180000 + n,
         "entityType": "track",
