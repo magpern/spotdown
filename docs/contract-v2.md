@@ -29,6 +29,12 @@ the service also serves a static page at `/` and a fixed list of its assets, wit
 page holds no data and calls `/v2` with the key the user types in (kept in memory only, sent as
 this same bearer header). Every rule of this contract holds unchanged with it on.
 
+**Two caller keys** ([ADR 0005](adr/0005-two-images-backend-api-and-ui.md), Decision 3):
+`SERVICE_KEY_FILE` (classbeat's, required) and, optionally, `UI_SERVICE_KEY_FILE` (the UI image's).
+Both are secrets files with at least 32 characters, both have the same rights on `/v2`, and every
+request is compared with each configured key in constant time. A missing, unreadable or short UI
+key file, or a UI key equal to classbeat's, stops the start-up.
+
 ## Common rules
 
 - **`Idempotency-Key`** (header): required on `POST /v2/analyses` and `PUT /v2/uploads`, optional
@@ -143,6 +149,37 @@ The matcher is the `youtube` source's (spotdown#10):
   region-blocked or age-gated video is `source_unavailable`. yt-dlp's "Requested format is not
   available" is `provider_error`: with the https-only audio format it means the provider served
   no such format (an HLS- or SABR-only response after a client change), not that the video is gone.
+
+### `POST /v2/spotify/resolve`
+
+A Spotify track, album or playlist link to track metadata ([ADR 0005](adr/0005-two-images-backend-api-and-ui.md),
+Decision 4). No audio, no search, no analysis. Request: `{"url": "<link>"}`, where the link is
+`https://open.spotify.com/[intl-xx/]{track|album|playlist}/<22 base62 id>` (the scheme may be
+left out; a query and a fragment are ignored) or `spotify:{track|album|playlist}:<id>`. Anything
+else (another host, a userinfo, a port, another kind) is `422 invalid_request`.
+
+Response `200`:
+
+```json
+{"tracks": [{"spotify_id": "...", "title": "...", "artists": ["..."], "album": "...",
+             "duration_ms": 213000, "isrc": "..."}],
+ "truncated": false}
+```
+
+At most 500 tracks, in Spotify's order; `truncated` is true when more were left out (also when
+more than 1000 playlist rows would have to be read). Episodes and local files in a playlist are
+skipped. `album`, `duration_ms` and `isrc` may be `null`; Spotify's album endpoint gives no ISRC,
+so an album's tracks have `isrc: null`. The answer feeds `POST /v2/match` (`duration_ms / 1000` is
+its `duration_s`).
+
+- **The caller's URL is never fetched.** The link is reduced to (kind, id); the backend builds the
+  Web API URLs itself, on `accounts.spotify.com` and `api.spotify.com` only, follows no redirect
+  and never follows Spotify's own `next` links (it pages by offset).
+- **Credentials:** `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET_FILE` (a secrets file, never
+  logged; the `SPOTIFY_CLIENT_SECRET` value is not read here). Without both: `422
+  spotify_disabled`. A secret file that is set but unreadable or empty stops the start-up.
+- **Failures:** any Spotify error, timeout, redirect or unexpected body is `502 provider_error`
+  with the fixed message `the Spotify request failed` (no upstream text).
 
 ### `PUT /v2/uploads`
 

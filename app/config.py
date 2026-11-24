@@ -47,7 +47,11 @@ class Settings(BaseSettings):
 
     # Spotify metadata
     spotify_client_id: str = ""
+    # The standalone routes only (until #79). POST /v2/spotify/resolve reads only the file below.
     spotify_client_secret: str = ""
+    # A secrets file holding the Spotify client secret, for POST /v2/spotify/resolve (ADR 0005).
+    # Without it or SPOTIFY_CLIENT_ID the route answers 422 spotify_disabled.
+    spotify_client_secret_file: Optional[Path] = None
 
     # Sourcing
     allow_ytdlp_sourcing: bool = False
@@ -57,10 +61,13 @@ class Settings(BaseSettings):
 
     # Service mode (classbeat plan §3, §8; docs/contract-v2.md). On: /v2 (behind the service key)
     # and /healthz, plus the static UI page only with SPOTDOWN_UI=on; never /files, /api/v1,
-    # Spotify resolution or CORS.
+    # the standalone Spotify routes or CORS (Spotify links: POST /v2/spotify/resolve).
     service_mode: bool = False
     # A secrets file holding the one shared service key. Required in service mode.
     service_key_file: Optional[Path] = None
+    # Optional: a secrets file with the UI image's own caller key (ADR 0005, Decision 3). Same
+    # rules and the same rights on /v2 as the key above, and it must differ from it.
+    ui_service_key_file: Optional[Path] = None
     # Operator-set hosts the `url` source may fetch from (comma separated DNS names, exact
     # match). Empty: the `url` source is disabled.
     url_allowed_hosts: str = ""
