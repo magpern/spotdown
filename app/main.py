@@ -52,8 +52,9 @@ def create_standalone_app(settings: Settings) -> FastAPI:
 def create_service_app(
     settings: Settings, dispatch: Optional[Callable[[str], None]] = None
 ) -> FastAPI:
-    """Service mode: ``/v2`` behind the service key, and ``/healthz``. No UI, no ``/files``,
-    no ``/api/v1``, no Spotify resolution, no CORS and no API docs."""
+    """Service mode: ``/v2`` behind the service key, and ``/healthz``; the static UI page only with
+    ``SPOTDOWN_UI=on`` (ADR 0004). Never ``/files``, ``/api/v1``, Spotify resolution, CORS or API
+    docs."""
     from .service import access_log, cache_routes, errors, match_routes, routes, url_policy
     from .service.dispatch import rq_dispatcher
     from .service.service_key import ServiceKeyMiddleware, load_service_key
@@ -77,6 +78,10 @@ def create_service_app(
     app.include_router(routes.router)
     app.include_router(cache_routes.router)
     app.include_router(match_routes.router)
+    if settings.ui_enabled:  # SPOTDOWN_UI=on only; last, after every fixed route
+        from .service_ui import router as ui_router
+
+        app.include_router(ui_router)
     app.add_middleware(ServiceKeyMiddleware, key=key)
     return app
 

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
+<title>spotdown</title>
+<link rel="stylesheet" href="ui.css" />
+</head>
+<body>
+<div class="wrap">
+  <h1>spotdown</h1>
+  <p class="sub">Service mode: analyse a local audio file through the authenticated v2 API. The file is deleted on the server after its job; no audio is sent back.</p>
+
+  <div class="card">
+    <label for="key">Service key</label>
+    <input id="key" type="password" autocomplete="new-password" spellcheck="false" placeholder="the service key of this deployment" />
+    <div class="row mt">
+      <button id="useKey">Use key</button>
+      <button id="forgetKey" class="ghost">Forget key</button>
+    </div>
+    <div id="keyState" class="hint">Service key required: enter it to analyse.</div>
+  </div>
+
+  <div id="fileCard" class="card">
+    <label for="file">Local audio file (mp3, m4a or wav)</label>
+    <div id="drop" class="drop">Drop a file here, or <input id="file" type="file" accept=".mp3,.m4a,.mp4,.wav,audio/*" /></div>
+  </div>
+
+  <div id="statusCard" class="card" style="display:none"><div id="status" class="status"></div></div>
+  <div id="analysisCard" class="card" style="display:none"></div>
+</div>
+
+<script src="ui_common.js"></script>
+<script src="analysis_model.js"></script>
+<script src="analysis_timeline.js"></script>
+<script src="waveform_model.js"></script>
+<script src="waveform_view.js"></script>
+<script src="waveform_player.js"></script>
+<script src="analysis_view.js"></script>
+<script src="service_ui.js"></script>
+</body>
+</html>

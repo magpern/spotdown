@@ -1,6 +1,7 @@
 """Standalone mode: the web UI, Spotify URL resolution, conversions and ``/files`` downloads.
 
-Off in service mode (``SERVICE_MODE=true``): none of these routes is registered there.
+Off in service mode (``SERVICE_MODE=true``): none of these routes is registered there. Service mode
+has its own UI routes (``service_ui``, ADR 0004), behind ``SPOTDOWN_UI=on``.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ router = APIRouter()
 
 @router.get("/", include_in_schema=False)
 def index():
-    if not get_settings().serve_ui:
+    if not get_settings().ui_enabled:
         return {"service": "spotdown", "ui": "disabled", "api_docs": "/docs"}
     return HTMLResponse(_index_html(get_settings().default_bitrate))
 
@@ -40,6 +41,7 @@ def _index_html(default_bitrate: int) -> str:
 
 UI_ASSETS = {
     "ui.css": "text/css",
+    "ui_common.js": "text/javascript",
     "ui.js": "text/javascript",
     "analysis_model.js": "text/javascript",
     "analysis_timeline.js": "text/javascript",
@@ -56,7 +58,7 @@ UI_ASSETS = {
 @router.get("/{name}", include_in_schema=False)
 def ui_asset(name: str):
     """The page's own stylesheet and scripts (a fixed list, so no path is ever built from input)."""
-    if name not in UI_ASSETS or not get_settings().serve_ui:
+    if name not in UI_ASSETS or not get_settings().ui_enabled:
         raise HTTPException(status_code=404, detail="Not found")
     return FileResponse(STATIC_DIR / name, media_type=UI_ASSETS[name])
 

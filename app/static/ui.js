@@ -1,4 +1,3 @@
-const $ = (id) => document.getElementById(id);
 // Same-origin requests only (ADR 0003): the page is served by the app itself, behind its session.
 // Every API call carries X-Spotdown-UI; a 401 means the session is gone, so sign in again.
 // A binary body (a local file, ADR 0002) goes as application/octet-stream, the route's one type.
@@ -14,22 +13,9 @@ async function api(path, opts) {
   if (r.status === 401) { location.assign("/login"); throw new Error("Signed out"); }
   return r;
 }
-const trackCard = $("trackCard"), statusCard = $("statusCard"), statusEl = $("status");
-const analysisCard = $("analysisCard");
+const trackCard = $("trackCard");
 let currentTrackId = null, currentAudioUrl = null;
 
-function showStatus(html, isErr) {
-  statusCard.style.display = "block";
-  statusEl.className = "status" + (isErr ? " err" : "");
-  // Errors are plain text (they carry server detail and exception messages); only our own
-  // literal markup (spinner, download link) comes in as html.
-  statusEl.innerHTML = isErr ? escapeHtml(html) : html;
-}
-function fmtDur(s) {
-  if (s === null || s === undefined) return null;
-  const m = Math.floor(s / 60), ss = String(s % 60).padStart(2, "0");
-  return `${m}:${ss}`;
-}
 function renderTrack(t) {
   if ((t.id || null) !== currentTrackId) currentAudioUrl = null;  // the audio belongs to one track
   currentTrackId = t.id || null;
@@ -60,10 +46,6 @@ function renderTrack(t) {
     <div class="a">${escapeHtml(artist || t.album || "")}</div></div></div>
     <div class="meta">${meta}</div>${link}${hint}`;
 }
-function escapeHtml(s){return (s === null || s === undefined ? "" : String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-// Only http(s) links from the server go into href/src (never javascript: or data:).
-function safeUrl(u){return typeof u === "string" && /^https?:\/\//i.test(u);}
-
 async function lookup() {
   const url = $("url").value.trim();
   if (!url) return;

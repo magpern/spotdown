@@ -18,8 +18,13 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:8000"
     data_dir: Path = Path("./data")
     redis_url: str = "redis://localhost:6379/0"
-    # False -> API only (do not serve the web UI at GET /).
+    # Standalone only: False -> API only (do not serve the web UI at GET /). Ignored in service
+    # mode, so a stray SERVE_UI=true never turns the UI on there. SPOTDOWN_UI overrides it.
     serve_ui: bool = True
+    # The web UI's own switch (ADR 0004), independent of SERVICE_MODE: on or off. Unset: off in
+    # service mode, SERVE_UI in standalone mode. In service mode the UI is the static page only; it
+    # analyses through /v2 with the service key the user types in (never stored).
+    spotdown_ui: Optional[bool] = None
     # Local-file analysis in the standalone UI (ADR 0002): the deadline on reading the body
     # (60 MiB in 150 s is about 0.4 MiB/s).
     standalone_upload_read_s: float = Field(default=150.0, gt=0)
@@ -50,8 +55,9 @@ class Settings(BaseSettings):
     # POST /v2/match: how many tracks of one batch are searched at the same time.
     match_concurrency: int = 4
 
-    # Service mode (classbeat plan §3, §8; docs/contract-v2.md). On: only /v2 (behind the service
-    # key) and /healthz are served; no UI, /files, /api/v1, Spotify resolution or CORS.
+    # Service mode (classbeat plan §3, §8; docs/contract-v2.md). On: /v2 (behind the service key)
+    # and /healthz, plus the static UI page only with SPOTDOWN_UI=on; never /files, /api/v1,
+    # Spotify resolution or CORS.
     service_mode: bool = False
     # A secrets file holding the one shared service key. Required in service mode.
     service_key_file: Optional[Path] = None
@@ -83,6 +89,14 @@ class Settings(BaseSettings):
     # or when the analyzer version changes; a scoped job record after this long unchanged
     # (spotdown#40: a scope that is never deleted must not keep everything). At least a day.
     scoped_retention_ttl_s: float = Field(default=ANALYSIS_UNUSED_TTL_S, ge=86400)
+
+    @property
+    def ui_enabled(self) -> bool:
+        """Whether the web UI is served (ADR 0004). In service mode only an explicit
+        SPOTDOWN_UI=on turns it on."""
+        if self.service_mode:
+            return self.spotdown_ui is True
+        return self.serve_ui if self.spotdown_ui is None else self.spotdown_ui
 
     @property
     def standalone_token_path(self) -> Path:
@@ -124,7 +138,7 @@ class Settings(BaseSettings):
         if self.service_mode:
             self.uploads_dir.mkdir(parents=True, exist_ok=True)
             self.work_dir.mkdir(parents=True, exist_ok=True)
-        elif self.serve_ui:
+        elif self.ui_enabled:
             self.standalone_uploads_dir.mkdir(parents=True, exist_ok=True)
 
 

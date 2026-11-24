@@ -1,5 +1,9 @@
 # ADR 0002: local-file input is in the standalone UI, through the hostile-input checks
 
+**Amended by [ADR 0004](0004-ui-switch-independent-of-service-mode.md) (owner, 2026-11-24):** the UI
+is no longer always off in service mode, and the service key reaches a browser when a user types it
+into the service page. The standalone route below is unchanged.
+
 **Status:** Accepted (2026-11-21), after the Opus review of PR #51 passed at `dbb0b8b`
 ([`Agent review (opus): PASS`](https://github.com/magpern/spotdown/pull/51#issuecomment-7064226062)). The same follow-up PR amended it for that review's
 non-blocking findings:

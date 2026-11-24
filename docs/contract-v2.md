@@ -23,7 +23,11 @@ validates the examples against the schemas (`tests/test_schemas.py`).
 
 Service mode is off unless the operator sets a service key. Every `/v2` request carries
 `Authorization: Bearer <service key>`. A missing or wrong key is `401` with no detail. The key is
-never logged. The standalone UI and downloads are not served in service mode.
+never logged. The standalone UI, its routes and downloads are not served in service mode. With
+`SPOTDOWN_UI=on` (off unless set; [ADR 0004](adr/0004-ui-switch-independent-of-service-mode.md))
+the service also serves a static page at `/` and a fixed list of its assets, without a key: the
+page holds no data and calls `/v2` with the key the user types in (kept in memory only, sent as
+this same bearer header). Every rule of this contract holds unchanged with it on.
 
 ## Common rules
 

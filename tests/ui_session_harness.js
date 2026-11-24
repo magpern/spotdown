@@ -20,7 +20,7 @@ const ctx = {
   },
 };
 vm.createContext(ctx);
-for (const f of ["waveform_model.js", "ui.js"])
+for (const f of ["waveform_model.js", "ui_common.js", "ui.js"])
   vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f });
 vm.runInContext("currentTrackId = 't1'; var renderAnalysis = () => {};", ctx);
 (async () => {

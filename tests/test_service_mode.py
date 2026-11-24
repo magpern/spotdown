@@ -1,33 +1,160 @@
-"""SERVICE_MODE: no UI, /files, /api/v1 or Spotify resolution, and no CORS. Standalone mode stays
-as it was behind the flag."""
+"""SERVICE_MODE: no /files, /api/v1 or Spotify resolution, and no CORS; the static UI page only with
+SPOTDOWN_UI=on (ADR 0004), whose switch is independent of the mode. Standalone mode stays as it was
+behind its flag."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
-from app import standalone
+from app import service_ui, standalone
 from app.config import Settings
 from app.main import create_app
 
 from .service_helpers import AUTH, client_for, service_settings
 from .standalone_helpers import generated_token, signed_in, standalone_settings
 
+STATIC = Path(__file__).resolve().parent.parent / "app" / "static"
+SERVICE_UI_ASSETS = service_ui.SERVICE_UI_ASSETS
+
+# Every UI path either mode serves: the page, the standalone page's assets and the service page's.
+UI_PATHS = sorted(
+    {"/", *(f"/{n}" for n in standalone.UI_ASSETS), *(f"/{n}" for n in SERVICE_UI_ASSETS)}
+)
+# Never served in service mode, whatever the UI switch says.
 STANDALONE_PATHS = [
-    ("GET", "/"),
     ("GET", "/files/track-320.mp3"),
     ("GET", "/files/..%2Fservice_key"),
     ("GET", "/api/Gettrack?spotify_url=https://open.spotify.com/track/abc"),
     ("POST", "/api/v1/convert"),
     ("GET", "/api/v1/tasks/abc"),
     ("GET", "/api/v1/analyze/abc"),
+    ("GET", "/api/v1/analyze-upload"),
+    ("POST", "/api/v1/analyze-upload"),
+    ("GET", "/login"),
+    ("POST", "/login"),
+    ("POST", "/logout"),
     ("GET", "/docs"),
     ("GET", "/redoc"),
     ("GET", "/openapi.json"),
-    # the UI page's own stylesheet and scripts
-    *[("GET", f"/{name}") for name in standalone.UI_ASSETS],
+    ("GET", "/index.html"),
+    ("GET", "/service.html"),
+    ("GET", "/track-320.mp3"),  # a single-segment name of a file under data/files
+    ("GET", "/service_key"),
 ]
+
+# The UI switch in service mode: (settings overrides, whether the UI is served). SERVE_UI is the
+# standalone switch and never turns the UI on in service mode (classbeat's deployment unchanged).
+SERVICE_SWITCH = [
+    ({}, False),
+    ({"spotdown_ui": False}, False),
+    ({"serve_ui": True}, False),
+    ({"serve_ui": True, "spotdown_ui": False}, False),
+    ({"spotdown_ui": True}, True),
+    ({"spotdown_ui": True, "serve_ui": False}, True),
+]
+# In standalone mode: SPOTDOWN_UI wins, else SERVE_UI (default on, as before).
+STANDALONE_SWITCH = [
+    ({}, True),
+    ({"spotdown_ui": True}, True),
+    ({"serve_ui": False}, False),
+    ({"spotdown_ui": False}, False),
+    ({"spotdown_ui": False, "serve_ui": True}, False),
+    ({"spotdown_ui": True, "serve_ui": False}, True),
+]
+
+
+def _service_expected(ui_on: bool, method: str, path: str) -> int:
+    """The status a path answers in service mode (no key needed for any of these)."""
+    if ui_on and method == "GET" and (path == "/" or path[1:] in SERVICE_UI_ASSETS):
+        return 200
+    return 404
+
+
+@pytest.mark.parametrize("overrides,ui_on", SERVICE_SWITCH)
+def test_service_mode_serves_exactly_the_ui_its_switch_allows(tmp_path, overrides, ui_on) -> None:
+    """The table: every UI path and every standalone path, with and without the key."""
+    settings = service_settings(tmp_path, **overrides)
+    assert settings.ui_enabled is ui_on
+    settings.ensure_dirs()
+    (settings.files_dir / "track-320.mp3").write_bytes(b"ID3audio")
+    client = client_for(settings)
+    rows = [("GET", p) for p in UI_PATHS] + STANDALONE_PATHS
+    for method, path in rows:
+        want = _service_expected(ui_on, method, path)
+        for headers in ({}, AUTH):
+            res = client.request(method, path, headers=headers, json={"source_url": "https://x"})
+            if want == 404 and method != "GET" and ui_on:
+                # a single-segment POST meets the GET-only asset route: refused all the same
+                assert res.status_code in (404, 405), (overrides, method, path, res.status_code)
+            else:
+                assert res.status_code == want, (overrides, method, path, res.status_code)
+            assert b"ID3audio" not in res.content
+            assert "access-control-allow-origin" not in res.headers
+            if want == 200:
+                name = "service.html" if path == "/" else path[1:]
+                assert res.content == (STATIC / name).read_bytes(), path
+                assert res.headers["content-security-policy"] == service_ui.CSP
+                assert res.headers["x-frame-options"] == "DENY"
+
+
+@pytest.mark.parametrize("overrides,ui_on", SERVICE_SWITCH)
+def test_v2_needs_the_key_whatever_the_ui_switch(tmp_path, overrides, ui_on) -> None:
+    client = client_for(service_settings(tmp_path, **overrides))
+    for method, path in [
+        ("GET", "/v2/jobs/job_1"),
+        ("GET", "/v2/analyses/an_1"),
+        ("PUT", "/v2/uploads?cache_scope=spotdown_ui"),
+        ("POST", "/v2/analyses"),
+        ("GET", "/v2"),
+        ("GET", "/v2/ui.css"),
+    ]:
+        res = client.request(method, path)
+        assert res.status_code == 401, (overrides, path, res.status_code)
+        assert "ID3" not in res.text
+    assert client.get("/v2/jobs/job_1", headers=AUTH).status_code == 404
+
+
+def test_the_service_page_loads_only_its_own_assets() -> None:
+    html = (STATIC / "service.html").read_text(encoding="utf-8")
+    loaded = set(re.findall(r'(?:src|href)="([^"]+)"', html))
+    assert loaded == set(SERVICE_UI_ASSETS), loaded ^ set(SERVICE_UI_ASSETS)
+    # No inline script (the CSP allows none): every <script> has a src and an empty body, and no
+    # element carries an event-handler attribute.
+    scripts = re.findall(r"<script\b([^>]*)>(.*?)</script>", html, re.S | re.I)
+    assert scripts and all("src=" in attrs and body == "" for attrs, body in scripts)
+    assert len(scripts) == len(re.findall(r"<script\b", html, re.I))
+    assert not re.search(r"\son[a-z]+\s*=", html, re.I)
+    assert "javascript:" not in html.lower()
+
+
+def test_the_asset_route_comes_after_every_fixed_route(tmp_path) -> None:
+    app = create_app(service_settings(tmp_path, spotdown_ui=True))
+    paths = [getattr(r, "path", "") for r in app.router.routes]
+    catch_all = paths.index("/{name}")
+    assert paths.index("/healthz") < catch_all
+    assert all(not p.startswith("/v2") for p in paths[catch_all:])
+
+
+@pytest.mark.parametrize("overrides,ui_on", STANDALONE_SWITCH)
+def test_standalone_mode_serves_the_ui_its_switch_allows(
+    tmp_path, monkeypatch, overrides, ui_on
+) -> None:
+    settings = standalone_settings(tmp_path, **overrides)
+    assert settings.ui_enabled is ui_on
+    monkeypatch.setattr(standalone, "get_settings", lambda: settings)
+    app = create_app(settings)
+    with signed_in(app, generated_token(settings)) as client:
+        page = client.get("/")
+        assert page.status_code == 200
+        assert ("analysis_view.js" in page.text) is ui_on
+        for path in UI_PATHS[1:]:
+            res = client.get(path)
+            want = 200 if ui_on and path[1:] in standalone.UI_ASSETS else 404
+            assert res.status_code == want, (overrides, path, res.status_code)
+        assert client.get("/v2/jobs/job_1", headers=AUTH).status_code == 404
 
 
 @pytest.fixture()
@@ -35,19 +162,9 @@ def settings(tmp_path: Path) -> Settings:
     return service_settings(tmp_path)
 
 
-@pytest.mark.parametrize("method,path", STANDALONE_PATHS)
-def test_standalone_routes_are_off_in_service_mode(settings, method, path) -> None:
-    settings.ensure_dirs()
-    (settings.files_dir / "track-320.mp3").write_bytes(b"ID3audio")
-    client = client_for(settings)
-    for headers in ({}, AUTH):
-        res = client.request(method, path, headers=headers, json={"source_url": "https://x"})
-        assert res.status_code == 404, (path, res.status_code)
-        assert b"ID3audio" not in res.content
-
-
-def test_cors_is_off_in_service_mode(settings) -> None:
-    client = client_for(settings)
+@pytest.mark.parametrize("ui", [None, False, True])
+def test_cors_is_off_in_service_mode(tmp_path: Path, ui) -> None:
+    client = client_for(service_settings(tmp_path, spotdown_ui=ui))
     origin = {"Origin": "https://evil.example.net"}
     pre = client.options(
         "/v2/analyses",
@@ -58,6 +175,8 @@ def test_cors_is_off_in_service_mode(settings) -> None:
     assert "access-control-allow-origin" not in res.headers
     res = client.get("/v2/jobs/job_1", headers={**origin, **AUTH})
     assert "access-control-allow-origin" not in res.headers
+    for path in ("/", "/service_ui.js"):
+        assert "access-control-allow-origin" not in client.get(path, headers=origin).headers
 
 
 def test_healthz_stays_open(settings) -> None:
@@ -84,3 +203,16 @@ def test_standalone_mode_keeps_its_routes_behind_the_session(tmp_path: Path, mon
         assert client.get("/").status_code == 200
         assert client.get("/v2/jobs/job_1", headers=AUTH).status_code == 404
     assert not settings.uploads_dir.exists()
+
+
+@pytest.mark.parametrize("value,ui_on", [("on", True), ("off", False), ("true", True)])
+def test_the_switch_reads_on_and_off_from_the_environment(tmp_path, monkeypatch, value, ui_on):
+    monkeypatch.setenv("SPOTDOWN_UI", value)
+    assert service_settings(tmp_path).ui_enabled is ui_on
+
+
+def test_an_empty_switch_stops_the_app_at_start_up(tmp_path, monkeypatch) -> None:
+    """``SPOTDOWN_UI=`` is not a boolean: the settings refuse it (fails closed, never on)."""
+    monkeypatch.setenv("SPOTDOWN_UI", "")
+    with pytest.raises(ValueError):
+        service_settings(tmp_path)
