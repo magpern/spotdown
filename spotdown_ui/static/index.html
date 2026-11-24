@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
+<title>spotdown</title>
+<link rel="stylesheet" href="ui.css" />
+</head>
+<body>
+<div class="wrap">
+  <h1>spotdown</h1>
+  <p class="sub">Paste a Spotify track, album or playlist link, or pick a local audio file. The server matches the track on YouTube, analyses it and can give you the mp3.</p>
+
+  <div class="card">
+    <label for="url">Spotify link</label>
+    <input id="url" type="text" placeholder="https://open.spotify.com/track/..." autocomplete="off" spellcheck="false" />
+    <div class="row mt">
+      <button id="lookup">Look up</button>
+      <button id="logout" class="ghost">Sign out</button>
+    </div>
+  </div>
+
+  <div id="tracksCard" class="card" style="display:none"></div>
+
+  <div id="matchCard" class="card" style="display:none">
+    <div id="matchInfo"></div>
+    <div class="row mt">
+      <button id="analyze">Analyse</button>
+      <div>
+        <label for="bitrate">Bitrate</label>
+        <select id="bitrate"><option selected>320</option><option>256</option><option>192</option><option>128</option></select>
+      </div>
+      <button id="mp3" class="ghost">Make the mp3</button>
+    </div>
+    <div id="download" class="mt"></div>
+  </div>
+
+  <div id="fileCard" class="card">
+    <label for="file">Local audio file (mp3, m4a or wav)</label>
+    <div id="drop" class="drop">Drop a file here, or <input id="file" type="file" accept=".mp3,.m4a,.mp4,.wav,audio/*" /></div>
+  </div>
+
+  <div id="statusCard" class="card" style="display:none"><div id="status" class="status"></div></div>
+  <div id="analysisCard" class="card" style="display:none"></div>
+</div>
+
+<script src="ui_common.js"></script>
+<script src="analysis_model.js"></script>
+<script src="analysis_timeline.js"></script>
+<script src="waveform_model.js"></script>
+<script src="waveform_view.js"></script>
+<script src="waveform_player.js"></script>
+<script src="analysis_view.js"></script>
+<script src="ui_api.js"></script>
+<script src="ui_link.js"></script>
+<script src="ui_upload.js"></script>
+</body>
+</html>

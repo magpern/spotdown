@@ -1,0 +1,20 @@
+# The build context of Dockerfile.ui (BuildKit reads <Dockerfile>.dockerignore before
+# .dockerignore). Allowlist: only what Dockerfile.ui copies (requirements-ui.txt and spotdown_ui/).
+# app/, .env, data/, secrets/, audio, caches and the git history never reach the builder.
+*
+!requirements-ui.txt
+!spotdown_ui/
+# ...and nothing generated or local inside spotdown_ui/.
+**/__pycache__
+**/*.pyc
+**/*.pyo
+spotdown_ui/**/*.wav
+spotdown_ui/**/*.mp3
+spotdown_ui/**/*.mp4
+spotdown_ui/**/*.m4a
+spotdown_ui/**/*.flac
+spotdown_ui/**/*.ogg
+spotdown_ui/**/*.webm
+spotdown_ui/**/*.db
+spotdown_ui/**/.env*
+spotdown_ui/**/ui_token*
