@@ -10,15 +10,23 @@ function trackLabel(t) {
   return `${escapeHtml(t.title || "")}${artists ? " — " + escapeHtml(artists) : ""}`;
 }
 
+// Seconds, or null when the backend had no duration (Spotify's public pages may give none).
+function durationOf(t) {
+  const ms = t && t.duration_ms;
+  return typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? ms / 1000 : null;
+}
+
 function renderTracks(d) {
   tracks = Array.isArray(d.tracks) ? d.tracks : [];
   tracksCard.style.display = "block";
   if (!tracks.length) { tracksCard.innerHTML = `<div class="hint">No tracks found.</div>`; return; }
   const items = tracks.map((t, i) =>
     `<div class="mrow"><button class="ghost pick" data-i="${i}">Pick</button>` +
-    `<span class="mv">${trackLabel(t)} <span class="dim">${escapeHtml(fmtDur(Math.round((t.duration_ms || 0) / 1000)) || "")}</span></span></div>`
+    `<span class="mv">${trackLabel(t)} <span class="dim">${escapeHtml(durationOf(t) === null ? "" : fmtDur(Math.round(durationOf(t))))}</span></span></div>`
   ).join("");
-  const more = d.truncated ? `<div class="hint">Only the first ${tracks.length} tracks are shown.</div>` : "";
+  const listed = Number.isInteger(d.listed) ? d.listed : tracks.length;
+  const of = Number.isInteger(d.total) ? ` of ${d.total}` : "";
+  const more = d.truncated ? `<div class="hint err">Showing ${listed}${of} tracks: Spotify listed no more.</div>` : "";
   tracksCard.innerHTML = `<div style="font-weight:600">Tracks</div>${items}${more}`;
   for (const b of tracksCard.querySelectorAll("button.pick")) {
     b.addEventListener("click", () => pickTrack(tracks[+b.getAttribute("data-i")]));
@@ -60,7 +68,8 @@ async function pickTrack(t) {
   picked = t; match = null; audioId = null;
   showStatus('<span class="spin"></span>Matching on YouTube…');
   try {
-    const track = { title: t.title, artists: t.artists || [], duration_s: (t.duration_ms || 0) / 1000 };
+    const track = { title: t.title, artists: Array.isArray(t.artists) ? t.artists : [] };
+    if (durationOf(t) !== null) track.duration_s = durationOf(t);
     if (t.isrc) track.isrc = t.isrc;
     const d = await apiJson("/api/match", { method: "POST", json: { tracks: [track] } });
     renderMatch(t, d.results && d.results[0]);
@@ -82,9 +91,9 @@ async function analyzeMatch() {
   showStatus('<span class="spin"></span>Starting the analysis…');
   try {
     const body = { source_ref: match.source_ref };
-    const sid = match.track.spotify_id, ms = match.track.duration_ms;
-    if (typeof sid === "string" && typeof ms === "number" && ms > 0) {
-      body.reference = { kind: "spotify", id: sid, duration_s: ms / 1000 };
+    const sid = match.track.spotify_id, seconds = durationOf(match.track);
+    if (typeof sid === "string" && seconds !== null) {  // no duration: no alignment reference
+      body.reference = { kind: "spotify", id: sid, duration_s: seconds };
     }
     const job = await waitForJob(await apiJson("/api/analyses", { method: "POST", json: body }), "Analysing on the server…");
     await showAnalysis(job, loadMatchAudio);

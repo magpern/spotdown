@@ -41,6 +41,7 @@ def _link_flow(client) -> List[httpx.Response]:
     assert res.status_code == 200, res.text
     track = res.json()["tracks"][0]
     assert track["spotify_id"] == SPOTIFY_ID and res.json()["truncated"] is False
+    assert res.json()["listed"] == 2 and res.json()["tracks"][1]["duration_ms"] is None
     res = client.post("/api/match", json={"tracks": [{"title": track["title"], "artists":
                       track["artists"], "duration_s": track["duration_ms"] / 1000,
                       "isrc": track["isrc"]}]})  # fmt: skip
@@ -113,6 +114,18 @@ def test_link_to_tracks_to_match_to_analysis_to_mp3(ui) -> None:
     assert json.loads(seen[5].body) == {"source_ref": f"youtube:{VIDEO}", "bitrate": 192,
                                         "title": "Song <i>", "artists": ["Artist"]}  # fmt: skip
     assert seen[3].query == seen[4].query == "cache_scope=spotdown_ui"
+
+
+def test_a_bare_track_is_matched_without_invented_values(ui) -> None:
+    import json
+
+    with ui.signed() as client:
+        bare = client.post("/api/spotify/resolve", json={"url": "x"}).json()["tracks"][1]
+        assert bare["artists"] == [] and bare["duration_ms"] is None and bare["isrc"] is None
+        res = client.post("/api/match", json={"tracks": [{"title": bare["title"], "artists": []}]})
+        assert res.status_code == 200
+    sent = json.loads(ui.backend.seen[-1].body)["tracks"][0]
+    assert sent == {"client_ref": "0", "title": "Bare", "artists": []}
 
 
 def test_local_file_to_analysis(ui) -> None:

@@ -105,12 +105,16 @@ def resolve_body(data: Dict[str, Any]) -> Dict[str, Any]:
 def _match_track(item: Any, index: int) -> Dict[str, Any]:
     if not isinstance(item, dict):
         raise _bad("each track must be an object")
+    # Spotify's public pages may give no artists or duration (#76): an empty list and an absent
+    # duration are passed on as they are, never invented.
+    artists = item.get("artists")
     out: Dict[str, Any] = {
         "client_ref": str(index),
         "title": _text(item.get("title"), "title"),
-        "artists": _artists(item.get("artists", [])),
-        "duration_s": _duration(item.get("duration_s"), "duration_s"),
+        "artists": _artists([] if artists is None else artists),
     }
+    if item.get("duration_s") is not None:
+        out["duration_s"] = _duration(item["duration_s"], "duration_s")
     if item.get("isrc") is not None:
         out["isrc"] = _text(item["isrc"], "isrc", 32)
     _explicit(item, out)

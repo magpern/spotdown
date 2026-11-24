@@ -83,7 +83,11 @@ class FakeBackend:
         if (method, path) == ("POST", "/v2/spotify/resolve"):
             track = {"spotify_id": SPOTIFY_ID, "title": "Song <i>", "artists": ["Artist"],
                      "album": "Album", "duration_ms": 213000, "isrc": "USRC17607839"}  # fmt: skip
-            return _json(200, {"tracks": [track], "truncated": False})
+            bare = {"spotify_id": "1" * 22, "title": "Bare", "artists": [], "album": None,
+                    "duration_ms": None, "isrc": None}  # fmt: skip
+            return _json(
+                200, {"tracks": [track, bare], "listed": 2, "total": 2, "truncated": False}
+            )
         if (method, path) == ("POST", "/v2/match"):
             best = {"source": f"youtube:{VIDEO}", "recording_match_confidence": 0.92,
                     "band": "confident", "duration_s": 213.8, "duration_delta_s": 0.8,

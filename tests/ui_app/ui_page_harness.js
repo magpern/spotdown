@@ -25,9 +25,11 @@ const ok = (status, body) => ({
 });
 const track = { spotify_id: "4uLU6hMCjMI75M1A2tKUQC", title: input.title, artists: [input.title],
   album: "A", duration_ms: 213000, isrc: "X" };
+// What Spotify's public pages may give: no artists, album, duration or ISRC (#76).
+const bare = { spotify_id: "1111111111111111111111", title: "Bare", artists: [], album: null, duration_ms: null, isrc: null };
 let jobPolls = 0;
 function respond(url, method) {
-  if (url === "/api/spotify/resolve") return ok(200, { tracks: [track], truncated: true });
+  if (url === "/api/spotify/resolve") return ok(200, { tracks: input.bare ? [bare] : [track], listed: 1, total: 250, truncated: true });
   if (url === "/api/match") return ok(200, { results: [{ status: "matched", best: {
     source: "youtube:dQw4w9WgXcQ", recording_match_confidence: 0.9, duration_check: "ok" } }] });
   if (url === "/api/uploads") return ok(201, { upload_id: "up_1", sha256: "a", bytes: 3 });

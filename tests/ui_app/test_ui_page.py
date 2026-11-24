@@ -22,15 +22,29 @@ HOSTILE = "<img src=x onerror=alert(1)>\"'&"
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
 
 
-@pytest.fixture(scope="module")
-def run() -> Dict[str, Any]:
-    stdin = json.dumps({"document": analysis_doc(), "title": HOSTILE})
+def _run(**extra: Any) -> Dict[str, Any]:
+    stdin = json.dumps({"document": analysis_doc(), "title": HOSTILE, **extra})
     out = subprocess.run(["node", str(HARNESS), str(STATIC)], input=stdin, capture_output=True,
                          text=True, timeout=60)  # fmt: skip
     assert out.returncode == 0, out.stderr[-2000:]
     result = json.loads(out.stdout)
     assert "error" not in result, result.get("error")
     return result
+
+
+@pytest.fixture(scope="module")
+def run() -> Dict[str, Any]:
+    return _run()
+
+
+def test_a_track_without_duration_or_artists_is_matched_as_it_is() -> None:
+    """Spotify's public pages may give no duration or artists (#76): the page sends none and no
+    alignment reference, and never invents a value."""
+    result = _run(bare=True)
+    bodies = {c["url"]: json.loads(c["body"]) for c in result["calls"] if c["method"] == "POST"}
+    assert bodies["/api/match"] == {"tracks": [{"title": "Bare", "artists": []}]}
+    assert "reference" not in bodies["/api/analyses"]
+    assert "Audio analysis" in result["steps"]["linkAnalysis"]["analysis"]
 
 
 def test_the_link_flow_calls_the_ui_routes_in_order(run) -> None:
@@ -71,6 +85,6 @@ def test_server_strings_are_rendered_as_text(run) -> None:
     steps = run["steps"]
     for html in (steps["tracks"], steps["match"]):
         assert "<img src=x" not in html and "&lt;img src=x onerror=alert(1)&gt;" in html
-    assert "Only the first 1 tracks are shown." in steps["tracks"]
+    assert "Showing 1 of 250 tracks" in steps["tracks"]
     assert "Audio analysis" in steps["linkAnalysis"]["analysis"]
     assert 'href="/api/audio/au_1" download' in steps["download"]

@@ -75,6 +75,14 @@ def test_the_match_body_is_rebuilt_from_known_fields() -> None:
     }
 
 
+@pytest.mark.parametrize("artists", [None, []])
+def test_a_track_without_duration_or_artists_is_passed_on_without_them(artists) -> None:
+    body = policy.match_body({"tracks": [{"title": "t", "artists": artists, "duration_s": None}]})
+    assert body["tracks"] == [{"client_ref": "0", "title": "t", "artists": []}]
+    assert policy.match_body({"tracks": [{"title": "t"}]})["tracks"][0] == {
+        "client_ref": "0", "title": "t", "artists": []}  # fmt: skip
+
+
 @pytest.mark.parametrize(
     "tracks",
     [[], [{}] * 51, "x", [{"title": "", "duration_s": 1}], [{"title": "t", "duration_s": 0}],
