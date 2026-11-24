@@ -39,7 +39,7 @@ function respond(url, method) {
     jobPolls++;
     return ok(200, jobPolls % 2 ? { job_id: "job_1", status: "running" } : { job_id: "job_1", status: "done", analysis_id: "an_1" });
   }
-  if (url === "/api/jobs/job_a") return ok(200, { job_id: "job_a", status: "done", audio_id: "au_1" });
+  if (url === "/api/audio-jobs/job_a") return ok(200, { job_id: "job_a", status: "done", audio_id: "au_1" });
   if (url === "/api/analyses/an_1") return ok(200, input.document);
   if (url === "/api/audio/au_1") return ok(200, {});
   return ok(404, { error: { code: "not_found", message: "not found" } });

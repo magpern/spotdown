@@ -48,7 +48,8 @@ def test_every_route_needs_a_session(ui) -> None:
     probes = _probes(ui.app)
     paths = {p for _, p in probes}
     assert {"/api/spotify/resolve", "/api/match", "/api/uploads", "/api/analyses",
-            "/api/jobs/{ident}", "/api/analyses/{ident}", "/api/audio", "/api/audio/{ident}",
+            "/api/jobs/{ident}", "/api/audio-jobs/{ident}", "/api/analyses/{ident}",
+            "/api/audio", "/api/audio/{ident}",
             "/", "/{name}", "/healthz"} <= paths  # fmt: skip
     client = ui.anon()
     for method, path in probes:

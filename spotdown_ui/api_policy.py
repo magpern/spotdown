@@ -26,6 +26,7 @@ MAX_URL = 2048
 MAX_TEXT = 512
 MAX_ARTISTS = 20
 MAX_TRACKS = 50
+MAX_AUDIO_TEXT, MAX_AUDIO_ARTISTS = 1000, 50  # POST /v2/audio's own limits (docs/contract-v2.md)
 MAX_DURATION_S = 7200.0
 
 
@@ -70,10 +71,10 @@ def _text(value: Any, name: str, limit: int = MAX_TEXT) -> str:
     return value
 
 
-def _artists(value: Any) -> List[str]:
-    if not isinstance(value, list) or len(value) > MAX_ARTISTS:
-        raise _bad(f"artists must be a list of at most {MAX_ARTISTS} strings")
-    return [_text(a, "artists") for a in value]
+def _artists(value: Any, most: int = MAX_ARTISTS, limit: int = MAX_TEXT) -> List[str]:
+    if not isinstance(value, list) or len(value) > most:
+        raise _bad(f"artists must be a list of at most {most} strings")
+    return [_text(a, "artists", limit) for a in value]
 
 
 def _duration(value: Any, name: str) -> float:
@@ -165,9 +166,9 @@ def audio_body(data: Dict[str, Any]) -> Dict[str, Any]:
         raise _bad("bitrate must be one of 128, 192, 256 or 320")
     out: Dict[str, Any] = {"source_ref": _youtube_ref(data.get("source_ref")), "bitrate": bitrate}
     if data.get("title") is not None:
-        out["title"] = _text(data["title"], "title")
+        out["title"] = _text(data["title"], "title", MAX_AUDIO_TEXT)
     if data.get("artists") is not None:
-        out["artists"] = _artists(data["artists"])
+        out["artists"] = _artists(data["artists"], MAX_AUDIO_ARTISTS, MAX_AUDIO_TEXT)
     return out
 
 

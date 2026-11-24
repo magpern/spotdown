@@ -56,7 +56,8 @@ def test_the_link_flow_calls_the_ui_routes_in_order(run) -> None:
     bodies = {c["url"]: json.loads(c["body"]) for c in run["calls"] if c["method"] == "POST"}
     assert bodies["/api/spotify/resolve"] == {"url": "https://open.spotify.com/playlist/x"}
     assert bodies["/api/match"]["tracks"][0]["duration_s"] == 213
-    assert ("POST", "/api/audio") in seen and ("GET", "/api/jobs/job_a") in seen
+    assert ("POST", "/api/audio") in seen and ("GET", "/api/audio-jobs/job_a") in seen
+    assert ("GET", "/api/jobs/job_a") not in seen
     audio = [json.loads(c["body"]) for c in run["calls"] if c["url"] == "/api/audio"][0]
     assert audio["source_ref"] == "youtube:dQw4w9WgXcQ" and audio["bitrate"] == 192
 

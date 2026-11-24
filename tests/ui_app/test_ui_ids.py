@@ -12,7 +12,7 @@ from .helpers import VIDEO, Ui
 
 HOSTILE = ["..", ".", "../x", "..%2fx", "%2e%2e", "a.b", "x" * 65, "a%2fb", "a b", "a%00b",
            "%252e%252e", "job_1;x", "job_1%3Fcache_scope=other", "%3F", "é"]  # fmt: skip
-READS = ["/api/jobs/{}", "/api/analyses/{}", "/api/audio/{}"]
+READS = ["/api/jobs/{}", "/api/audio-jobs/{}", "/api/analyses/{}", "/api/audio/{}"]
 
 
 @pytest.fixture

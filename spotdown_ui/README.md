@@ -24,7 +24,8 @@ address or its key. Each browser route maps to one fixed backend route:
 | `POST /api/match` | `POST /v2/match` |
 | `PUT /api/uploads` | `PUT /v2/uploads`, streamed |
 | `POST /api/analyses` | `POST /v2/analyses`, with a fresh `Idempotency-Key` |
-| `GET /api/jobs/{id}` | `GET /v2/jobs/{id}` |
+| `GET /api/jobs/{id}` | `GET /v2/jobs/{id}` in the scope `spotdown_ui` |
+| `GET /api/audio-jobs/{id}` | `GET /v2/jobs/{id}` without a scope (an mp3 job has none) |
 | `GET /api/analyses/{id}` | `GET /v2/analyses/{id}` |
 | `POST /api/audio` | `POST /v2/audio`, with a fresh `Idempotency-Key` |
 | `GET /api/audio/{id}` | `GET /v2/audio/{id}`, streamed as `audio/mpeg` |

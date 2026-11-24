@@ -94,6 +94,15 @@ def test_bad_match_bodies(tracks) -> None:
         policy.match_body({"tracks": tracks})
 
 
+def test_the_audio_tags_follow_the_contract_limits() -> None:
+    body = policy.audio_body({"source_ref": "youtube:dQw4w9WgXcQ", "title": "t" * 1000,
+                              "artists": ["a" * 1000] * 50})  # fmt: skip
+    assert len(body["title"]) == 1000 and len(body["artists"]) == 50
+    for bad in ({"title": "t" * 1001}, {"artists": ["a"] * 51}, {"artists": ["a" * 1001]}):
+        with pytest.raises(policy.Refused):
+            policy.audio_body({"source_ref": "youtube:dQw4w9WgXcQ", **bad})
+
+
 def test_the_audio_body_defaults_to_320() -> None:
     assert policy.audio_body({"source_ref": "youtube:dQw4w9WgXcQ"}) == {
         "source_ref": "youtube:dQw4w9WgXcQ", "bitrate": 320}  # fmt: skip

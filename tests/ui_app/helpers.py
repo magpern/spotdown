@@ -77,9 +77,17 @@ class FakeBackend:
         key = (request.method, url.path)
         if key in self.overrides:
             return self.overrides[key]
-        return self.answer(request.method, url.path, body)
+        return self.answer(request.method, url.path, body, url.params.get("cache_scope"))
 
-    def answer(self, method: str, path: str, body: bytes) -> httpx.Response:
+    def answer(
+        self, method: str, path: str, body: bytes, scope: Optional[str] = None
+    ) -> httpx.Response:
+        # Jobs are visible only in the scope that made them (``cache_scope IS ?``): an analysis
+        # job in spotdown_ui, an mp3 job in none.
+        if path == "/v2/jobs/job_1" and scope != "spotdown_ui":
+            return _json(404, {"error": {"code": "not_found", "message": "no such job"}})
+        if path == "/v2/jobs/job_a" and scope is not None:
+            return _json(404, {"error": {"code": "not_found", "message": "no such job"}})
         if (method, path) == ("POST", "/v2/spotify/resolve"):
             track = {"spotify_id": SPOTIFY_ID, "title": "Song <i>", "artists": ["Artist"],
                      "album": "Album", "duration_ms": 213000, "isrc": "USRC17607839"}  # fmt: skip
@@ -102,7 +110,7 @@ class FakeBackend:
         if (method, path) == ("POST", "/v2/analyses"):
             return _json(202, {"job_id": "job_1", "status": "queued"})
         if (method, path) == ("POST", "/v2/audio"):
-            return _json(202, {"job_id": "job_a"})
+            return _json(202, {"job_id": "job_a", "status": "queued"})
         if (method, path) == ("GET", "/v2/jobs/job_1"):
             return _json(200, {"schema_version": "job-v1", "job_id": "job_1", "status": "done",
                                "client_ref": None, "outcome": None, "retry_after_s": None,

@@ -110,7 +110,7 @@ async function makeMp3() {
     const body = { source_ref: match.source_ref, bitrate: parseInt($("bitrate").value, 10) };
     if (t.title) body.title = t.title;
     if (Array.isArray(t.artists) && t.artists.length) body.artists = t.artists;
-    const job = await waitForJob(await apiJson("/api/audio", { method: "POST", json: body }), "Making the mp3…");
+    const job = await waitForJob(await apiJson("/api/audio", { method: "POST", json: body }), "Making the mp3…", "/api/audio-jobs/");
     if (job.status !== "done" || typeof job.audio_id !== "string") throw new Error(jobProblem(job));
     audioId = job.audio_id;
     downloadEl.innerHTML = `<a class="dl" href="/api/audio/${encodeURIComponent(audioId)}" download>⬇ Download the mp3</a>`;

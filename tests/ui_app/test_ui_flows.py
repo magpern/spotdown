@@ -65,8 +65,8 @@ def _link_flow(client) -> List[httpx.Response]:
     res = client.post("/api/audio", json={"source_ref": best["source"], "bitrate": 192,
                       "title": track["title"], "artists": track["artists"]})  # fmt: skip
     out.append(res)
-    assert res.status_code == 202 and res.json() == {"job_id": "job_a"}
-    res = client.get("/api/jobs/job_a")
+    assert res.status_code == 202 and res.json() == {"job_id": "job_a", "status": "queued"}
+    res = client.get("/api/audio-jobs/job_a")
     out.append(res)
     assert res.json()["audio_id"] == "au_1"
     res = client.get("/api/audio/au_1")
@@ -114,6 +114,23 @@ def test_link_to_tracks_to_match_to_analysis_to_mp3(ui) -> None:
     assert json.loads(seen[5].body) == {"source_ref": f"youtube:{VIDEO}", "bitrate": 192,
                                         "title": "Song <i>", "artists": ["Artist"]}  # fmt: skip
     assert seen[3].query == seen[4].query == "cache_scope=spotdown_ui"
+    assert seen[6].query == ""  # an mp3 job has no scope (docs/contract-v2.md, POST /v2/audio)
+
+
+def test_each_job_is_polled_in_its_own_scope(ui) -> None:
+    """The backend shows a job only in the scope that made it: an analysis job in spotdown_ui, an
+    mp3 job in none. Polling either at the other's route is a 404, never another scope's job."""
+    with ui.signed() as client:
+        assert client.get("/api/jobs/job_1").status_code == 200
+        assert client.get("/api/audio-jobs/job_a").status_code == 200
+        assert client.get("/api/jobs/job_a").status_code == 404
+        assert client.get("/api/audio-jobs/job_1").status_code == 404
+    assert [s.query for s in ui.backend.seen] == [
+        "cache_scope=spotdown_ui",
+        "",
+        "cache_scope=spotdown_ui",
+        "",
+    ]
 
 
 def test_a_bare_track_is_matched_without_invented_values(ui) -> None:

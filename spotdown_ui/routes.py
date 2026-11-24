@@ -8,7 +8,8 @@ route (ADR 0005 Decision 7). Each handler builds the backend request from known 
 | ``POST /api/match``         | ``POST /v2/match`` (scope ``spotdown_ui``) |
 | ``PUT /api/uploads``        | ``PUT /v2/uploads`` (streamed)           |
 | ``POST /api/analyses``      | ``POST /v2/analyses`` (scope, fresh ``Idempotency-Key``) |
-| ``GET /api/jobs/{id}``      | ``GET /v2/jobs/{id}``                    |
+| ``GET /api/jobs/{id}``      | ``GET /v2/jobs/{id}`` (scope ``spotdown_ui``) |
+| ``GET /api/audio-jobs/{id}`` | ``GET /v2/jobs/{id}`` (no scope: an mp3 job) |
 | ``GET /api/analyses/{id}``  | ``GET /v2/analyses/{id}``                |
 | ``POST /api/audio``         | ``POST /v2/audio`` (fresh ``Idempotency-Key``) |
 | ``GET /api/audio/{id}``     | ``GET /v2/audio/{id}``, streamed as ``audio/mpeg`` |
@@ -80,13 +81,13 @@ def _create(
     return handler
 
 
-def _read(backend: BackendClient, name: str):
+def _read(backend: BackendClient, name: str, scoped: bool = True):
     async def handler(ident: str) -> JSONResponse:
         try:
             checked = policy.checked_id(ident)
         except policy.Refused as exc:
             return _refused(exc)
-        return _json(await backend.call(name, checked, scoped=True))
+        return _json(await backend.call(name, checked, scoped=scoped))
 
     return handler
 
@@ -155,6 +156,10 @@ def register(app: FastAPI, settings: UiSettings, backend: BackendClient) -> None
     add(paths.ANALYSES_PATH, _create(backend, "analyse", policy.analysis_body, True),
         methods=["POST"])  # fmt: skip
     add("/api/jobs/{ident}", _read(backend, "job"), methods=["GET"])
+    # A POST /v2/audio job has no cache_scope, and jobs are visible only in their own scope.
+    add(
+        "/api/audio-jobs/{ident}", _read(backend, "audio_job_status", scoped=False), methods=["GET"]
+    )
     add("/api/analyses/{ident}", _read(backend, "analysis"), methods=["GET"])
     add(paths.AUDIO_PATH, _create(backend, "audio_job", policy.audio_body, True), methods=["POST"])
     add("/api/audio/{ident}", _audio(backend, settings.max_audio_bytes), methods=["GET"])

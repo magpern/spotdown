@@ -41,7 +41,8 @@ ROUTES: Dict[str, Tuple[str, str]] = {
     "match": ("POST", "/v2/match"),
     "upload": ("PUT", "/v2/uploads"),
     "analyse": ("POST", "/v2/analyses"),
-    "job": ("GET", "/v2/jobs/{id}"),
+    "job": ("GET", "/v2/jobs/{id}"),  # in the UI's scope (uploads and analyses)
+    "audio_job_status": ("GET", "/v2/jobs/{id}"),  # without a scope: mp3 jobs have none
     "analysis": ("GET", "/v2/analyses/{id}"),
     "audio_job": ("POST", "/v2/audio"),
     "audio": ("GET", "/v2/audio/{id}"),

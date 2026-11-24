@@ -35,13 +35,15 @@ async function apiJson(path, opts) {
 const POLL_MS = 1500, POLL_MAX = 800;  // about 20 minutes, past the backend's job limits
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
-// Polls a job until it is done or failed; `label` is the status line while it runs.
-async function waitForJob(job, label) {
+// Polls a job until it is done or failed; `label` is the status line while it runs. An mp3 job
+// is polled at /api/audio-jobs/ (it has no scope), every other job at /api/jobs/.
+async function waitForJob(job, label, poll) {
+  const base = poll || "/api/jobs/";
   for (let i = 0; i < POLL_MAX; i++) {
     if (job.status === "done" || job.status === "failed") return job;
     showStatus(`<span class="spin"></span>${job.status === "running" ? escapeHtml(label) : "Queued…"}`);
     await sleep(POLL_MS);
-    job = await apiJson(`/api/jobs/${encodeURIComponent(job.job_id)}`);
+    job = await apiJson(`${base}${encodeURIComponent(job.job_id)}`);
   }
   throw new Error("timed out waiting for the server");
 }
