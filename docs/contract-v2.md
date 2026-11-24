@@ -413,7 +413,8 @@ checks that the value agrees with the evidence. The evidence is the one known wh
 made: a cache hit or a reuse of equal bytes returns the stored analysis unchanged, without the new
 request's flag, so a caller that knows its own flag combines it itself. A global (`youtube`)
 analysis is read by every scope, so its caller flags are visible to every scope; they name no
-caller. Analyses made before mapping version 4 (document version `6.4`) have no `content` group: absent means not
+caller. They are the callers' own unverified claims (any scope can set one on a global analysis), so a
+consumer weighs `caller` and `caller_match` as claims, not as facts about the recording. Analyses made before mapping version 4 (document version `6.4`) have no `content` group: absent means not
 reported, not `unknown` evidence.
 
 Baseline fields are those the integration depends on; labels, phrases, downbeats and meter are

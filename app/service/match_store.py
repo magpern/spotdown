@@ -112,22 +112,17 @@ class MatchStore(SqliteBase):
                 ),
             )
 
-    def get_choice(self, video_id: str, now: float) -> Optional[Tuple[Dict[str, Any], float]]:
-        """The latest unexpired match record that chose ``video_id``, with the requested
-        duration."""
+    def get_choice(
+        self, video_id: str, now: float
+    ) -> Optional[Tuple[Dict[str, Any], float, Optional[bool]]]:
+        """The latest unexpired match that chose ``video_id``, read in one query: its record,
+        the requested duration and the caller's explicit flag (None when it sent none)."""
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT record, duration_s FROM match_choices"
+                "SELECT record, duration_s, explicit FROM match_choices"
                 " WHERE video_id = ? AND created_at > ?",
                 (video_id, now - self.global_ttl_s),
             ).fetchone()
-        return (json.loads(row["record"]), float(row["duration_s"])) if row else None
-
-    def choice_explicit(self, video_id: str, now: float) -> Optional[bool]:
-        """The explicit flag of the latest unexpired match that chose ``video_id``, or None."""
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT explicit FROM match_choices WHERE video_id = ? AND created_at > ?",
-                (video_id, now - self.global_ttl_s),
-            ).fetchone()
-        return _flag(row["explicit"]) if row else None
+        if row is None:
+            return None
+        return json.loads(row["record"]), float(row["duration_s"]), _flag(row["explicit"])

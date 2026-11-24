@@ -39,6 +39,7 @@ AGE18 = {"source": "youtube_age_limit", "value": 18}
         ({"caller_match": True}, "yes", 0.9, [YES_MATCH]),
         ({"caller_match": False}, "no", 0.8, [NO_MATCH]),
         ({"age_limit": 18}, "yes", 0.6, [AGE18]),
+        ({"age_limit": 99}, "yes", 0.6, [{**AGE18, "value": 99}]),
         ({"caller": True, "age_limit": 21}, "yes", 0.9, [YES_CALLER, {**AGE18, "value": 21}]),
         ({"caller": False, "age_limit": 18}, "yes", 0.5, [NO_CALLER, AGE18]),  # conflict
         ({"caller": True, "caller_match": False}, "yes", 0.5, [YES_CALLER, NO_MATCH]),
@@ -75,6 +76,8 @@ def test_each_evidence_combination(
         {"caller_match": 0},
         {"age_limit": 17},
         {"age_limit": 0},
+        {"age_limit": 100},  # the schema allows 18 to 99
+        {"age_limit": 10**30},
         {"age_limit": True},  # a bool is not an age
         {"age_limit": 18.0},
         {"age_limit": "18"},

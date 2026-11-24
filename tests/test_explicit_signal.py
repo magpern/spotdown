@@ -11,10 +11,13 @@ from typing import Any, Dict, Optional
 
 import pytest
 
+from app.service.cache_store import insert_analysis
 from app.service.store import Store
+from app.youtube.ytdlp_client import age_limit_of
 
 from .cache_helpers import Stack
 from .service_helpers import SCOPE, assert_valid
+from .test_global_retention import doc
 from .youtube_fakes import YoutubeStack, entry
 
 VID = "dQw4w9WgXcQ"
@@ -86,7 +89,7 @@ def test_an_age_restricted_video_is_yes_and_is_still_analysed(yt: YoutubeStack) 
     assert yt.world.downloads == [VID]
 
 
-@pytest.mark.parametrize("age_limit", [0, 17, None, "18", True])
+@pytest.mark.parametrize("age_limit", [0, 17, 100, 10**30, None, "18", True])
 def test_no_age_restriction_is_no_evidence(yt: YoutubeStack, age_limit: Any) -> None:
     _age(yt, age_limit)
     assert _explicit(yt, yt.post({"source_ref": f"youtube:{VID}"}), None)["value"] == "unknown"
@@ -104,13 +107,31 @@ def test_the_match_flag_and_the_age_limit_conflict_to_yes(yt: YoutubeStack) -> N
     ]
 
 
+def _choice_flag(store: Any, now: float) -> Any:
+    """The explicit flag of the match that chose VID, read together with its record."""
+    choice = store.get_choice(VID, now)
+    assert choice is not None
+    return choice[2]
+
+
+def test_a_done_job_from_the_cache_keeps_the_callers_flag(tmp_path: Path) -> None:
+    store = Store(tmp_path / "svc.sqlite")
+    with store._conn() as conn:
+        insert_analysis(conn, "an_1", None, doc("a"), 1.0)
+    job = {"job_id": "job_1", "source_kind": "upload", "explicit": True}
+    assert store.add_job_done(job, "an_1", None) == "an_1"
+    assert store.get_job("job_1")["explicit"] is True  # type: ignore[index]
+    assert store.add_job_done({"job_id": "job_2", "source_kind": "upload"}, "an_1", None)
+    assert store.get_job("job_2")["explicit"] is None  # type: ignore[index]
+
+
 def test_the_latest_match_wins_for_the_flag_and_the_search_is_not_repeated(
     yt: YoutubeStack,
 ) -> None:
     yt.match([{**TRACK, "explicit": True}])
     yt.match([TRACK])  # the latest match that chose the video sent no flag
     assert len(yt.world.searches) == 1  # the flag is not part of the source-match cache key
-    assert yt.store.choice_explicit(VID, yt.store.clock()) is None
+    assert _choice_flag(yt.store, yt.store.clock()) is None
     yt.match([{**TRACK, "explicit": False}])
     found = _explicit(yt, yt.post({"source_ref": f"youtube:{VID}"}), None)
     assert (found["value"], found["evidence"]) == (
@@ -122,7 +143,7 @@ def test_the_latest_match_wins_for_the_flag_and_the_search_is_not_repeated(
 def test_an_expired_match_gives_no_flag(yt: YoutubeStack) -> None:
     yt.match([{**TRACK, "explicit": True}])
     later = yt.store.clock() + yt.store.global_ttl_s + 1
-    assert yt.store.choice_explicit(VID, later) is None
+    assert yt.store.get_choice(VID, later) is None
 
 
 def test_old_job_and_match_tables_gain_the_column(tmp_path: Path) -> None:
@@ -143,4 +164,11 @@ def test_old_job_and_match_tables_gain_the_column(tmp_path: Path) -> None:
     store.add_job({"job_id": "job_2", "source_kind": "upload"})
     assert store.get_job("job_2")["explicit"] is None  # type: ignore[index]
     store.put_choice(VID, {"chosen": VID}, 12.0, 100.0, False)
-    assert store.choice_explicit(VID, 101.0) is False
+    assert _choice_flag(store, 101.0) is False
+
+
+@pytest.mark.parametrize(
+    "value, expected", [(0, 0), (99, 99), (100, None), (10**30, None), (-1, None)]
+)
+def test_the_clients_age_limit_is_bounded_to_the_schemas_range(value: int, expected: Any) -> None:
+    assert age_limit_of({"age_limit": value}) == expected

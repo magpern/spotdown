@@ -67,7 +67,7 @@ def store_aligned(
         (
             scope_key,
             aligning.key,
-            json.dumps(aligning.row.as_doc(), separators=(",", ":")),
+            json.dumps(aligning.row.as_doc(), separators=(",", ":"), allow_nan=False),
             now,
             aligning.row.analysis_id,
         ),

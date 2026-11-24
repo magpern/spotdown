@@ -1,9 +1,10 @@
-// Test helper (tests/test_ui_render.py): runs the page's scripts in a stubbed DOM and returns the
+// Test helper (tests/test_ui_fields.py): runs the page's scripts in a stubbed DOM and returns the
 // HTML/SVG strings the analysis view builds for each result read from stdin. No browser, no network.
 const vm = require("vm"), fs = require("fs"), path = require("path");
 const dir = process.argv[2];
-const el = () => ({ style: {}, addEventListener() {}, set innerHTML(v) {}, value: "0" });
-const ctx = { document: { getElementById: () => el() }, window: { addEventListener() {} }, location: { protocol: "file:" } };
+const el = () => ({ style: {}, addEventListener() {}, innerHTML: "", value: "0" });
+const ctx = { document: { getElementById: () => el() }, window: { addEventListener() {} }, location: { protocol: "file:" },
+  requestAnimationFrame: () => 1, cancelAnimationFrame() {}, setInterval: () => 1, clearInterval() {} };
 vm.createContext(ctx);
 for (const f of ["ui_common.js", "ui.js", "analysis_model.js", "analysis_timeline.js", "analysis_view.js",
   "waveform_model.js", "waveform_view.js", "waveform_player.js"])
@@ -124,10 +125,13 @@ if (process.argv[3] === "waveform") {  // [document result] -> {svg, legend} for
   process.stdout.write(JSON.stringify(out));
   process.exit(0);
 }
-const out = vm.runInContext(`results.map((d) => {
+// The whole card as renderAnalysis sets it (its header, footer and notes), with no waveform loader.
+const out = vm.runInContext(`const whole = (d) => { try { renderAnalysis(d, async () => null); } catch (e) { return "RENDER ERROR " + e; }
+  return analysisCard.innerHTML; };
+results.map((d) => {
   const m = buildModel(d);
   return [statsHtml(m), explicitHtml(m), tempoHtml(m), signalHtml(m), alignmentHtml(m),
     sectionsHtml(m), eventsHtml(m), timelineSvg(m, 0, m.duration, 900),
-    timelineSvg(m, 10, 30, 900), timelineLegend(m)].join("\\n");
+    timelineSvg(m, 10, 30, 900), timelineLegend(m), whole(d)].join("\\n");
 })`, ctx);
 process.stdout.write(JSON.stringify(out));

@@ -148,8 +148,8 @@ class Store(CacheStore, AlignmentStore, MatchStore, ScopeRetentionStore, UploadS
                 analysis_id, outcome = row.analysis_id, row.outcome
             conn.execute(
                 "INSERT INTO jobs (job_id, cache_scope, client_ref, source_kind, source_ref,"
-                " status, outcome, failure_kind, analysis_id, created_at, updated_at, reference)"
-                " VALUES (?, ?, ?, ?, ?, 'done', ?, ?, ?, ?, ?, ?)",
+                " status, outcome, failure_kind, analysis_id, created_at, updated_at, reference,"
+                " explicit) VALUES (?, ?, ?, ?, ?, 'done', ?, ?, ?, ?, ?, ?, ?)",
                 (
                     job["job_id"],
                     job.get("cache_scope"),
@@ -162,6 +162,7 @@ class Store(CacheStore, AlignmentStore, MatchStore, ScopeRetentionStore, UploadS
                     now,
                     now,
                     _reference(job),
+                    None if job.get("explicit") is None else int(job["explicit"]),
                 ),
             )
             conn.execute("COMMIT")

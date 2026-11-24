@@ -4,12 +4,13 @@ analysis endpoint returns (a synthetic fixture; no network, no provider)."""
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import pytest
 from fastapi.testclient import TestClient
@@ -184,8 +185,28 @@ def test_single_segment_routes_come_before_the_asset_route() -> None:
             assert i < catch_all, path
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def _node_or_skip() -> None:
+    """The render tests need node. CI must run them, so there a missing node fails (it is on
+    the runner image today); anywhere else they skip."""
+    if shutil.which("node") is None:
+        if os.environ.get("CI"):
+            pytest.fail("node is missing: the UI render tests must run in CI")
+        pytest.skip("needs node")
+
+
+def _render(docs: List[Dict[str, Any]]) -> List[str]:
+    run = subprocess.run(
+        ["node", str(Path(__file__).with_name("ui_harness.js")), str(STATIC)],
+        input=json.dumps(docs),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(run.stdout)
+
+
 def test_the_views_render_with_values_and_with_nulls() -> None:
+    _node_or_skip()
     full = _result()
     hand = {"document": _hand_doc()}
     bare = json.loads(json.dumps(full))  # optional groups absent, explicit unknown, odd values
@@ -197,15 +218,9 @@ def test_the_views_render_with_values_and_with_nulls() -> None:
     bare["document"]["content"] = {
         "explicit": {"value": "unknown", "confidence": "n/a", "method": "metadata", "evidence": []}
     }
-    run = subprocess.run(
-        ["node", str(Path(__file__).with_name("ui_harness.js")), str(STATIC)],
-        input=json.dumps([full, hand, bare]),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    full_html, hand_html, bare_html = json.loads(run.stdout)
+    full_html, hand_html, bare_html = _render([full, hand, bare])
     for html in (full_html, hand_html, bare_html):
+        assert "RENDER ERROR" not in html
         assert not re.search(r"undefined|NaN|>null<|[^a-z]null[^a-z]", html), html[:300]
     assert "–0:00.0" not in full_html  # a drop has no end: it must not render as a range
     assert re.search(r"drop</td><td>\d+:\d\d\.\d</td>", full_html)  # a drop has no end time
@@ -213,3 +228,37 @@ def test_the_views_render_with_values_and_with_nulls() -> None:
     assert "<title>fade out" in hand_html and "Explicit" in hand_html
     assert "YouTube age limit: 18" in hand_html and "caller&#39;s explicit flag: false" in hand_html
     assert "explicit: unknown" in bare_html and "alignment failed" in bare_html
+
+
+HOSTILE = '"><img src=x onerror=alert(1)><script>alert(2)</script>'
+
+
+def test_hostile_document_strings_are_escaped_in_every_view() -> None:
+    """Every string the views take from a document is escaped, also those the schema limits to an
+    enum (defence in depth, #38 review): nothing hostile becomes markup."""
+    _node_or_skip()
+    d = json.loads(json.dumps(_result()))["document"]
+    d["provenance"]["analyzer"] = {"name": HOSTILE, "analyzer_version": HOSTILE}
+    d["provenance"]["created_at"] = HOSTILE
+    d["provenance"]["alignment"] = {
+        "result": "ok",
+        "hypotheses": [{"name": HOSTILE, "residual_s": HOSTILE}],
+    }
+    for seg in d["labels"]:
+        seg["label"], seg["method"] = HOSTILE, HOSTILE
+    for event in d["events"]:
+        event["kind"] = HOSTILE
+    for phrase in d["grid"]["phrases"]:
+        phrase["method"] = HOSTILE
+    d["content"] = {
+        "explicit": {
+            "value": HOSTILE,
+            "confidence": 0.5,
+            "method": HOSTILE,
+            "evidence": [{"source": HOSTILE, "value": HOSTILE}],
+        }
+    }
+    (html,) = _render([{"document": d}])
+    assert "RENDER ERROR" not in html
+    assert "&lt;img" in html  # the strings did reach the views
+    assert not re.search(r"<img|<script|onerror=alert\(1\)>", html), html[:300]

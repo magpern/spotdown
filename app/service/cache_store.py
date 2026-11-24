@@ -47,7 +47,7 @@ def insert_analysis(
         (
             analysis_id,
             scope,
-            json.dumps(doc, separators=(",", ":")),
+            json.dumps(doc, separators=(",", ":"), allow_nan=False),
             now,
             fields.sha256,
             fields.fingerprint,
@@ -163,7 +163,7 @@ class CacheStore(SqliteBase):
             cur = conn.execute(
                 "INSERT OR IGNORE INTO idempotency (cache_scope, idem_key, request_hash, status,"
                 " body, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (scope, key, request_hash, status, json.dumps(body), now),
+                (scope, key, request_hash, status, json.dumps(body, allow_nan=False), now),
             )
         return cur.rowcount == 1
 
