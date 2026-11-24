@@ -132,11 +132,15 @@ the service.
 8. **Deploy shape (#79).** `deploy/compose.yaml` runs redis, api and worker as now, with no port
    published, and adds the `ui` service.
    - The ui joins the `service` network to reach `spotdown-api`.
-   - It publishes port 8000 on the loopback by default (`SPOTDOWN_PUBLISH_HOST`, as the old stack
-     did), for the owner's reverse proxy.
+   - It publishes port 8000 for the owner's reverse proxy, as the old stack did. The bind address
+     is a deploy setting, `SPOTDOWN_PUBLISH_HOST`, which the app never reads.
+     - It defaults to the loopback (`127.0.0.1`).
+     - For a reverse proxy on another host, the runbook shows the LAN bind: the host's own LAN
+       address, which the owner sets in the deploy environment, not in the repository.
+     - The backend publishes no port at all.
    - The UI's key is a Docker secret mounted into the ui and the api only.
    - A deploy without the UI needs only classbeat's key file.
-   - Exposing the UI beyond the loopback is the owner's deploy step.
+   - Choosing the bind address and exposing the UI beyond the loopback is the owner's deploy step.
 
 ## Alternatives
 
@@ -145,6 +149,8 @@ the service.
   and the token session), both error formats and both sets of egress, so a fault in one could reach
   the other.
 - **The UI analyses on its own.** The owner rejected it: the UI analyses only through the backend.
+- **Publish the UI on every interface (`0.0.0.0`) by default.** Rejected: the safe default is the
+  loopback, and a LAN bind is one setting away.
 - **The UI uses classbeat's key.** Rejected: one leaked UI container would hold classbeat's key, and
   replacing it would break classbeat.
 - **Per-key scopes or rights.** Rejected for now as more than the owner asked for. Decision 3 is
