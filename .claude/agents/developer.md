@@ -14,7 +14,7 @@ the plan sections it names (`docs/integration-plan.md` and the classbeat plan) b
 - Stay inside the issue's scope. If the acceptance criteria are wrong or impossible, stop and
   report back to the Architect instead of changing them.
 - Write tests with the code. Tests never use the network or real accounts; fake YouTube (yt-dlp),
-  Spotify, SwedeBeat, MOWL and any model API. Never call a real one (AGENTS.md, safety envelope).
+  Spotify, SwedeBeat, MOWL and any model API. Tests never call a real one (AGENTS.md, safety envelope).
 - Run ruff, pyright and the **targeted** tests (the files you changed and the guards they touch)
   locally before pushing; say in the PR what you ran and the result. Do not run the full suite
   locally: CI runs it. Keep command output short (`tail`, `-q`).

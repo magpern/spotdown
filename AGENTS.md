@@ -161,12 +161,19 @@ The owner: "Agents aren't allowed to call Spotify — of course they are. They c
 agent may make live **read-only** requests to Spotify by hand, to check parsing against real data:
 
 - the public pages on `open.spotify.com` (oEmbed and embed);
-- the read-only Web API, when credentials are given.
+- the read-only Web API, when the owner provides credentials: only `GET` requests to
+  `api.spotify.com` with an app (client-credentials) token, and no user-authorized OAuth scopes.
+  The one client-credentials token request those GETs need (`POST accounts.spotify.com/api/token`)
+  is in scope, because it writes nothing and uses only owner-provided credentials. Nothing else on
+  `accounts.spotify.com` is in scope. Agents never create a Spotify app and never obtain keys
+  themselves.
 
 These are manual checks by an agent, never part of the automated suite: the test suite and CI
 never touch the network (Security rules), and tests fake Spotify. Nothing writes to a Spotify
 account. No credentials, tokens or cookies are printed, logged or committed. Anything wider than
-this is a question for the owner.
+this is a question for the owner. On this point the owner's direction (2026-11-24, #85) applies in
+place of the classbeat plan's wording; the matching classbeat plan amendment is the owner's and
+still pending.
 
 **Only with the owner's authorization for that specific action:** deploying,
 DNS and TLS, paid services, provider dashboards, emails to real people, anything that writes to a
