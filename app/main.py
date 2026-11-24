@@ -80,7 +80,7 @@ def create_service_app(
     app.state.service_key = key
     app.state.store = Store(settings.service_db_path, settings.global_reference_ttl_s)
     app.state.dispatch = dispatch or rq_dispatcher(settings)
-    app.state.youtube = YtDlpClient()  # used only when ALLOW_YTDLP_SOURCING=true
+    app.state.youtube = YtDlpClient()  # unused with ALLOW_YTDLP_SOURCING=false
     errors.install_handlers(app)
     app.get("/healthz")(_healthz)
     app.include_router(routes.router)

@@ -114,7 +114,7 @@ Recording-match bands: `confident` >= 0.85, `uncertain` 0.6 to 0.85, below 0.6 `
 
 The matcher is the `youtube` source's (spotdown#10):
 
-- **Off by default.** Unless the operator sets `ALLOW_YTDLP_SOURCING=true`, `POST /v2/match` is
+- **On by default** (owner, 2026-11-24). With `ALLOW_YTDLP_SOURCING=false`, `POST /v2/match` is
   `422 source_disabled`. `cache_scope` is optional; when given it only decides which cached
   analyses a candidate reports (a `youtube` analysis is global, so every scope sees it).
 - **Signals** (`matcher_version` `youtube-1`): positive are an equal ISRC (when the source exposes
@@ -235,7 +235,7 @@ in the analysis' scope (global for a `youtube` analysis, so the reference of a g
 readable in every scope that knows its id), and is removed with its scope. A cache hit with a
 `reference` aligns at once and answers `200` with the aligned analysis id.
 `source_ref` is `youtube:<11-character video id>` (nothing else: no URL, no other kind, `422
-invalid_request` otherwise); it is `422 source_disabled` unless `ALLOW_YTDLP_SOURCING=true`, and its
+invalid_request` otherwise); it is `422 source_disabled` when `ALLOW_YTDLP_SOURCING=false` (on by default), and its
 `cache_scope` is optional. The worker downloads that one video's audio (a single audio-only https
 format; the duration and live-stream checks use the metadata before any byte; the size cap is
 yt-dlp's `max_filesize`, plus the metadata size when known, checked again on the file; yt-dlp runs
@@ -278,7 +278,7 @@ Decision 5). Body:
 ```
 
 - `source_ref` is `youtube:<11-character video id>` only (`422 invalid_request` for anything else:
-  no URL, no other kind). It is `422 source_disabled` unless `ALLOW_YTDLP_SOURCING=true`. Nothing
+  no URL, no other kind). It is `422 source_disabled` when `ALLOW_YTDLP_SOURCING=false`. Nothing
   is queued on either error. No URL is ever fetched for it; the `url` source and its allowlist are
   not used here.
 - `bitrate` is 128, 192, 256 or 320 kbps (default 320); any other value is `422 invalid_request`.

@@ -82,8 +82,8 @@ The deploy file fixes `SERVICE_MODE=true`, `SERVE_UI=false`,
 per line. `spotdown.env.example` lists each setting with its default:
 
 - `URL_ALLOWED_HOSTS`: the hosts the `url` source may fetch from. Empty turns that source off.
-- `ALLOW_YTDLP_SOURCING`: YouTube. Off by default. Turning it on accepts a terms-of-service risk and
-  is the operator's decision (README, "Service mode").
+- `ALLOW_YTDLP_SOURCING`: YouTube. On by default (owner, 2026-11-24); `false` turns every YouTube
+  path off (README, "Service mode").
 - `SPOTDOWN_UI`: the web UI ([ADR 0004](../adr/0004-ui-switch-independent-of-service-mode.md)).
   Off by default, and the image and the deploy file leave it off (`SERVE_UI=false` does not
   control it in service mode). `on` serves the static page at `/` next to `/v2` to every caller on

@@ -45,7 +45,7 @@ def results(res: Any) -> list:
     return res.json()["results"]
 
 
-def test_the_matcher_is_disabled_unless_the_operator_enables_it(tmp_path: Path) -> None:
+def test_the_matcher_is_disabled_when_the_operator_turns_it_off(tmp_path: Path) -> None:
     off = Stack(tmp_path)
     res = off.client.post("/v2/match", headers=AUTH, json={"tracks": [track()]})
     assert res.status_code == 422 and res.json()["error"]["code"] == "source_disabled"

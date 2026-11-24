@@ -33,6 +33,8 @@ def service_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "max_upload_bytes": 2 * 1024 * 1024,
         "analysis_wall_timeout_s": 300,
         "analysis_max_cpu_s": 240,
+        # YouTube is on by default in code; tests that fake it opt in (``YoutubeStack``).
+        "allow_ytdlp_sourcing": False,
     }
     values.update(overrides)
     return Settings(**values)
