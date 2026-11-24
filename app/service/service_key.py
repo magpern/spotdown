@@ -1,7 +1,9 @@
-"""The one shared service key: loaded from a secrets file, compared in constant time.
+"""The caller keys of ``/v2``: loaded from secrets files, compared in constant time.
 
-Every ``/v2`` request carries ``Authorization: Bearer <service key>``; a missing or wrong key is
-401 with no detail. The key is never logged, printed or put in a repr.
+``SERVICE_KEY_FILE`` is classbeat's key and is required; ``UI_SERVICE_KEY_FILE`` is the UI image's
+and optional (ADR 0005, Decision 3). Both have the same rights. Every ``/v2`` request carries
+``Authorization: Bearer <key>``; a missing or wrong key is 401 with no detail. A key is never
+logged, printed or put in a repr.
 """
 
 from __future__ import annotations
@@ -9,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 # Starlette's own helper, the one its router matches on. It is private: an upgrade that moves it
 # fails at import (loudly), never by opening the guard; tests pin its root_path behaviour.
@@ -40,29 +42,90 @@ class ServiceKey:
         return "ServiceKey(<redacted>)"
 
     def matches(self, presented: str) -> bool:
+        return self.matches_digest(hashlib.sha256(presented.encode("utf-8")).digest())
+
+    def matches_digest(self, candidate: bytes) -> bool:
         # Both sides are fixed-length digests, so neither the content nor the length of the key
         # leaks through timing; hmac.compare_digest is constant-time in their content.
-        candidate = hashlib.sha256(presented.encode("utf-8")).digest()
         return hmac.compare_digest(candidate, self._digest)
 
+    def same_key(self, other: "ServiceKey") -> bool:
+        return other.matches_digest(self._digest)
+
     def matches_authorization(self, header: Optional[str]) -> bool:
-        if not header:
-            return False
-        scheme, _, token = header.partition(" ")
-        if scheme.lower() != "bearer":
-            return False
-        token = token.strip()
-        return bool(token) and self.matches(token)
+        token = bearer_token(header)
+        return token is not None and self.matches(token)
+
+
+class ServiceKeys:
+    """Every configured caller key. A request is compared with each of them, always all of them
+    (no early exit on the first match), so the time taken does not tell which key matched."""
+
+    __slots__ = ("_keys",)
+
+    def __init__(self, keys: Sequence[ServiceKey]) -> None:
+        if not keys:
+            raise ServiceKeyError("at least one service key is required")
+        for i, key in enumerate(keys):
+            if any(key.same_key(other) for other in keys[:i]):
+                raise ServiceKeyError("the caller keys must differ from each other")
+        self._keys = tuple(keys)
+
+    def __repr__(self) -> str:
+        return f"ServiceKeys(<{len(self._keys)} redacted>)"
+
+    def __len__(self) -> int:
+        return len(self._keys)
+
+    def matches(self, presented: str) -> bool:
+        candidate = hashlib.sha256(presented.encode("utf-8")).digest()
+        found = False
+        for key in self._keys:
+            found = key.matches_digest(candidate) | found  # `|`: no short circuit
+        return found
+
+    def matches_authorization(self, header: Optional[str]) -> bool:
+        token = bearer_token(header)
+        return token is not None and self.matches(token)
+
+
+def bearer_token(header: Optional[str]) -> Optional[str]:
+    """The token of ``Bearer <token>``, or None for any other header."""
+    if not header:
+        return None
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer":
+        return None
+    token = token.strip()
+    return token or None
+
+
+def _read_key(path: Path, setting: str) -> ServiceKey:
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        raise ServiceKeyError(f"the {setting} file cannot be read") from None
+    try:
+        return ServiceKey(raw.strip())
+    except ServiceKeyError:
+        raise ServiceKeyError(
+            f"the key in {setting} must be at least {MIN_KEY_LENGTH} characters"
+        ) from None
 
 
 def load_service_key(path: Optional[Path]) -> ServiceKey:
     if path is None:
         raise ServiceKeyError("service mode needs SERVICE_KEY_FILE")
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        raise ServiceKeyError("the service key file cannot be read") from None
-    return ServiceKey(raw.strip())
+    return _read_key(path, "SERVICE_KEY_FILE")
+
+
+def load_service_keys(path: Optional[Path], ui_path: Optional[Path] = None) -> ServiceKeys:
+    """classbeat's key (required) and, when ``UI_SERVICE_KEY_FILE`` is set, the UI's. Fails
+    closed: a missing, unreadable or short file, or two equal keys, stops the start-up."""
+    keys = [load_service_key(path)]
+    if ui_path is not None:
+        keys.append(_read_key(ui_path, "UI_SERVICE_KEY_FILE"))
+    return ServiceKeys(keys)
 
 
 def is_v2_path(path: str) -> bool:
@@ -72,7 +135,7 @@ def is_v2_path(path: str) -> bool:
 class ServiceKeyMiddleware:
     """Refuses every ``/v2`` request without the key before routing, body parsing or 404s."""
 
-    def __init__(self, app: ASGIApp, key: ServiceKey) -> None:
+    def __init__(self, app: ASGIApp, key: "ServiceKey | ServiceKeys") -> None:
         self.app = app
         self.key = key
 

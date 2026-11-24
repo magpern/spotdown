@@ -49,9 +49,13 @@ just downloads the URL you give it. You are responsible for how you use this.
 
 `SERVICE_MODE=true` turns spotdown into an internal analysis service ([contract](docs/contract-v2.md)):
 only `/v2` and `/healthz` are served. Every `/v2` call needs `Authorization: Bearer <service key>`,
-read from the file in `SERVICE_KEY_FILE` (the service refuses to start without it). `/files`,
-`/api/v1`, Spotify URL resolution, CORS and the API docs are off; so is the UI unless you turn it on
-(below).
+read from the file in `SERVICE_KEY_FILE` (the service refuses to start without it), or the UI
+image's own key from the optional `UI_SERVICE_KEY_FILE` (at least 32 characters, different from
+the first; [ADR 0005](docs/adr/0005-two-images-backend-api-and-ui.md)). `/files`, `/api/v1`, CORS
+and the API docs are off; so is the UI unless you turn it on (below). Spotify links resolve through
+`POST /v2/spotify/resolve`. It needs no Spotify credentials and then reads Spotify's public pages on
+`open.spotify.com`. With `SPOTIFY_CLIENT_ID` and the secret in the file `SPOTIFY_CLIENT_SECRET_FILE`
+it uses the official Web API instead (full playlists, ISRC). One of the two alone stops the start-up.
 
 **The UI in service mode (`SPOTDOWN_UI=on`, [ADR 0004](docs/adr/0004-ui-switch-independent-of-service-mode.md)).**
 The UI has its own switch, independent of `SERVICE_MODE`: unset, it is off in service mode and

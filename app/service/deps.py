@@ -6,13 +6,13 @@ from fastapi import Request
 
 from ..config import Settings
 from .errors import ApiError
-from .service_key import ServiceKey
+from .service_key import ServiceKey, ServiceKeys
 from .store import Store
 
 
 def require_key(request: Request) -> None:
     """Second line behind ServiceKeyMiddleware: every v2 route checks the key itself too."""
-    key: ServiceKey = request.app.state.service_key
+    key: ServiceKey | ServiceKeys = request.app.state.service_key
     if not key.matches_authorization(request.headers.get("authorization")):
         raise ApiError(401, "unauthorized", "unauthorized")
 

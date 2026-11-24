@@ -151,15 +151,16 @@ def search_query(title: str, artists: Sequence[str]) -> str:
     return " ".join(p for p in (primary, clean_title(title)) if p)
 
 
-def duration_bucket(duration_s: float) -> int:
-    return int(round(duration_s / 5.0))
+def duration_bucket(duration_s: Optional[float]) -> Optional[int]:
+    """The 5 s bucket; None (its own key, equal to no bucket) without a duration."""
+    return None if duration_s is None else int(round(duration_s / 5.0))
 
 
 def fingerprint(
     *,
     title: str,
     artists: Sequence[str],
-    duration_s: float,
+    duration_s: Optional[float],
     isrc: Optional[str],
     matcher_version: str,
 ) -> str:
