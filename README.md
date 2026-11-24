@@ -105,7 +105,16 @@ kept, the file is deleted after the analysis, and the waveform is drawn from the
 browser. The result is cached by the file's sha256 and is read again only by uploading the same
 bytes.
 
-## Run it
+## Install from the Docker image (production)
+
+spotdown is delivered as the private image `ghcr.io/magpern/spotdown` (`linux/amd64`,
+`linux/arm64`; tags `X.Y.Z`, `X.Y` and `sha-<short>`, never `latest`). Each GitHub Release carries a
+`compose.yaml` pinned through `SPOTDOWN_VERSION`, a `spotdown.env.example` and `SHA256SUMS`. The
+image runs as uid 10001 in service mode, the service key is a Docker secret file, data lives in one
+volume, and no port is published: [docs/runbooks/docker-image.md](docs/runbooks/docker-image.md)
+covers install, settings, upgrade and pinning.
+
+## Run it (development)
 
 ```bash
 cp .env.example .env         # fill in SPOTIFY_CLIENT_ID/SECRET for full metadata (optional)
@@ -275,4 +284,7 @@ app/
   jobs.py        the worker pipeline
   youtube/       service-mode matcher (pure scoring) and the yt-dlp driver
   service/       service mode (/v2): routes, worker, caches, sandbox
+  healthcheck.py the container healthcheck (api /healthz, worker Redis ping)
+deploy/          the production compose file and settings example (release assets)
+scripts/release-assets.sh  the release's asset list and SHA256SUMS
 ```

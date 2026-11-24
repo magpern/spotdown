@@ -1,0 +1,170 @@
+name: Release
+
+# Runs only for a version tag pushed to this repository (docs/runbooks/docker-image.md). Pull
+# requests never reach it. Modelled on classbeat's release workflow. The tag is cut by the
+# Architect on main; no other event publishes an image.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/magpern/spotdown
+
+jobs:
+  verify:
+    name: Verify tag
+    if: github.repository == 'magpern/spotdown'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Tag is a SemVer version on main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
+          if ! [[ "$TAG" =~ $semver ]]; then
+            echo "::error::Tag '$TAG' is not vMAJOR.MINOR.PATCH[-prerelease]"
+            exit 1
+          fi
+          # fetch-depth: 0 fetched every branch; no credentials are needed (or kept) here.
+          if ! git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
+            echo "::error::origin/main is missing from the checkout"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag commit $GITHUB_SHA is not on main"
+            exit 1
+          fi
+
+  image:
+    name: Image
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # X.Y.Z, X.Y (skipped for pre-releases by the semver type) and sha-<short>.
+      # `latest` is never published: deployments pin a version.
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+
+      # The image holds no secret: no build secret and no build argument, and .dockerignore lets
+      # only requirements.txt and app/ into the context.
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          # No layer cache in either direction: a release is built from its tag's files alone.
+
+  # A GitHub artifact attestation for the image: a signed statement, by this workflow run, that
+  # the digest the build just pushed came from this repository's tag. A separate job on purpose:
+  # the image job has the registry write and gets no `id-token`; this one gets no registry write.
+  # The attestation lives in GitHub's attestation store (no `push-to-registry`), keyed by the
+  # digest, so `gh attestation verify oci://...` finds it from the pulled image. It runs before
+  # the release: a failed attestation publishes no release.
+  attest-image:
+    name: Attest image
+    needs: image
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ needs.image.outputs.digest }}
+
+  release:
+    name: GitHub Release
+    needs: [image, attest-image]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      # The tag's own deploy files become release assets, after the image exists: a release that
+      # carries a compose file always has the image it names.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the release assets
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/release-assets"
+          scripts/release-assets.sh build "$assets"
+          ( cd "$assets" && sha256sum -c SHA256SUMS )
+
+      # Every asset, SHA256SUMS included, is a subject: `gh attestation verify <file> -R
+      # magpern/spotdown` then proves a downloaded file is the one this run built from the tag.
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release-assets/*
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          RUNNER_TEMP: ${{ runner.temp }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/release-assets"
+          # The digest the attested image has; the runbook compares it with what a pull resolves to.
+          notes="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "Image digest (attested; verify with \`gh attestation verify\`, see docs/runbooks/docker-image.md):"
+            echo
+            echo "- \`$IMAGE@$DIGEST\`"
+          } > "$notes"
+          flags=()
+          if [[ "$TAG" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$TAG" --generate-notes --notes-file "$notes" --verify-tag "${flags[@]}" "$assets"/*
