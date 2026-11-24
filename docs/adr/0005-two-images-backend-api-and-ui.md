@@ -75,32 +75,41 @@ the service.
      separate so that the owner can replace one without touching classbeat's. Replacing a key is:
      write the file, restart.
 
-4. **`/v2` gains the Spotify link step (#76), with no Spotify credentials.** Owner, 2026-11-24:
-   "Spotdown should not need any Spotify client ID. It is given a URL, that's it."
+4. **`/v2` gains the Spotify link step (#76). Spotify credentials are optional.**
+   - The owner's decisions, 2026-11-24:
+     - first, "Spotdown should not need any Spotify client ID. It is given a URL, that's it.";
+     - then, refining it, "Yes do that": credentials optional, with a public-page fallback.
    - `POST /v2/spotify/resolve` takes `{"url"}`: a track, album or playlist link, or a `spotify:`
      URI.
    - It answers the tracks (`spotify_id`, `title`, `artists`, `album`, `duration_ms`, `isrc`), with
      `listed`, `total` and `truncated`, at most 500.
-   - No credentials anywhere. There is no `SPOTIFY_CLIENT_ID` or `SPOTIFY_CLIENT_SECRET` and no
-     secret file, and no call to `accounts.spotify.com` or `api.spotify.com`.
-   - The links are resolved from Spotify's public pages on `open.spotify.com`, the only host this
-     step calls:
-     - the oEmbed endpoint, today's fallback in `app/spotify.py`;
-     - the public embed page (`/embed/{track|album|playlist}/{id}`), for artists, durations and the
-       track list.
-   - The input is parsed strictly to (kind, id), and the backend builds the page URLs itself.
-     **The caller's URL is never fetched as given**, and no redirect is followed off
-     `open.spotify.com`.
+   - The input is parsed strictly to (kind, id), and the backend builds every upstream URL itself.
+     **The caller's URL is never fetched as given**, and no redirect is followed to another host.
+   - **With credentials set** on the backend (`SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET_FILE`, a
+     secret file mounted into the api only, never logged):
+     - the official Web API resolves the link, reusing `app/spotify.py`'s client-credentials code;
+     - this gives full playlists and the ISRC;
+     - egress: `accounts.spotify.com` and `api.spotify.com`.
+   - **Without credentials** (the default):
+     - the link is resolved from Spotify's public pages on `open.spotify.com`, the only host called:
+       the oEmbed endpoint (today's fallback) and the public embed page
+       (`/embed/{track|album|playlist}/{id}`), for artists, durations and the track list;
+     - no call goes to `accounts.spotify.com` or `api.spotify.com`.
+   - **The setting is the backend's own.** No caller ever sends spotdown credentials, and no request
+     can choose the path. classbeat is unchanged: it resolves Spotify itself and sends metadata to
+     `POST /v2/match`.
    - **A page that gives less is not a failure.** A missing field is `null` or empty, and the
      matcher works without it: `POST /v2/match` accepts a track without a duration or artists, and
      never scores on a missing duration. A playlist page that lists fewer tracks than the playlist
      has gives what it lists and reports the shortfall (`truncated`, `listed`, `total`). Only a
      page with no usable track at all is an error.
-   - **The page parsing is an unverified assumption.** No agent and no CI job fetches a real Spotify
-     page (AGENTS.md safety envelope). The parser is written to the pages' documented or observed
-     shape and tested with fixtures. Spotify can change these public pages without notice, so the
-     owner's first live try is the check. If it fails, the parser and its fixtures are fixed;
-     nothing else depends on the page format.
+   - **Both paths are faked in tests.** No agent and no CI job calls Spotify (AGENTS.md safety
+     envelope).
+     - The public-page parsing is an **unverified assumption**: it is written to the pages' observed
+       shape and tested with fixtures. Spotify can change these pages without notice, so the owner's
+       first live try is the check. If it fails, the parser and its fixtures are fixed; nothing
+       else depends on the page format.
+     - The API path reuses code that worked before, but it too is untested live in this programme.
    - The YouTube match is the existing `POST /v2/match`, which takes what resolve returns.
 
 5. **`/v2` gains the mp3 (#77).**
@@ -116,7 +125,8 @@ the service.
 
 6. **No arbitrary URL fetching.** The old standalone `source_url` (any URL, downloaded by the worker)
    is not carried over. The backend fetches only:
-   - Spotify's public pages on `open.spotify.com`, at paths it builds itself;
+   - Spotify: `open.spotify.com`'s public pages, or `accounts.spotify.com` and `api.spotify.com`
+     only when the owner has set credentials, at paths it builds itself;
    - YouTube, through the existing source, behind `ALLOW_YTDLP_SOURCING`;
    - the hosts in `URL_ALLOWED_HOSTS`, for the existing `url` source, unchanged.
 
@@ -171,9 +181,11 @@ the service.
   loopback, and a LAN bind is one setting away.
 - **The UI uses classbeat's key.** Rejected: one leaked UI container would hold classbeat's key, and
   replacing it would break classbeat.
-- **The Spotify Web API with client credentials.** This was drafted first, and the owner rejected
-  it (Decision 4): no client id, no secret. The public pages give less (often no ISRC), and the
-  matcher works without the missing fields.
+- **Require Spotify credentials.** Rejected by the owner: spotdown must work from a link alone.
+- **Forbid Spotify credentials.** Rejected by the owner as the refinement: with them, playlists are
+  complete and carry the ISRC.
+- **Credentials per request from the caller.** Rejected: spotdown never receives anyone's
+  credentials, so the setting is the backend's.
 - **Per-key scopes or rights.** Rejected for now as more than the owner asked for. Decision 3 is
   where they would go.
 
@@ -181,7 +193,8 @@ the service.
 
 - classbeat sees no change. `/v2` answers as before, with its key, its Host and its network.
 - The owner runs one more container for the UI and installs one more secret file, the UI's key.
-  spotdown needs no Spotify credentials.
+  Spotify credentials are optional. With them, playlists are complete and carry the ISRC; the
+  secret file is then a second, optional secret.
 - During #76 to #78 the old standalone app still works. #79 removes it, and the deprecated
   settings warn for one release.
 - **The classbeat plan needs a matching amendment from the owner.** Its layer table still says
