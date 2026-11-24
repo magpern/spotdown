@@ -27,3 +27,28 @@ def test_the_examples_show_the_default() -> None:
     assert "ALLOW_YTDLP_SOURCING=true" in lines
     deploy = (ROOT / "deploy" / "spotdown.env.example").read_text(encoding="utf-8").splitlines()
     assert "#ALLOW_YTDLP_SOURCING=true" in deploy
+
+
+UI_KEY = "ui-caller-key-0d4b8f2a6c1e3957a2b3c4d5e6f7a8b9"
+
+
+@pytest.mark.parametrize("who", ["classbeat", "ui"])
+def test_off_disables_every_youtube_route_for_both_caller_keys(tmp_path: Path, who: str) -> None:
+    """With the flag off, both caller keys (#82) get ``source_disabled`` from match, including a
+    title-only track (#76), and from audio; the faked yt-dlp is never called."""
+    from .audio_helpers import AudioStack
+    from .service_helpers import TEST_KEY
+
+    ui_file = tmp_path / "ui_key"
+    ui_file.write_text(UI_KEY + "\n", encoding="utf-8")
+    stack = AudioStack(tmp_path, allow_ytdlp_sourcing=False, ui_service_key_file=ui_file)
+    auth = f"Bearer {TEST_KEY if who == 'classbeat' else UI_KEY}"
+    for res in (
+        stack.match(
+            [{"client_ref": "t1", "title": "Blinding Lights"}], headers={"Authorization": auth}
+        ),
+        stack.request(Authorization=auth),
+    ):
+        assert res.status_code == 422, res.text
+        assert res.json()["error"]["code"] == "source_disabled"
+    assert stack.world.calls == []

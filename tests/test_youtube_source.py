@@ -1,6 +1,6 @@
-"""The ``youtube`` source of ``POST /v2/analyses`` with a faked yt-dlp: off by default, the
-11-character id only, a global analysis shared by every scope, provenance that names no caller,
-the decoded duration check and every failure status."""
+"""The ``youtube`` source of ``POST /v2/analyses`` with a faked yt-dlp: off when the operator
+turns it off, the 11-character id only, a global analysis shared by every scope, provenance that
+names no caller, the decoded duration check and every failure status."""
 
 from __future__ import annotations
 
