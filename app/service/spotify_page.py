@@ -17,9 +17,10 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from .spotify_policy import ID
 
-_NEXT_DATA = re.compile(
-    rb'<script[^>]*\bid="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL | re.IGNORECASE
-)
+_SCRIPT_OPEN = b"<script"
+_SCRIPT_CLOSE = b"</script>"
+_NEXT_DATA_ID = b'id="__next_data__"'  # matched against the lower-cased page
+_WORD_BYTES = frozenset(b"abcdefghijklmnopqrstuvwxyz0123456789_")  # bytes \w, lower-cased
 _TRACK_URI = re.compile(r"spotify:track:([0-9A-Za-z]{22})")
 _TOTAL_KEYS = ("totalCount", "trackCount", "total")
 _ARTIST_SEP = re.compile(r",\s*")  # str pattern: \s is Unicode, so U+00A0 is whitespace
@@ -44,14 +45,50 @@ def _count(value: Any) -> Optional[int]:
     return value
 
 
+def parse_json(body: bytes) -> Any:
+    """An upstream body as JSON. Every parse failure is a ``ValueError``: bad UTF-8, bad JSON,
+    and nesting too deep for the decoder (``RecursionError``, which is not a ``ValueError``)."""
+    try:
+        return json.loads(body.decode("utf-8"))
+    except RecursionError:
+        raise ValueError("nested too deeply") from None
+
+
+def _is_next_data_tag(lower: bytes, start: int, end: int) -> bool:
+    """Whether the lower-cased opening tag ``lower[start:end]`` (``<script`` up to its ``>``)
+    holds ``id="__next_data__"`` after a non-word byte, as the former ``\\bid=`` required."""
+    at = lower.find(_NEXT_DATA_ID, start, end)
+    while at != -1:
+        if lower[at - 1] not in _WORD_BYTES:  # at > start: the tag begins with "<script"
+            return True
+        at = lower.find(_NEXT_DATA_ID, at + 1, end)
+    return False
+
+
+def _next_data_body(html: bytes) -> Optional[bytes]:
+    """The text of the first ``<script ... id="__NEXT_DATA__" ...>`` up to the next
+    ``</script>``, case-insensitive. Linear time: every search starts after the previous tag."""
+    lower = html.lower()  # ASCII only, so every offset is the same in ``html``
+    at = lower.find(_SCRIPT_OPEN)
+    while at != -1:
+        end = lower.find(b">", at)
+        if end == -1:
+            return None
+        if _is_next_data_tag(lower, at, end):
+            close = lower.find(_SCRIPT_CLOSE, end + 1)
+            return None if close == -1 else html[end + 1 : close]
+        at = lower.find(_SCRIPT_OPEN, end + 1)
+    return None
+
+
 def next_data(html: bytes) -> Any:
     """The embed page's ``__NEXT_DATA__`` JSON, or None."""
-    found = _NEXT_DATA.search(html)
-    if not found:
+    body = _next_data_body(html)
+    if body is None:
         return None
     try:
-        return json.loads(found.group(1).decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
+        return parse_json(body)
+    except ValueError:
         return None
 
 
@@ -157,8 +194,8 @@ def embed_tracks(html: bytes, kind: str, sid: str) -> Tuple[List[Dict[str, Any]]
 def oembed_track(body: bytes, sid: str) -> Optional[Dict[str, Any]]:
     """A track from the oEmbed JSON: its title only (oEmbed states no artist or duration)."""
     try:
-        doc = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
+        doc = parse_json(body)
+    except ValueError:
         return None
     if not isinstance(doc, dict):
         return None
