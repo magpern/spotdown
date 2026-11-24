@@ -13,7 +13,7 @@
   .sub { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
   label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px; text-transform: uppercase; letter-spacing: .04em; }
-  input[type=text], select {
+  input[type=text], input[type=password], select {
     width: 100%; padding: 10px 12px; background: #11141a; color: var(--fg);
     border: 1px solid var(--line); border-radius: 8px; font-size: 14px;
   }
@@ -76,3 +76,4 @@
   #waveform text.on { fill:#fff; }
   .drop { border: 1px dashed var(--line); border-radius: 8px; padding: 16px; color: var(--muted); font-size: 14px; }
   .drop.over { border-color: var(--accent); color: var(--fg); }
+  .hint.err { color: var(--err); }

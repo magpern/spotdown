@@ -22,7 +22,7 @@ const ctx = {
   },
 };
 vm.createContext(ctx);
-for (const f of ["ui.js", "upload.js"]) vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f });
+for (const f of ["ui_common.js", "ui.js", "upload.js"]) vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f });
 ctx.renderAnalysis = (d, loadAudio) => rendered.push({ d, loadAudio });
 ctx.picked = picked;
 (async () => {

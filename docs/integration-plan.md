@@ -55,7 +55,8 @@ ISRC.
 | Sources: `url` (host allowlist), `youtube` (yt-dlp, off by default) | optional |
 | Matchers (YouTube first) | optional |
 | Alignment to a reference clock ("spotify" is one kind) | optional |
-| Standalone extras (UI, Spotify URL resolution, file downloads) | off in service mode |
+| Standalone extras (Spotify URL resolution, file downloads, the session) | off in service mode |
+| Web UI | its own switch, `SPOTDOWN_UI` (off unless set in service mode; owner, 2026-11-24, ADR 0004); in service mode the static page only, analysing through the authenticated `/v2` |
 
 **Terms of service:** downloading from YouTube is against YouTube's terms, and using it for
 Spotify-catalogue classes touches Spotify's Developer Policy. Returning only metadata, or running
@@ -91,6 +92,7 @@ by default in code (`ALLOW_YTDLP_SOURCING`); switching it on is the owner's depl
 | trial follow-up | #48 waveform view in the standalone UI | open | #45 |
 | trial follow-up | #52 standalone exposure: a token always on every standalone route, plus same-origin requests, a `Host` allowlist, no CORS and loopback publishing (ADR 0003; Opus Developer) | open | #44, #54 |
 | trial follow-up | #49 local-file input in the standalone UI (Opus Developer) | open | #44, #48, #52 |
+| owner, 2026-11-24 | #68 the UI's own switch `SPOTDOWN_UI`, independent of service mode (ADR 0004; Opus Developer) | open | – |
 
 The classbeat issues SD-P4 to SD-P7 (classbeat#1301 to #1306) depend on #3, #4, #5, #6, #10 and #11;
 all but the real-music runs of #6 are merged, and classbeat#1296 is accepted, so SD-P6 is unblocked.

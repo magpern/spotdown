@@ -49,8 +49,20 @@ just downloads the URL you give it. You are responsible for how you use this.
 
 `SERVICE_MODE=true` turns spotdown into an internal analysis service ([contract](docs/contract-v2.md)):
 only `/v2` and `/healthz` are served. Every `/v2` call needs `Authorization: Bearer <service key>`,
-read from the file in `SERVICE_KEY_FILE` (the service refuses to start without it). The UI,
-`/files`, `/api/v1`, Spotify URL resolution, CORS and the API docs are off.
+read from the file in `SERVICE_KEY_FILE` (the service refuses to start without it). `/files`,
+`/api/v1`, Spotify URL resolution, CORS and the API docs are off; so is the UI unless you turn it on
+(below).
+
+**The UI in service mode (`SPOTDOWN_UI=on`, [ADR 0004](docs/adr/0004-ui-switch-independent-of-service-mode.md)).**
+The UI has its own switch, independent of `SERVICE_MODE`: unset, it is off in service mode and
+follows `SERVE_UI` in standalone mode (`SERVE_UI` alone never turns it on in service mode). With
+`SPOTDOWN_UI=on` a service deployment also serves a static page at `/`: type the service key into
+it (held in the tab's memory only, never stored, put in a URL or logged; sent as the same bearer
+header) and pick a local file. The page uploads it with `PUT /v2/uploads`, analyses it with
+`POST /v2/analyses` in the scope `spotdown_ui`, and shows the analysis (explicit tag, timeline,
+waveform drawn from your own file). Everything above stays: `/v2` needs the key, no audio is ever
+served, `/files` and the standalone routes are 404, no CORS, the audio is deleted after the job.
+Turn it on only where you would expose that page; the container image leaves it off.
 
 - `PUT /v2/uploads?cache_scope=…`: stream mp3, mp4 or wav bytes (`application/octet-stream`, capped
   by `MAX_UPLOAD_BYTES`, 60 MiB by default); the whole structure is checked and a malformed,
@@ -83,7 +95,7 @@ read from the file in `SERVICE_KEY_FILE` (the service refuses to start without i
 
 ## Backend-only (no web UI)
 
-Set `SERVE_UI=false` in `.env` to run API-only — the JSON endpoints, `/files`,
+Set `SERVE_UI=false` (or `SPOTDOWN_UI=off`, which wins) in `.env` to run API-only — the JSON endpoints, `/files`,
 `/healthz` and `/docs` all stay; only the HTML page at `GET /` is withheld
 (`GET /` then returns `{"service":"spotdown","ui":"disabled"}`). Useful when
 another frontend or service consumes the API.

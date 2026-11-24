@@ -120,9 +120,11 @@ const LOCAL_NOTE = `<div class="note"><b>Your local file.</b> Beats, sections an
 const isLocalResult = (d) => typeof (d && d.track_id) === "string" && d.track_id.startsWith("upl_");
 
 // loadAudio: where the waveform gets its audio (default: the converted file; a picked local file
-// for an upload, so the server never sends that audio back).
-function renderAnalysis(d, loadAudio) {
-  const m = buildModel(d), local = isLocalResult(d);
+// for an upload, so the server never sends that audio back). opts.local marks a local file whose
+// result has no upl_ id (the service page's v2 document); opts.via names the mode in the footer.
+function renderAnalysis(d, loadAudio, opts) {
+  const o = opts || {}, m = buildModel(d), local = o.local === true || isLocalResult(d);
+  const via = o.via === "service" ? "service" : "standalone";
   tlModel = m;
   analysisCard.style.display = "block";
   analysisCard.innerHTML = `<div style="font-weight:600">Audio analysis</div>
@@ -131,7 +133,7 @@ function renderAnalysis(d, loadAudio) {
     <div class="viz-label">Timeline</div>${timelineControls(m)}<div id="tlHost"></div>${timelineLegend(m)}${local ? LOCAL_NOTE : APPROX_NOTE}
     <div class="grid2"><div><div class="viz-label">Sections</div>${sectionsHtml(m)}</div>
     <div><div class="viz-label">Events &amp; phrases</div>${eventsHtml(m)}</div></div>
-    <div class="foot">${escapeHtml(m.prov.analyzer)} analyzer ${escapeHtml(m.prov.version)} · document ${escapeHtml(m.prov.schema)} · standalone analysis of ${local ? "a local file" : "a YouTube match"} · ${escapeHtml(m.prov.created)}</div>`;
+    <div class="foot">${escapeHtml(m.prov.analyzer)} analyzer ${escapeHtml(m.prov.version)} · document ${escapeHtml(m.prov.schema)} · ${via} analysis of ${local ? "a local file" : "a YouTube match"} · ${escapeHtml(m.prov.created)}</div>`;
   wireTimeline();
   startWaveform(m, loadAudio || loadTrackAudio);
 }

@@ -63,7 +63,7 @@ _FAILURES = {
 
 
 def available(settings: Settings) -> bool:
-    if settings.service_mode or not settings.serve_ui or not upload_slot.AVAILABLE:
+    if settings.service_mode or not settings.ui_enabled or not upload_slot.AVAILABLE:
         return False
     try:
         import resource  # noqa: F401 - the sandbox's rlimits
