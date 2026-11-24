@@ -110,7 +110,7 @@ class Matcher:
         return entries
 
     def match_one(self, track: MatchTrack, scope: Optional[str]) -> Dict[str, Any]:
-        wanted = calc.Wanted(track.title, tuple(track.artists), track.duration_s, track.isrc)
+        wanted = calc.Wanted(track.title, tuple(track.artists or ()), track.duration_s, track.isrc)
         query = norm.search_query(wanted.title, wanted.artists)
         try:
             entries = self._entries(wanted, query)
@@ -126,13 +126,17 @@ class Matcher:
             return _failure(track.client_ref, "not_found")
         record = calc.match_record(query, decision)
         assert record is not None
-        self.store.put_choice(
-            decision.best.candidate.video_id,
-            record,
-            wanted.duration_s,
-            self.clock(),
-            track.explicit,
-        )
+        if wanted.duration_s is not None:
+            # Without a requested duration no match record is kept: a later analysis of the
+            # video checks against its own metadata duration, and analysis-v1 never carries a
+            # null duration delta.
+            self.store.put_choice(
+                decision.best.candidate.video_id,
+                record,
+                wanted.duration_s,
+                self.clock(),
+                track.explicit,
+            )
         return {
             "schema_version": "match-v1",
             "client_ref": track.client_ref,

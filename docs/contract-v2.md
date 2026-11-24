@@ -96,7 +96,12 @@ Request:
 }
 ```
 
-`isrc` is optional; `1 <= len(tracks) <= 50`. `explicit` (optional, a JSON boolean; anything else
+`isrc` is optional; `1 <= len(tracks) <= 50`. `duration_s` and `artists` may be left out (an explicit empty `artists` is still `422`)
+(metadata from a Spotify public page, spotdown#76): the track is then scored on what it has,
+never on the missing field, and is never `confident` (at most `uncertain`, 0.84). Without a
+duration, every candidate's `duration_delta_s` is `null` and its `duration_check` is `unknown`,
+and no match record is kept for the chosen video. A request that sends every field is scored
+exactly as before. `explicit` (optional, a JSON boolean; anything else
 is `422 invalid_request`) is the caller's explicit-lyrics flag for the track: it does not change the
 search, the scores or the source-match cache, and is kept with the match record of the chosen video
 as evidence for its analysis' `content.explicit` (see "Explicit content" below). Response `200`:
@@ -153,7 +158,8 @@ The matcher is the `youtube` source's (spotdown#10):
 ### `POST /v2/spotify/resolve`
 
 A Spotify track, album or playlist link to track metadata ([ADR 0005](adr/0005-two-images-backend-api-and-ui.md),
-Decision 4). No audio, no search, no analysis. Request: `{"url": "<link>"}`, where the link is
+Decision 4; spotdown#76). No audio, no search, no analysis, **no Spotify credentials**. Request:
+`{"url": "<link>"}`, where the link is
 `https://open.spotify.com/[intl-xx/]{track|album|playlist}/<22 base62 id>` (the scheme may be
 left out; a query and a fragment are ignored) or `spotify:{track|album|playlist}:<id>`. Anything
 else (another host, a userinfo, a port, another kind) is `422 invalid_request`.
@@ -162,24 +168,28 @@ Response `200`:
 
 ```json
 {"tracks": [{"spotify_id": "...", "title": "...", "artists": ["..."], "album": "...",
-             "duration_ms": 213000, "isrc": "..."}],
- "truncated": false}
+             "duration_ms": 213000, "isrc": null}],
+ "listed": 1, "total": 1, "truncated": false}
 ```
 
-At most 500 tracks, in Spotify's order; `truncated` is true when more were left out (also when
-more than 1000 playlist rows would have to be read). Episodes and local files in a playlist are
-skipped. `album`, `duration_ms` and `isrc` may be `null`; Spotify's album endpoint gives no ISRC,
-so an album's tracks have `isrc: null`. The answer feeds `POST /v2/match` (`duration_ms / 1000` is
-its `duration_s`).
-
-- **The caller's URL is never fetched.** The link is reduced to (kind, id); the backend builds the
-  Web API URLs itself, on `accounts.spotify.com` and `api.spotify.com` only, follows no redirect
-  and never follows Spotify's own `next` links (it pages by offset).
-- **Credentials:** `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET_FILE` (a secrets file, never
-  logged; the `SPOTIFY_CLIENT_SECRET` value is not read here). Without both: `422
-  spotify_disabled`. A secret file that is set but unreadable or empty stops the start-up.
-- **Failures:** any Spotify error, timeout, redirect or unexpected body is `502 provider_error`
-  with the fixed message `the Spotify request failed` (no upstream text).
+- **Spotify's public pages only, on `open.spotify.com`**, the only host this route calls: the
+  embed page `https://open.spotify.com/embed/{kind}/{id}` (title, artists, duration, the track
+  list) and, for a track the embed page does not give, the oEmbed endpoint (the title only). Both
+  URLs are built from (kind, id); **the caller's URL is never fetched as given**, no redirect is
+  followed, and a body over 5 MiB is refused.
+- **A page that gives less is not a failure.** A field the page does not state is `null`
+  (`album`, `duration_ms`) or `[]` (`artists`); `isrc` is always `null` (the public pages state
+  none). `listed` is how many usable tracks the page listed, `total` how many it says there are
+  (`null` when it does not say; `1` for a track), and `truncated` is true when some were left out
+  (over 500, or fewer listed than `total`: an embed page lists only the first part of a long
+  playlist). At most 500 tracks, in the page's order.
+- **Failures:** a page with no usable track at all, an error status, a timeout, a redirect or an
+  oversized body is `502 provider_error` with the fixed message `the Spotify request failed` (no
+  upstream text).
+- **Unverified assumption:** the embed page's shape is read as observed (its `__NEXT_DATA__`
+  JSON). No agent or CI fetches a real Spotify page; the owner's first live try confirms it.
+- The answer feeds `POST /v2/match`: `duration_ms / 1000` is its `duration_s`, which may be left
+  out, as `artists` may be when the list is empty (see below).
 
 ### `PUT /v2/uploads`
 

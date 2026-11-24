@@ -46,12 +46,9 @@ class Settings(BaseSettings):
     max_duration_drift_s: int = 4
 
     # Spotify metadata
+    # The standalone routes only (until #79). POST /v2/spotify/resolve reads no Spotify setting.
     spotify_client_id: str = ""
-    # The standalone routes only (until #79). POST /v2/spotify/resolve reads only the file below.
     spotify_client_secret: str = ""
-    # A secrets file holding the Spotify client secret, for POST /v2/spotify/resolve (ADR 0005).
-    # Without it or SPOTIFY_CLIENT_ID the route answers 422 spotify_disabled.
-    spotify_client_secret_file: Optional[Path] = None
 
     # Sourcing
     allow_ytdlp_sourcing: bool = False

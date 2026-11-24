@@ -21,7 +21,7 @@ UI_KEY = "ui-caller-key-7c1e9a3b5d2f4680b1c2d3e4f5a6b7c8"
 KEYS = {"classbeat": TEST_KEY, "ui": UI_KEY}
 CALLS = [
     ("GET", "/v2/jobs/job_1?cache_scope=scope_a", 404),
-    ("POST", "/v2/spotify/resolve", 422),  # spotify_disabled: past the key check
+    ("POST", "/v2/spotify/resolve", 422),  # invalid_request: past the key check
     ("POST", "/v2/match", 422),
 ]
 
@@ -76,7 +76,7 @@ def test_the_new_route_checks_the_key_without_the_middleware(settings, who) -> N
     app.state.service_key = load_service_keys(
         settings.service_key_file, settings.ui_service_key_file
     )
-    app.state.spotify = None
+    app.state.spotify = object()  # never reached: the link "x" is refused first
     errors.install_handlers(app)
     app.include_router(spotify_routes.router)
     client = TestClient(app)
@@ -84,7 +84,7 @@ def test_the_new_route_checks_the_key_without_the_middleware(settings, who) -> N
     bad = _bearer(KEYS[who][:-1])
     assert client.post("/v2/spotify/resolve", headers=bad, json={"url": "x"}).status_code == 401
     res = client.post("/v2/spotify/resolve", headers=_bearer(KEYS[who]), json={"url": "x"})
-    assert res.json()["error"]["code"] == "spotify_disabled"
+    assert res.json()["error"]["code"] == "invalid_request"
 
 
 @pytest.mark.parametrize("presented", [TEST_KEY, UI_KEY, "neither-key-neither-key-neither"])
