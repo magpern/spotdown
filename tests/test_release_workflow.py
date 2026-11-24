@@ -65,7 +65,15 @@ def test_the_tag_must_be_semver_and_on_main() -> None:
     # Every later job waits for the check, directly or through another job.
     assert _jobs()["image"]["needs"] == "verify"
     assert _jobs()["attest-image"]["needs"] == "image"
-    assert set(_jobs()["release"]["needs"]) == {"image", "attest-image"}
+    # The UI image (ADR 0005, spotdown#78) the same way; the release waits for both.
+    assert _jobs()["image-ui"]["needs"] == "verify"
+    assert _jobs()["attest-image-ui"]["needs"] == "image-ui"
+    assert set(_jobs()["release"]["needs"]) == {
+        "image",
+        "attest-image",
+        "image-ui",
+        "attest-image-ui",
+    }
 
 
 def test_permissions_are_minimal_per_job() -> None:
@@ -74,6 +82,8 @@ def test_permissions_are_minimal_per_job() -> None:
         "verify": {"contents": "read"},
         "image": {"contents": "read", "packages": "write"},
         "attest-image": {"id-token": "write", "attestations": "write"},
+        "image-ui": {"contents": "read", "packages": "write"},
+        "attest-image-ui": {"id-token": "write", "attestations": "write"},
         "release": {"contents": "write", "id-token": "write", "attestations": "write"},
     }
     assert {name: job.get("permissions") for name, job in _jobs().items()} == want
@@ -152,7 +162,7 @@ def test_only_the_release_job_can_write_contents_and_only_image_can_push() -> No
     for name, job in _jobs().items():
         perms = job.get("permissions", {})
         assert (perms.get("contents") == "write") == (name == "release"), name
-        assert (perms.get("packages") == "write") == (name == "image"), name
+        assert (perms.get("packages") == "write") == (name in ("image", "image-ui")), name
 
 
 EXPRESSION = re.compile(r"\$\{\{")

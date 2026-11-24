@@ -1,0 +1,48 @@
+# The spotdown UI image (ADR 0005 Decision 7). Released as ghcr.io/magpern/spotdown-ui by
+# .github/workflows/release.yml from the same tag as the backend image, for linux/amd64 and
+# linux/arm64. It holds the UI package and its dependencies only: no app/, no yt-dlp, librosa or
+# ffmpeg, no .env, no data and no secret (Dockerfile.ui.dockerignore; the backend key is a Docker
+# secret file mounted at run time).
+#
+# The base is the backend image's, pinned by version and by the digest of its multi-platform
+# index; upgrade both Dockerfiles in one PR.
+FROM python:3.11.18-slim-trixie@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# A fixed, unprivileged uid and gid (10001), as in the backend image. /data is the one writable
+# place the UI needs (its generated access token).
+RUN groupadd --system --gid 10001 spotdown \
+    && useradd --system --uid 10001 --gid 10001 --home-dir /home/spotdown --create-home \
+       --shell /usr/sbin/nologin spotdown \
+    && install -d -o 10001 -g 10001 -m 0750 /data
+
+WORKDIR /srv
+
+COPY requirements-ui.txt .
+RUN pip install --no-cache-dir -r requirements-ui.txt
+
+# Root-owned and read-only for the service user; compiled now so nothing is written at run time.
+COPY spotdown_ui ./spotdown_ui
+RUN python -m compileall -q spotdown_ui
+
+# Without SPOTDOWN_BACKEND_URL and a readable key file the app refuses to start.
+ENV SPOTDOWN_BACKEND_KEY_FILE=/run/secrets/spotdown_ui_backend_key \
+    UI_DATA_DIR=/data \
+    HOME=/home/spotdown
+
+USER 10001:10001
+
+EXPOSE 8000
+
+# The UI's own /healthz on loopback; it never calls the backend.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["python", "-m", "spotdown_ui.healthcheck"]
+
+# One process (the upload slot is held in memory). 0.0.0.0 inside the container is needed for
+# publishing; the deploy publishes on the loopback by default. Forwarded headers are ignored
+# (ADR 0003).
+CMD ["uvicorn", "--factory", "spotdown_ui.app:create_app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers", "--no-server-header"]

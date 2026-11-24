@@ -11,7 +11,7 @@ target-version = "py311"
 select = ["E", "F", "W", "I"]
 
 [tool.pyright]
-include = ["app", "tests"]
+include = ["app", "spotdown_ui", "tests"]
 pythonVersion = "3.11"
 typeCheckingMode = "standard"
 

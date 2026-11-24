@@ -1,0 +1,6 @@
+# The UI image (Dockerfile.ui, ADR 0005): the web service only. No yt-dlp, librosa or ffmpeg.
+# Pins equal requirements.txt's (tests/ui_app/test_ui_image.py checks it).
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+httpx==0.28.1

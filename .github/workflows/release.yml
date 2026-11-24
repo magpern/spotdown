@@ -15,6 +15,8 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/magpern/spotdown
+  # The UI image (ADR 0005): built from Dockerfile.ui out of spotdown_ui/, from the same tag.
+  UI_IMAGE: ghcr.io/magpern/spotdown-ui
 
 jobs:
   verify:
@@ -99,6 +101,55 @@ jobs:
           sbom: true
           # No layer cache in either direction: a release is built from its tag's files alone.
 
+  # The UI image, the same way: the same pinned actions, tags, platforms, provenance and SBOM.
+  # Dockerfile.ui.dockerignore lets only requirements-ui.txt and spotdown_ui/ into its context.
+  image-ui:
+    name: UI image
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.UI_IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile.ui
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          # No layer cache in either direction: a release is built from its tag's files alone.
+
   # A GitHub artifact attestation for the image: a signed statement, by this workflow run, that
   # the digest the build just pushed came from this repository's tag. A separate job on purpose:
   # the image job has the registry write and gets no `id-token`; this one gets no registry write.
@@ -118,9 +169,23 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ needs.image.outputs.digest }}
 
+  # The UI image's attestation, in a job of its own for the same reason.
+  attest-image-ui:
+    name: Attest UI image
+    needs: image-ui
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.UI_IMAGE }}
+          subject-digest: ${{ needs.image-ui.outputs.digest }}
+
   release:
     name: GitHub Release
-    needs: [image, attest-image]
+    needs: [image, attest-image, image-ui, attest-image-ui]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -155,15 +220,18 @@ jobs:
           TAG: ${{ github.ref_name }}
           RUNNER_TEMP: ${{ runner.temp }}
           DIGEST: ${{ needs.image.outputs.digest }}
+          UI_DIGEST: ${{ needs.image-ui.outputs.digest }}
         run: |
           set -euo pipefail
           assets="$RUNNER_TEMP/release-assets"
-          # The digest the attested image has; the runbook compares it with what a pull resolves to.
+          # The digests the attested images have; the runbook compares them with what a pull
+          # resolves to.
           notes="$RUNNER_TEMP/release-notes.md"
           {
-            echo "Image digest (attested; verify with \`gh attestation verify\`, see docs/runbooks/docker-image.md):"
+            echo "Image digests (attested; verify with \`gh attestation verify\`, see docs/runbooks/docker-image.md):"
             echo
             echo "- \`$IMAGE@$DIGEST\`"
+            echo "- \`$UI_IMAGE@$UI_DIGEST\`"
           } > "$notes"
           flags=()
           if [[ "$TAG" == *-* ]]; then flags+=(--prerelease); fi
