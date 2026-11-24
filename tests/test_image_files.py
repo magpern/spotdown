@@ -156,3 +156,27 @@ def test_redis_is_reachable_only_from_the_api_and_the_worker() -> None:
     assert doc["networks"]["backend"] == {"internal": True}
     assert doc["networks"]["service"]["external"] is True
     assert services["api"]["networks"]["service"] == {"aliases": ["spotdown-api"]}
+
+
+UI_OFF = {"off", "false", "0", "no"}
+
+
+def test_the_deploy_file_never_turns_the_ui_on() -> None:
+    """ADR 0004: SPOTDOWN_UI is off unless an operator sets it. The deploy file may only pin it off,
+    and never interpolates it (an empty ``${SPOTDOWN_UI:-}`` stops the start-up)."""
+    for name, svc in _deploy()["services"].items():
+        env = svc.get("environment") or {}
+        if isinstance(env, list):
+            env = dict(item.split("=", 1) if "=" in item else (item, None) for item in env)
+        if "SPOTDOWN_UI" in env:
+            assert str(env["SPOTDOWN_UI"]).strip().lower() in UI_OFF, (name, env["SPOTDOWN_UI"])
+    text = DEPLOY.read_text(encoding="utf-8")
+    assert "${SPOTDOWN_UI" not in text and "$SPOTDOWN_UI" not in text
+
+
+def test_the_image_and_the_env_example_leave_the_ui_off() -> None:
+    assert _env().get("SPOTDOWN_UI", "off").lower() in UI_OFF
+    example = (ROOT / "deploy" / "spotdown.env.example").read_text(encoding="utf-8")
+    live = [line for line in example.splitlines() if line.strip() and not line.startswith("#")]
+    assert not any(line.startswith("SPOTDOWN_UI") for line in live)
+    assert "#SPOTDOWN_UI=off" in example

@@ -26,7 +26,7 @@ moved or deleted: fix forward with a new version.
 - Python 3.11 on Debian slim, base pinned by version and digest; ffmpeg and libsndfile from Debian.
 - Runs as the unprivileged user **uid 10001, gid 10001**. The code is root-owned and read-only.
 - **Service mode by default** (`SERVICE_MODE=true`, `SERVE_UI=false`): only `/v2` behind the service
-  key, and `/healthz` ([contract](../contract-v2.md)). Without a readable key file the server does
+  key, and `/healthz` ([contract](../contract-v2.md)); the web UI stays off unless `SPOTDOWN_UI=on`. Without a readable key file the server does
   not start.
 - Holds no `.env`, no audio, no data and no secret: `.dockerignore` lets only `requirements.txt` and
   `app/` into the build, and the build takes no build arguments or secrets.
@@ -84,6 +84,12 @@ per line. `spotdown.env.example` lists each setting with its default:
 - `URL_ALLOWED_HOSTS`: the hosts the `url` source may fetch from. Empty turns that source off.
 - `ALLOW_YTDLP_SOURCING`: YouTube. Off by default. Turning it on accepts a terms-of-service risk and
   is the operator's decision (README, "Service mode").
+- `SPOTDOWN_UI`: the web UI ([ADR 0004](../adr/0004-ui-switch-independent-of-service-mode.md)).
+  Off by default, and the image and the deploy file leave it off (`SERVE_UI=false` does not
+  control it in service mode). `on` serves the static page at `/` next to `/v2` to every caller on
+  the service network; the page asks for the service key and keeps it in memory only, and `/v2`
+  still needs the key. Set `on` only where that page should be exposed. Never set it to an empty
+  value or wire it as `${SPOTDOWN_UI:-}`: an empty value is not a boolean and stops the start-up.
 - `MAX_UPLOAD_BYTES`, `UPLOAD_TTL_S`, `URL_FETCH_TIMEOUT_S`, `ANALYSIS_MAX_*`, `GLOBAL_*_TTL_S`:
   limits and retention.
 
