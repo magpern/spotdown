@@ -1,5 +1,9 @@
 # ADR 0004: the web UI is its own switch, independent of service mode
 
+**Superseded by [ADR 0005](0005-two-images-backend-api-and-ui.md) (owner, 2026-11-24):** two images;
+no service mode, no `SPOTDOWN_UI` and no service page. Decision 6's headers carry over to the UI
+image.
+
 **Status:** Accepted (Architect, 2026-11-24), after the Opus review of PR #69 (for spotdown#68)
 passed at `eb6b202`
 ([`Agent review (opus): PASS`](https://github.com/magpern/spotdown/pull/69#issuecomment-7124957143)).
