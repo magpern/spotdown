@@ -41,6 +41,7 @@ def make_settings(data_dir: Path) -> Settings:
         service_key_file=key,
         data_dir=data_dir / "data",
         redis_url="redis://127.0.0.1:1/0",
+        allow_ytdlp_sourcing=False,  # the harness analyses uploads only
         analysis_max_memory_mb=MEMORY_LIMIT_MB,
         analysis_max_cpu_s=240,
         analysis_wall_timeout_s=300,

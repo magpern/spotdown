@@ -40,7 +40,9 @@ carries real legal exposure.
 
 The **YouTube-sourcing path is ON by default** (`ALLOW_YTDLP_SOURCING=true`, owner decision,
 2026-11-24). Set `ALLOW_YTDLP_SOURCING=false` to turn it off: then a Spotify link resolves metadata
-only and the convert step refuses. The pipeline
+only and the convert step refuses. Turning it on is the operator's terms-of-service decision.
+**Upgrading:** an unset flag used to mean off and now means on, so set it explicitly (`true` or
+`false`) before you upgrade; `false` keeps the old behaviour. The pipeline
 is identical for lawful inputs, which you drive through the `source_url` field instead — a
 direct URL to content you own / Creative-Commons / public-domain / licensed / your own uploads
 / podcasts with permission. `source_url` bypasses Spotify and the YouTube search entirely and

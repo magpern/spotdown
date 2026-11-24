@@ -32,7 +32,7 @@ def analyse(stack: YoutubeStack, scope: Any = None, ref: str = SOURCE) -> Any:
 
 @pytest.mark.parametrize("scope", [None, SCOPE])
 def test_the_source_is_off_when_the_operator_turns_it_off(tmp_path: Path, scope) -> None:
-    off = Stack(tmp_path)
+    off = Stack(tmp_path, allow_ytdlp_sourcing=False)
     body: Dict[str, Any] = {"source_ref": SOURCE, **({"cache_scope": scope} if scope else {})}
     res = off.post(body)
     assert res.status_code == 422 and res.json()["error"]["code"] == "source_disabled"

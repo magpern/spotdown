@@ -64,7 +64,8 @@ ISRC.
 Spotify-catalogue classes touches Spotify's Developer Policy. Returning only metadata, or running
 noncommercially, does not remove that risk. The owner accepted that risk on 2026-11-20
 ([classbeat#1296](https://github.com/magpern/classbeat/issues/1296)). YouTube stays optional; it is on
-by default in code (`ALLOW_YTDLP_SOURCING`, owner, 2026-11-24, spotdown#86) and `false` turns it off.
+by default in code (`ALLOW_YTDLP_SOURCING`, owner, 2026-11-24, spotdown#86; classbeat amendment
+pending) and `false` turns it off.
 
 ## Issues in this repository
 

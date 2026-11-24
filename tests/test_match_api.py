@@ -46,7 +46,7 @@ def results(res: Any) -> list:
 
 
 def test_the_matcher_is_disabled_when_the_operator_turns_it_off(tmp_path: Path) -> None:
-    off = Stack(tmp_path)
+    off = Stack(tmp_path, allow_ytdlp_sourcing=False)
     res = off.client.post("/v2/match", headers=AUTH, json={"tracks": [track()]})
     assert res.status_code == 422 and res.json()["error"]["code"] == "source_disabled"
 
