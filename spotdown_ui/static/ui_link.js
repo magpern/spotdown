@@ -26,7 +26,12 @@ function renderTracks(d) {
   ).join("");
   const listed = Number.isInteger(d.listed) ? d.listed : tracks.length;
   const of = Number.isInteger(d.total) ? ` of ${d.total}` : "";
-  const more = d.truncated ? `<div class="hint err">Showing ${listed}${of} tracks: Spotify listed no more.</div>` : "";
+  // truncated: true (some were left out), false (all listed) or null (unknown: the page gave no
+  // total, so the list may be incomplete).
+  const more = d.truncated === true
+    ? `<div class="hint err">Showing ${listed}${of} tracks: Spotify listed no more.</div>`
+    : d.truncated === false ? ""
+    : `<div class="hint err">Showing ${listed} tracks. The list may be incomplete: full playlists need the backend's Spotify credentials.</div>`;
   tracksCard.innerHTML = `<div style="font-weight:600">Tracks</div>${items}${more}`;
   for (const b of tracksCard.querySelectorAll("button.pick")) {
     b.addEventListener("click", () => pickTrack(tracks[+b.getAttribute("data-i")]));

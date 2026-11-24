@@ -124,7 +124,8 @@ def test_the_ui_image_runs_unprivileged_with_a_healthcheck_on_8000() -> None:
     )
     cmd = _named("CMD")[-1]
     assert '"--factory", "spotdown_ui.app:create_app"' in cmd and '"--port", "8000"' in cmd
-    assert '"--no-proxy-headers"' in cmd and "--workers" not in cmd  # one process: one slot
+    assert '"--no-proxy-headers"' in cmd
+    assert cmd.count('"--workers"') == 1 and '"--workers", "1"' in cmd  # one process: one slot
 
 
 def test_the_ui_image_holds_no_secret_value() -> None:

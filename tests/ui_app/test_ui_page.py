@@ -37,6 +37,21 @@ def run() -> Dict[str, Any]:
     return _run()
 
 
+@pytest.mark.parametrize(
+    "truncated,total,shown,absent",
+    [(True, 250, "Showing 1 of 250 tracks", "may be incomplete"),
+     (False, 1, None, "Showing"),
+     (None, None, "The list may be incomplete: full playlists need the backend's Spotify "
+                  "credentials.", "Spotify listed no more")],
+)  # fmt: skip
+def test_the_track_list_says_whether_it_is_complete(truncated, total, shown, absent) -> None:
+    """``truncated`` is true (some left out), false (all listed) or null (unknown, #76)."""
+    tracks = _run(truncated=truncated, total=total)["steps"]["tracks"]
+    if shown:
+        assert shown in tracks
+    assert absent not in tracks
+
+
 def test_a_track_without_duration_or_artists_is_matched_as_it_is() -> None:
     """Spotify's public pages may give no duration or artists (#76): the page sends none and no
     alignment reference, and never invents a value."""

@@ -42,7 +42,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["python", "-m", "spotdown_ui.healthcheck"]
 
-# One process (the upload slot is held in memory). 0.0.0.0 inside the container is needed for
+# One process and one worker: the upload slot is held in memory (spotdown#78). 0.0.0.0 inside the container is needed for
 # publishing; the deploy publishes on the loopback by default. Forwarded headers are ignored
 # (ADR 0003).
-CMD ["uvicorn", "--factory", "spotdown_ui.app:create_app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers", "--no-server-header"]
+CMD ["uvicorn", "--factory", "spotdown_ui.app:create_app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-proxy-headers", "--no-server-header"]

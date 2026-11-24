@@ -75,5 +75,8 @@ The app fails to start if any of these is wrong:
 
 An error names the setting, never the key.
 
-Run locally: `uvicorn --factory spotdown_ui.app:create_app` (needs `requirements-ui.txt`). The
-image runs one process, because the one upload slot is held in memory.
+Run locally: `uvicorn --factory spotdown_ui.app:create_app` (needs `requirements-ui.txt`).
+
+**The UI runs as one process and one replica.** The one upload slot is held in memory, so the
+image starts one uvicorn worker (`--workers 1`). Do not raise it, and do not run a second replica
+of the UI.

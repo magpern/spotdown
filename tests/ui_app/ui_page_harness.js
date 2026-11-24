@@ -29,7 +29,8 @@ const track = { spotify_id: "4uLU6hMCjMI75M1A2tKUQC", title: input.title, artist
 const bare = { spotify_id: "1111111111111111111111", title: "Bare", artists: [], album: null, duration_ms: null, isrc: null };
 let jobPolls = 0;
 function respond(url, method) {
-  if (url === "/api/spotify/resolve") return ok(200, { tracks: input.bare ? [bare] : [track], listed: 1, total: 250, truncated: true });
+  if (url === "/api/spotify/resolve") return ok(200, { tracks: input.bare ? [bare] : [track], listed: 1, total: "total" in input ? input.total : 250,
+    truncated: "truncated" in input ? input.truncated : true });
   if (url === "/api/match") return ok(200, { results: [{ status: "matched", best: {
     source: "youtube:dQw4w9WgXcQ", recording_match_confidence: 0.9, duration_check: "ok" } }] });
   if (url === "/api/uploads") return ok(201, { upload_id: "up_1", sha256: "a", bytes: 3 });
