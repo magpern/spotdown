@@ -19,7 +19,7 @@ from typing import Any, Dict, Optional
 
 from . import cache_policy as policy
 from .alignment_doc import AlignedRow, build, cache_key, compose
-from .retention_store import touch_global
+from .retention_store import touch_analysis
 from .sqlite_base import SqliteBase
 
 
@@ -128,6 +128,6 @@ class AlignmentStore(SqliteBase):
             ).fetchone()
             if base is None or base["cache_scope"] != row_scope:
                 return None
-            if row_scope is None:  # reading a global alignment is a read of its analysis
-                touch_global(conn, row.base_analysis_id, self.clock())
+            # Reading an alignment (global or scoped) is a read of its analysis.
+            touch_analysis(conn, row.base_analysis_id, self.clock())
         return compose(json.loads(base["doc"]), row)

@@ -1,11 +1,12 @@
 """Storage side of the retention of global entries (``retention_policy``, ADR 0040 §7): the read
-renewal, the purge of unused or outdated analyses and the takedown purge of one source ref.
+renewal (of any analysis), the purge of unused or outdated global analyses and the takedown purge
+of one source ref. Scoped entries have their own purge in ``scope_retention_store`` (spotdown#40).
 
 An analysis entry is the analysis row, the source links that point to it, the global alignments
 built on it and the match record inside its document. Deleting one removes all of them in one
 transaction; the connection overwrites the freed pages (``secure_delete``) and truncates the
-write-ahead log afterwards, so a purged document is not left in the database files. Only rows
-with ``cache_scope`` NULL (global) are ever selected; a scoped analysis is never touched.
+write-ahead log afterwards, so a purged document is not left in the database files. The purge and
+the takedown here select only rows with ``cache_scope`` NULL (global), never a scoped one.
 """
 
 from __future__ import annotations
@@ -20,16 +21,15 @@ from .sqlite_base import SqliteBase
 log = logging.getLogger("spotdown.service.retention")
 
 
-def touch_global(conn: sqlite3.Connection, analysis_id: str, now: float) -> None:
-    """Renews a global analysis' last read, unless it was renewed within the touch interval."""
+def touch_analysis(conn: sqlite3.Connection, analysis_id: str, now: float) -> None:
+    """Renews an analysis' last read (global or scoped: the caller has already checked that the
+    reader may read it), unless it was renewed within the touch interval."""
     row = conn.execute(
-        "SELECT last_read_at FROM analyses WHERE analysis_id = ? AND cache_scope IS NULL",
-        (analysis_id,),
+        "SELECT last_read_at FROM analyses WHERE analysis_id = ?", (analysis_id,)
     ).fetchone()
     if row is not None and (row[0] is None or policy.touch_due(row[0], now)):
         conn.execute(
-            "UPDATE analyses SET last_read_at = ? WHERE analysis_id = ? AND cache_scope IS NULL",
-            (now, analysis_id),
+            "UPDATE analyses SET last_read_at = ? WHERE analysis_id = ?", (now, analysis_id)
         )
 
 

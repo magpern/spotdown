@@ -192,9 +192,10 @@ def execute_job(
                 raise JobFailure(Reason.SOURCE_MISSING)
             _check_reused(sourced, base)
             aligning = _aligning(job, base, scope)
-            store.finish_job_reused(
+            if not store.finish_job_reused(
                 job_id, known.analysis_id, scope, kind, sourced.source.get("ref"), aligning
-            )
+            ):  # purged (or deleted with its scope, and this job with it) meanwhile
+                raise JobFailure(Reason.SOURCE_MISSING)
             return
         result = analyser(sourced.path, sourced.media, work, limits_from(settings))
         _check_decoded(sourced, result["core"])
