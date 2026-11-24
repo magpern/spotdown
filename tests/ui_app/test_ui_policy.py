@@ -39,7 +39,8 @@ def test_relay_turns_a_refused_key_into_502(status) -> None:
     "status,ctype,raw",
     [(200, "text/html", b"{}"), (200, "application/json", b"[1]"), (200, None, b"{}"),
      (200, "application/json", b"not json"), (500, "application/json", b"{}"),
-     (503, "application/json", b'{"error": {"code": "x"}}'), (302, "application/json", b"{}")],
+     (500, "application/json", b'{"error": {"code": "x"}}'), (302, "application/json", b"{}"),
+     (502, "application/json", b"{}"), (503, "application/json", b'{"error": {"code": "<x>"}}')],
 )  # fmt: skip
 def test_relay_refuses_what_it_cannot_vouch_for(status, ctype, raw) -> None:
     assert policy.relay(status, ctype, raw) == policy.BACKEND_ERROR
@@ -55,6 +56,15 @@ def test_relay_shows_only_a_well_formed_code(code, shown) -> None:
     status, body = policy.relay(422, "application/json; charset=utf-8", raw)
     assert status == 422
     assert body == {"error": {"code": shown, "message": "the backend refused the request"}}
+
+
+@pytest.mark.parametrize(
+    "status,code", [(502, "provider_error"), (503, "queue_unavailable")]
+)  # fmt: skip
+def test_relay_shows_the_contracts_own_5xx_codes(status, code) -> None:
+    raw = json.dumps({"error": {"code": code, "message": "the Spotify request failed"}}).encode()
+    shown = {"error": {"code": code, "message": "the backend refused the request"}}
+    assert policy.relay(status, "application/json", raw) == (status, shown)
 
 
 def test_the_match_body_is_rebuilt_from_known_fields() -> None:

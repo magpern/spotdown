@@ -266,6 +266,15 @@ def test_backend_errors_are_shown_as_their_code_only(ui) -> None:
         assert "boom" not in res.text
 
 
+def test_a_resolve_failure_is_shown_as_provider_error(ui) -> None:
+    ui.backend.overrides[("POST", "/v2/spotify/resolve")] = httpx.Response(
+        502, json={"error": {"code": "provider_error", "message": "the Spotify request failed"}}
+    )
+    with ui.signed() as client:
+        res = client.post("/api/spotify/resolve", json={"url": "spotify:track:" + "a" * 22})
+    assert res.status_code == 502 and res.json()["error"]["code"] == "provider_error"
+
+
 def test_an_unreachable_backend_is_a_fixed_502(tmp_path) -> None:
     def down(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused to http://spotdown-api:8000/v2/match " + KEY)

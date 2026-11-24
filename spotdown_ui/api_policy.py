@@ -186,8 +186,10 @@ BACKEND_ERROR = Relayed(502, error_body("backend_error", "the backend did not an
 BACKEND_KEY = Relayed(502, error_body("backend_auth", "the backend refused the UI's key"))
 BACKEND_TIMEOUT = Relayed(504, error_body("backend_timeout", "the backend did not answer in time"))
 BACKEND_DOWN = Relayed(502, error_body("backend_unreachable", "the backend cannot be reached"))
-# The backend's statuses that reach the browser as they are (with the backend's code only).
-_PASSED_ON = frozenset({400, 404, 405, 408, 409, 413, 415, 422, 429})
+# The backend's statuses that reach the browser as they are (with the backend's code only). 502
+# and 503 are the contract's own errors (``provider_error`` from resolve, ``queue_unavailable``);
+# any other 5xx, or one without a well-formed code, is ``backend_error``.
+_PASSED_ON = frozenset({400, 404, 405, 408, 409, 413, 415, 422, 429, 502, 503})
 
 
 def relay(status: int, content_type: Optional[str], raw: bytes) -> Relayed:
@@ -211,5 +213,7 @@ def relay(status: int, content_type: Optional[str], raw: bytes) -> Relayed:
     error = data.get("error")
     code = error.get("code") if isinstance(error, dict) else None
     if not isinstance(code, str) or not _CODE.fullmatch(code):
+        if status >= 500:
+            return BACKEND_ERROR
         code = "backend_error"
     return Relayed(status, error_body(code, "the backend refused the request"))
