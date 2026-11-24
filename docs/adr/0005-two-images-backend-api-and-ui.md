@@ -107,12 +107,14 @@ the service.
      requests, which carry every field, are answered as before. A playlist page that lists fewer tracks than the playlist
      has gives what it lists and reports the shortfall (`truncated`, `listed`, `total`). Only a
      page with no usable track at all is an error.
-   - **Both paths are faked in tests.** No agent and no CI job calls Spotify (AGENTS.md safety
-     envelope).
+   - **Both paths are faked in tests.** No CI job or test calls Spotify. *(Amended 2026-11-24:
+     agents may check the public-page parsing by hand, read-only, as AGENTS.md "Safety envelope"
+     allows (owner, 2026-11-24, #85).)*
      - The public-page parsing is an **unverified assumption**: it is written to the pages' observed
-       shape and tested with fixtures. Spotify can change these pages without notice, so the owner's
-       first live try is the check. If it fails, the parser and its fixtures are fixed; nothing
-       else depends on the page format.
+       shape and tested with fixtures. Spotify can change these pages without notice, so a live
+       read-only check by hand (an agent's, per the Safety envelope, or the owner's first live try)
+       is the check. If it fails, the parser and its fixtures are fixed; nothing else depends on
+       the page format.
      - The API path reuses code that worked before, but it too is untested live in this programme.
    - The YouTube match is the existing `POST /v2/match`, which takes what resolve returns.
 

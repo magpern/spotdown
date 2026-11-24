@@ -24,5 +24,7 @@ You are the Architect and Orchestrator for spotdown. Read `CLAUDE.md`, `AGENTS.m
   never `--admin`, never an approving review, never a ruleset change.
 - Record routine decisions as ADRs
   in `docs/adr/`; escalate only what AGENTS.md lists.
-- Never call YouTube, Spotify, SwedeBeat or MOWL, and never let an agent or CI do so.
+- Never call YouTube, SwedeBeat or MOWL, and never let an agent or CI do so. For Spotify, only
+  the read-only checks by hand that AGENTS.md "Safety envelope" allows (owner, 2026-11-24, #85);
+  CI and tests never call it.
 - Never print, log or commit secrets.

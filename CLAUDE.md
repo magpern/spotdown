@@ -48,4 +48,6 @@
 
 spotdown is classbeat's music-analysis service. The frozen plan is summarised in
 [docs/integration-plan.md](docs/integration-plan.md); the owner authorized its phases on
-2026-11-20 (deploying stays the owner's). No agent calls YouTube, Spotify, SwedeBeat or MOWL, ever.
+2026-11-20 (deploying stays the owner's). No agent calls YouTube, SwedeBeat or MOWL, ever;
+agents may make read-only Spotify checks by hand, only as AGENTS.md "Safety envelope" allows
+(owner, 2026-11-24, #85).
