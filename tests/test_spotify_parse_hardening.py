@@ -218,13 +218,15 @@ def _no_netrc_credentials(requests, basic: str) -> None:
 def test_the_public_pages_never_send_netrc_credentials(tmp_path: Path, _netrc, link) -> None:
     fake = FakeSpotify()
     del fake.pages[f"/embed/track/{TRACK_ID}"]  # the track reaches oEmbed as well
-    assert _resolve(_client(tmp_path, fake), link).status_code == 200
+    res = _resolve(_client(tmp_path, fake), link)
     _no_netrc_credentials(fake.requests, _netrc)
+    assert res.status_code == 200
     assert all("authorization" not in r.headers for r in fake.requests)
 
 
 def test_the_web_api_never_sends_netrc_credentials(tmp_path: Path, _netrc) -> None:
     fake = FakeWebApi()
-    assert _resolve(_client(tmp_path, fake), f"spotify:playlist:{PLAYLIST_ID}").status_code == 200
+    res = _resolve(_client(tmp_path, fake), f"spotify:playlist:{PLAYLIST_ID}")
     _no_netrc_credentials(fake.requests, _netrc)
+    assert res.status_code == 200
     assert {"accounts.spotify.com", "api.spotify.com"} <= fake.hosts()
