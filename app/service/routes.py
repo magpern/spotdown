@@ -26,6 +26,7 @@ from ..youtube.normalise_policy import VIDEO_ID
 from . import analysis_doc, url_policy
 from . import idempotency_policy as idem
 from .api_models import ID_PATTERN, AnalysisRequest, scope_problem
+from .audio_store import AUDIO_KIND
 from .deps import require_key, settings_of, store_of
 from .dispatch import Dispatch
 from .errors import ApiError
@@ -210,7 +211,8 @@ def job_view(job: Dict[str, Any]) -> Dict[str, Any]:
     if job["client_ref"] is not None:
         view["client_ref"] = job["client_ref"]
     if job["status"] == "done":
-        view["analysis_id"] = job["analysis_id"]
+        id_field = "audio_id" if job["source_kind"] == AUDIO_KIND else "analysis_id"
+        view[id_field] = job.get(id_field)
         view["failure_kind"] = job["failure_kind"]
     elif job["status"] == "failed":
         view["failure_kind"] = job["failure_kind"]
@@ -238,4 +240,6 @@ def get_job(
         found = store.get_job_in_scope(job_id, cache_scope)  # its worker may have been killed
     if found is None:
         raise ApiError(404, "not_found", "no such job in this scope")
+    if found["source_kind"] == AUDIO_KIND:  # POST /v2/audio: the id of its mp3
+        found["audio_id"] = (store.audio_request(job_id) or {}).get("audio_id")
     return JSONResponse(job_view(found))
