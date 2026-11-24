@@ -12,8 +12,9 @@ something called service_mode." Asked to choose between one app with a UI switch
 the owner chose: "yes, go with two images."
 
 **Supersedes:**
-- [ADR 0004](0004-ui-switch-independent-of-service-mode.md) as a whole: there is no service mode,
-  no `SPOTDOWN_UI` switch and no static service page. The browser never holds the service key.
+- [ADR 0004](0004-ui-switch-independent-of-service-mode.md) except its Decision 6: there is no
+  service mode, no `SPOTDOWN_UI` switch and no static service page, and the browser never holds the
+  service key. Decision 6's response headers and CSP carry over to the UI image (Decision 7).
 - [ADR 0002](0002-local-file-input-in-standalone-ui.md) Decision 1, which put the route in the
   standalone app. The local file now enters through the UI image, which streams it to
   `PUT /v2/uploads`. Its other decisions still apply, in the UI image:
@@ -71,7 +72,7 @@ the service.
    - Same rules for both: at least 32 characters, only the SHA-256 held, never logged.
    - A request is checked against every configured key in constant time. Two equal keys stop
      start-up.
-   - Both keys have the same rights on `/v2`; no per-key scopes (plain and simple). The UI's keys are
+   - Both keys have the same rights on `/v2`; no per-key scopes (plain and simple). The two keys are
      separate so that the owner can replace one without touching classbeat's. Replacing a key is:
      write the file, restart.
 
@@ -85,6 +86,7 @@ the service.
      `listed`, `total` and `truncated`, at most 500.
    - The input is parsed strictly to (kind, id), and the backend builds every upstream URL itself.
      **The caller's URL is never fetched as given**, and no redirect is followed to another host.
+     An upstream response over a fixed cap (5 MiB) is refused unread.
    - **With credentials set** on the backend (`SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET_FILE`, a
      secret file mounted into the api only, never logged):
      - the official Web API resolves the link, reusing `app/spotify.py`'s client-credentials code;
@@ -99,8 +101,10 @@ the service.
      can choose the path. classbeat is unchanged: it resolves Spotify itself and sends metadata to
      `POST /v2/match`.
    - **A page that gives less is not a failure.** A missing field is `null` or empty, and the
-     matcher works without it: `POST /v2/match` accepts a track without a duration or artists, and
-     never scores on a missing duration. A playlist page that lists fewer tracks than the playlist
+     matcher works without it. Today `POST /v2/match` requires `duration_s` and at least one
+     artist; #76 relaxes that additively (both may be absent or empty, recorded in
+     `docs/contract-v2.md`), and the matcher never scores on a missing duration. classbeat's
+     requests, which carry every field, are answered as before. A playlist page that lists fewer tracks than the playlist
      has gives what it lists and reports the shortfall (`truncated`, `listed`, `total`). Only a
      page with no usable track at all is an error.
    - **Both paths are faked in tests.** No agent and no CI job calls Spotify (AGENTS.md safety
@@ -147,12 +151,14 @@ the service.
    - Analyses use the fixed `cache_scope` `spotdown_ui` (`DELETE /v2/scopes/spotdown_ui` removes
      them).
    - The UI keeps no audio and no analysis of its own.
-   - **Browser-facing protection is ADR 0003, carried over:**
+   - **Browser-facing protection is ADR 0003, carried over whole:**
      - a token session from `UI_ACCESS_TOKEN_FILE`, or one generated once in the UI's data
-       directory;
+       directory, with ADR 0003's login, logout and session cookie;
      - `UI_ALLOWED_HOSTS` and `UI_PUBLIC_ORIGIN`;
-     - same-origin checks on unsafe requests;
-     - no CORS;
+     - same-origin checks on unsafe requests, with the `X-Spotdown-UI` header required on every
+       `/api` request and the default-deny on unexpected content types (415);
+     - no CORS, and no API docs;
+     - uvicorn run with `--no-proxy-headers`;
      - the strict CSP and headers of ADR 0004 Decision 6.
 
      `/healthz` is open and does not call the backend.
@@ -192,6 +198,11 @@ the service.
 ## Consequences
 
 - classbeat sees no change. `/v2` answers as before, with its key, its Host and its network.
+- **A leaked UI key has classbeat's full rights on `/v2`**, including reading and deleting
+  classbeat's scopes (Decision 3 gives both keys the same rights). The UI container holds it only in
+  a secret file and never sends it to a browser. If it leaks, the owner replaces that one key
+  without touching classbeat's. Narrowing the UI key's rights (for example to the `spotdown_ui`
+  scope) is the follow-up if the owner wants it.
 - The owner runs one more container for the UI and installs one more secret file, the UI's key.
   Spotify credentials are optional. With them, playlists are complete and carry the ISRC; the
   secret file is then a second, optional secret.
