@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://spotdown.invalid/schema/job-v1.json",
   "title": "spotdown job status v1",
-  "description": "Response of GET /v2/jobs/{id}. outcome is a per-track status once the job ended (done jobs: null, or alignment_failed when the analysis exists but alignment failed). An alignment_failed job has status done and an analysis_id; a processing_failed job has status failed and no analysis_id.",
+  "description": "Response of GET /v2/jobs/{id}. outcome is a per-track status once the job ended (done jobs: null, or alignment_failed when the analysis exists but alignment failed). An alignment_failed job has status done and an analysis_id; a processing_failed job has status failed and no analysis_id. A job of POST /v2/audio has an audio_id instead of an analysis_id when done.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -50,6 +50,10 @@
       "type": "string",
       "minLength": 1
     },
+    "audio_id": {
+      "type": "string",
+      "pattern": "^au_[0-9a-f]{32}$"
+    },
     "failure_kind": {
       "enum": [
         null,
@@ -74,9 +78,6 @@
         ]
       },
       "then": {
-        "required": [
-          "analysis_id"
-        ],
         "properties": {
           "outcome": {
             "enum": [
@@ -84,7 +85,29 @@
               "alignment_failed"
             ]
           }
-        }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "analysis_id"
+            ],
+            "not": {
+              "required": [
+                "audio_id"
+              ]
+            }
+          },
+          {
+            "required": [
+              "audio_id"
+            ],
+            "not": {
+              "required": [
+                "analysis_id"
+              ]
+            }
+          }
+        ]
       }
     },
     {
@@ -108,8 +131,17 @@
           }
         },
         "not": {
-          "required": [
-            "analysis_id"
+          "anyOf": [
+            {
+              "required": [
+                "analysis_id"
+              ]
+            },
+            {
+              "required": [
+                "audio_id"
+              ]
+            }
           ]
         }
       }
@@ -135,8 +167,17 @@
           }
         },
         "not": {
-          "required": [
-            "analysis_id"
+          "anyOf": [
+            {
+              "required": [
+                "analysis_id"
+              ]
+            },
+            {
+              "required": [
+                "audio_id"
+              ]
+            }
           ]
         }
       }

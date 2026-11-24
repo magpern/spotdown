@@ -17,7 +17,7 @@ deleted; option 1 decided 2026-11-24: the same 90-days-unused and version-change
 analyses, with their job and idempotency records) and the follow-ups of the 2026-11-21 real-music trial, #46 to #49, #52 and #54 (below).
 Merged so far: #43 (PR #50); #44 (PR #51: ADR 0001 and ADR 0002, Accepted); ADR 0003 (PR #53, for
 #52); and #45 (PR #55, one label vocabulary and the v1 response version in the cache key). All the
-ADRs are in `docs/adr/`. Build order: #54, #46, #47, #48, #52, #49, one PR at a time. classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
+ADRs are in `docs/adr/`. ADR 0005 (owner, 2026-11-24) splits spotdown into two images, a backend that is API only and a separate UI; the classbeat plan's layer table and its "never returns audio" line need a matching amendment from the owner. Build order: #54, #46, #47, #48, #52, #49, one PR at a time. classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
 `ALLOW_YTDLP_SOURCING` stays off by default in code and is switched on only by the owner. Quality gates file `quality/quality_gates.json` is at v6 (v6 added the reported segments-per-truth-section metric, spotdown#46); the document version is 8.5 (core 8, mapping 5; mapping 5 added the chorus margin, spotdown#47; mapping 4 added the reported `content.explicit`
 signal, spotdown#36)
 and the core analyzer version is 8 (running version `8.5`: over-fine segments are merged before labelling, spotdown#46; steady-energy tracks are split by timbre novelty and a chorus needs an energy margin, spotdown#47). The quality thresholds are set by the amendment in classbeat
@@ -56,8 +56,9 @@ ISRC.
 | Sources: `url` (host allowlist), `youtube` (yt-dlp, off by default) | optional |
 | Matchers (YouTube first) | optional |
 | Alignment to a reference clock ("spotify" is one kind) | optional |
-| Standalone extras (Spotify URL resolution, file downloads, the session) | off in service mode |
-| Web UI | its own switch, `SPOTDOWN_UI` (off unless set in service mode; owner, 2026-11-24, ADR 0004); in service mode the static page only, analysing through the authenticated `/v2` |
+| Backend image `spotdown`: API only (`/v2` behind a caller key, `/healthz`), no mode | required (ADR 0005) |
+| Spotify link resolution (`POST /v2/spotify/resolve`) and the mp3 (`POST`/`GET /v2/audio`, by owner direction) | optional (ADR 0005) |
+| UI image `spotdown-ui`: the page, the token session (ADR 0003), calls the backend server-side with its own key | optional, its own container (owner, 2026-11-24, ADR 0005) |
 
 **Terms of service:** downloading from YouTube is against YouTube's terms, and using it for
 Spotify-catalogue classes touches Spotify's Developer Policy. Returning only metadata, or running
@@ -94,7 +95,12 @@ by default in code (`ALLOW_YTDLP_SOURCING`); switching it on is the owner's depl
 | trial follow-up | #48 waveform view in the standalone UI | open | #45 |
 | trial follow-up | #52 standalone exposure: a token always on every standalone route, plus same-origin requests, a `Host` allowlist, no CORS and loopback publishing (ADR 0003; Opus Developer) | open | #44, #54 |
 | trial follow-up | #49 local-file input in the standalone UI (Opus Developer) | open | #44, #48, #52 |
-| owner, 2026-11-24 | #68 the UI's own switch `SPOTDOWN_UI`, independent of service mode (ADR 0004; Opus Developer) | open | – |
+| owner, 2026-11-24 | #68 the UI's own switch `SPOTDOWN_UI`, independent of service mode (ADR 0004; Opus Developer) | merged (PR #69), superseded by ADR 0005 | – |
+| owner, 2026-11-24 | #75 ADR 0005: two images, a backend that is API only and a separate UI | open | – |
+| owner, 2026-11-24 | #76 `/v2` Spotify link resolution and a second caller key (Opus Developer) | open | #75 |
+| owner, 2026-11-24 | #77 `/v2` mp3 of a matched YouTube video (Opus Developer) | open | #75 |
+| owner, 2026-11-24 | #78 the UI image `spotdown-ui` (Opus Developer) | open | #75, #76, #77 |
+| owner, 2026-11-24 | #79 backend API only: retire `SERVICE_MODE` and the standalone app; deploy both images (Opus Developer) | open | #75 to #78 |
 
 The classbeat issues SD-P4 to SD-P7 (classbeat#1301 to #1306) depend on #3, #4, #5, #6, #10 and #11;
 all but the real-music runs of #6 are merged, and classbeat#1296 is accepted, so SD-P6 is unblocked.

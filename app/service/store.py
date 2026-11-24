@@ -14,8 +14,9 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from . import cache_schema, match_store, upload_store
+from . import audio_store, cache_schema, match_store, upload_store
 from .alignment_store import Aligning, AlignmentStore, aligning_for, store_aligned
+from .audio_store import AudioStore
 from .cache_policy import GLOBAL_REFERENCE_TTL_S
 from .cache_store import CacheStore, insert_analysis, put_link
 from .match_store import MatchStore
@@ -51,7 +52,7 @@ def _reference(job: Dict[str, Any]) -> Optional[str]:
     return json.dumps(ref, sort_keys=True) if ref is not None else None
 
 
-class Store(CacheStore, AlignmentStore, MatchStore, ScopeRetentionStore, UploadStore):
+class Store(CacheStore, AlignmentStore, AudioStore, MatchStore, ScopeRetentionStore, UploadStore):
     def __init__(
         self,
         path: Path,
@@ -69,6 +70,7 @@ class Store(CacheStore, AlignmentStore, MatchStore, ScopeRetentionStore, UploadS
                 conn.execute("ALTER TABLE jobs ADD COLUMN explicit INTEGER")  # before spotdown#36
             cache_schema.create(conn)
             match_store.create(conn)
+            audio_store.create(conn)
 
     # ---- jobs ----
     def add_job(self, job: Dict[str, Any]) -> None:

@@ -12,12 +12,16 @@ validates the examples against the schemas (`tests/test_schemas.py`).
 ## Principles
 
 - **Audio in, analysis out.** spotdown never returns audio, never receives a user token and never
-  writes to any account. Audio is deleted at the end of every job.
+  writes to any account. Audio is deleted at the end of every job. **The one exception**, by the
+  owner's direction (2026-11-24, [ADR 0005](adr/0005-two-images-backend-api-and-ui.md) Decision 5):
+  `GET /v2/audio/{audio_id}` returns the mp3 that a `POST /v2/audio` job made of a matched YouTube
+  video, kept `AUDIO_TTL_S`. No other route returns audio.
 - **Generic.** The contract and schemas know no consumer, user, workout or catalogue. Callers pass
   an opaque `client_ref` and an opaque `cache_scope` (see Common rules).
 - **File clock.** Every time in an analysis is seconds from the start of the decoded file. A
   reference clock appears only as the optional `alignment` object, which the caller applies.
-- **Metadata only.** A response carries derived metadata, never audio or a signed URL.
+- **Metadata only.** A response carries derived metadata, never audio or a signed URL (except the
+  mp3 of `GET /v2/audio/{audio_id}`, above).
 
 ## Authentication
 
@@ -31,7 +35,7 @@ this same bearer header). Every rule of this contract holds unchanged with it on
 
 ## Common rules
 
-- **`Idempotency-Key`** (header): required on `POST /v2/analyses` and `PUT /v2/uploads`, optional
+- **`Idempotency-Key`** (header): required on `POST /v2/analyses`, `POST /v2/audio` and `PUT /v2/uploads`, optional
   on `POST /v2/match`. The same key with the same body returns the first response; the same key
   with a different body is `409`. This holds for concurrent requests too: the one that records
   first wins, a concurrent copy of it gets the winner's response, and a concurrent different
@@ -255,7 +259,7 @@ Poll a job. Response `200`, validated by `schema/job-v1.json`:
  "analysis_id": "...", "failure_kind": null}
 ```
 
-`analysis_id` is set when `status` is `done`. `outcome` is null on a `done` job except `alignment_failed` (with `failure_kind` `alignment_failed`). `GET /v2/analyses/{id}` returns the analysis
+`analysis_id` is set when `status` is `done` (for a `POST /v2/audio` job, `audio_id` instead). `outcome` is null on a `done` job except `alignment_failed` (with `failure_kind` `alignment_failed`). `GET /v2/analyses/{id}` returns the analysis
 (`schema/analysis-v1.json`) for an id in the caller's scope or a global (public `youtube`) analysis; any other id is `404`. Jobs are visible only in the scope
 that created them. Callers poll with a backoff; no callback is made.
 
@@ -263,6 +267,52 @@ A job that stays `running` longer than its lease (the queue's job timeout, the f
 limits plus a minute, and 4 more minutes) lost its worker (killed, out of memory, redeployed): it is
 failed as `processing_failed` with `failure_kind` `timeout` (so the caller may retry it once), its
 URL and upload are removed and its temporary audio is deleted. Polling such a job reports it.
+
+### `POST /v2/audio`
+
+The mp3 of one matched YouTube video ([ADR 0005](adr/0005-two-images-backend-api-and-ui.md)
+Decision 5). Body:
+
+```json
+{"source_ref": "youtube:<11-character video id>", "bitrate": 320, "title": "...", "artists": ["..."]}
+```
+
+- `source_ref` is `youtube:<11-character video id>` only (`422 invalid_request` for anything else:
+  no URL, no other kind). It is `422 source_disabled` unless `ALLOW_YTDLP_SOURCING=true`. Nothing
+  is queued on either error. No URL is ever fetched for it; the `url` source and its allowlist are
+  not used here.
+- `bitrate` is 128, 192, 256 or 320 kbps (default 320); any other value is `422 invalid_request`.
+- `title` (at most 1000 characters) and `artists` (at most 50 of 1000) are optional. Control and
+  format characters are dropped and the text is capped (title 200 characters, 10 artists of 100)
+  for the ID3 `TIT2` and `TPE1` tags and the download's file name. No cover art is fetched.
+- `Idempotency-Key` is required, with the rules of `POST /v2/analyses`; keys of this route have no
+  `cache_scope` (they share the scope-less namespace of a `youtube`-only analysis request, and the
+  route is part of the request hash, so a key used there is `409` here).
+
+Answer `202 {"job_id", "status": "queued"}`. Poll `GET /v2/jobs/{id}` without `cache_scope`; a
+done job carries `audio_id` instead of `analysis_id`. The worker downloads through the `youtube`
+source exactly as an analysis does (one audio-only https format, the duration and live checks on
+the metadata, the `MAX_UPLOAD_BYTES` cap, the provider backoff, the same outcomes and failure
+kinds: a file over the cap is `processing_failed` / `out_of_memory`). It converts in the analysis
+sandbox: the container is checked before ffmpeg sees a byte, ffmpeg is pinned to that container,
+and the output is CBR mp3 at 44.1 kHz and the asked bitrate. Only a finished, tagged file is kept;
+a failed or partial one is deleted with the job's work directory.
+
+The same video id and bitrate reuse a file that is still kept (the tags and file name are those of
+the job that made it), and the reuse renews it. A file is kept `AUDIO_TTL_S` (default 86400, at
+least 600) after the last job that handed it out, then deleted by the sweep. A running job's file
+is in its work directory until the job ends, and the sweep never removes the work directory of a
+running job. Finished audio job records are kept `AUDIO_TTL_S` or 24 hours, whichever is longer.
+
+### `GET /v2/audio/{audio_id}`
+
+`200` with `Content-Type: audio/mpeg`, `Content-Disposition: attachment; filename="<name>.mp3"`
+(plain ASCII from letters, digits, space, `,`, `_`, `(`, `)` and `-`: `Artists - Title`, else
+`youtube-<video id>`), `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`. The id is
+a random id the server made (`au_` and 32 lower-case hex digits), checked by that pattern before it
+names a file; no path is built from input. A malformed, unknown or expired id is `404 not_found`.
+Like every `/v2` route it is `401` without the key, before routing. Files are not scoped: any
+holder of the key and the id can fetch it while it is kept.
 
 ### Retention of global references
 
