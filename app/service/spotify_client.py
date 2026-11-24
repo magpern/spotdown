@@ -47,8 +47,12 @@ class Fetcher:
 
     def __init__(self, hosts: frozenset, transport: Optional[httpx.BaseTransport] = None) -> None:
         self._hosts = hosts
-        # trust_env stays on: an operator's HTTPS proxy is honoured.
-        self._http = httpx.Client(transport=transport, follow_redirects=False, timeout=TIMEOUT_S)
+        # trust_env stays on: an operator's HTTPS proxy and CA bundle are honoured. No client-wide
+        # auth (auth=None): a request carries only the auth its call passes, never ~/.netrc
+        # (spotdown#88; httpx 0.28 reads .netrc only through an explicit httpx.NetRCAuth).
+        self._http = httpx.Client(
+            transport=transport, follow_redirects=False, timeout=TIMEOUT_S, auth=None
+        )
 
     def __repr__(self) -> str:
         return f"Fetcher({sorted(self._hosts)})"

@@ -13,7 +13,6 @@ Neither the secret nor the token is in a repr, an error or a log.
 
 from __future__ import annotations
 
-import json
 import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -23,6 +22,7 @@ import httpx
 from . import spotify_api as api
 from . import spotify_policy as policy
 from .spotify_client import Fetcher, SpotifyFailure
+from .spotify_page import parse_json
 
 
 class WebApi:
@@ -136,6 +136,6 @@ class WebApi:
 
 def _json(body: bytes) -> Any:
     try:
-        return json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
+        return parse_json(body)
+    except ValueError:
         raise SpotifyFailure("body is not JSON") from None
