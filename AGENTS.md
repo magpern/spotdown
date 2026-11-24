@@ -151,9 +151,24 @@ only) is set by the owner; agents never change rulesets.
 **Agents may, without asking:** create branches, PRs and issues in this repository; review and
 merge per the gate; run local checks and tests.
 
-**No agent and no CI job makes a real call** to YouTube (through yt-dlp or otherwise), Spotify,
-SwedeBeat or MOWL: not to test, not to check, not to "just try". Live checks are the owner's.
-Tests fake all of them. **Only with the owner's authorization for that specific action:** deploying,
+**No agent and no CI job makes a real call** to YouTube (through yt-dlp or otherwise), SwedeBeat
+or MOWL: not to test, not to check, not to "just try". Live checks of those are the owner's. No CI
+job calls Spotify either. Tests fake all four, Spotify included.
+
+**Read-only Spotify checks (the one exception; owner, 2026-11-24, [#85](https://github.com/magpern/spotdown/issues/85)).**
+The owner: "Agents aren't allowed to call Spotify — of course they are. They can read." and, on
+#85: "I confirm the read-only spotify rule. I allow read only agent tests against spotify". So an
+agent may make live **read-only** requests to Spotify by hand, to check parsing against real data:
+
+- the public pages on `open.spotify.com` (oEmbed and embed);
+- the read-only Web API, when credentials are given.
+
+These are manual checks by an agent, never part of the automated suite: the test suite and CI
+never touch the network (Security rules), and tests fake Spotify. Nothing writes to a Spotify
+account. No credentials, tokens or cookies are printed, logged or committed. Anything wider than
+this is a question for the owner.
+
+**Only with the owner's authorization for that specific action:** deploying,
 DNS and TLS, paid services, provider dashboards, emails to real people, anything that writes to a
 real account, contacting providers.
 
