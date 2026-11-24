@@ -53,8 +53,9 @@ read from the file in `SERVICE_KEY_FILE` (the service refuses to start without i
 image's own key from the optional `UI_SERVICE_KEY_FILE` (at least 32 characters, different from
 the first; [ADR 0005](docs/adr/0005-two-images-backend-api-and-ui.md)). `/files`, `/api/v1`, CORS
 and the API docs are off; so is the UI unless you turn it on (below). Spotify links resolve through
-`POST /v2/spotify/resolve`, which needs no Spotify client id or secret: it reads Spotify's public
-pages on `open.spotify.com` only.
+`POST /v2/spotify/resolve`. It needs no Spotify credentials and then reads Spotify's public pages on
+`open.spotify.com`. With `SPOTIFY_CLIENT_ID` and the secret in the file `SPOTIFY_CLIENT_SECRET_FILE`
+it uses the official Web API instead (full playlists, ISRC). One of the two alone stops the start-up.
 
 **The UI in service mode (`SPOTDOWN_UI=on`, [ADR 0004](docs/adr/0004-ui-switch-independent-of-service-mode.md)).**
 The UI has its own switch, independent of `SERVICE_MODE`: unset, it is off in service mode and

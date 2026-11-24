@@ -1,17 +1,26 @@
-"""A fake ``open.spotify.com`` behind ``httpx.MockTransport``: no socket is opened, every request
-is recorded. The embed pages are fixtures written to the observed shape of Spotify's public embed
-page (a Next.js ``__NEXT_DATA__`` script); that shape is an unverified assumption until the owner
-tries it live (spotdown#76)."""
+"""Fakes of both resolve paths behind ``httpx.MockTransport``: no socket is opened, every request
+is recorded (spotdown#76).
+
+- ``FakeSpotify``: ``open.spotify.com``'s public pages. The embed pages are fixtures written to
+  the observed shape of Spotify's public embed page (a Next.js ``__NEXT_DATA__`` script); that
+  shape is an unverified assumption until the owner tries it live.
+- ``FakeWebApi``: ``accounts.spotify.com`` and ``api.spotify.com``, to the Web API's documented
+  shape."""
 
 from __future__ import annotations
 
 import json
 from typing import Any, Callable, Dict, List, Optional
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
-from app.service.spotify_client import SpotifyClient
+from app.service.spotify_api_client import WebApi
+from app.service.spotify_client import PublicPages
 
+CLIENT_ID = "fake-client-id"
+CLIENT_SECRET = "fake-client-secret-0123456789abcdef"
+TOKEN = "fake-app-token-9f8e7d6c5b4a"
 TRACK_ID = "4uLU6hMCjMI75M1A2tKUQC"
 ALBUM_ID = "1DFixLWuPkv3KT3TnV35m3"
 PLAYLIST_ID = "37i9dQZF1DXcBWIGoYBM5M"
@@ -81,8 +90,8 @@ class FakeSpotify:
         self.requests: List[httpx.Request] = []
         self.override: Optional[Callable[[httpx.Request], Optional[httpx.Response]]] = None
 
-    def client(self) -> SpotifyClient:
-        return SpotifyClient(transport=httpx.MockTransport(self))
+    def client(self) -> PublicPages:
+        return PublicPages(transport=httpx.MockTransport(self))
 
     def hosts(self) -> set:
         return {r.url.host for r in self.requests}
@@ -99,3 +108,74 @@ class FakeSpotify:
         if page is None:
             return httpx.Response(404, text="not found")
         return httpx.Response(200, content=page)
+
+
+def api_track(n: int, album: Optional[str] = "Album") -> Dict[str, Any]:
+    item: Dict[str, Any] = {
+        "id": sid(n),
+        "type": "track",
+        "name": f"Song {n}",
+        "artists": [{"name": f"Artist {n}"}],
+        "duration_ms": 180000 + n,
+        "external_ids": {"isrc": f"SEXXX{n:07d}"},
+    }
+    if album is not None:
+        item["album"] = {"name": album}
+    return item
+
+
+class FakeWebApi:
+    def __init__(self, playlist_size: int = 230, album_size: int = 60) -> None:
+        self.playlist_size = playlist_size
+        self.album_size = album_size
+        self.requests: List[httpx.Request] = []
+        self.override: Optional[Callable[[httpx.Request], Optional[httpx.Response]]] = None
+        self.token = TOKEN
+
+    def client(self) -> WebApi:
+        return WebApi(CLIENT_ID, CLIENT_SECRET, transport=httpx.MockTransport(self))
+
+    def hosts(self) -> set:
+        return {r.url.host for r in self.requests}
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if self.override is not None:
+            answer = self.override(request)
+            if answer is not None:
+                return answer
+        url = urlsplit(str(request.url))
+        if url.netloc == "accounts.spotify.com" and url.path == "/api/token":
+            return httpx.Response(200, json={"access_token": self.token, "expires_in": 3600})
+        if url.netloc != "api.spotify.com":
+            return httpx.Response(599, text="the fake reached another host")
+        if request.headers.get("authorization") != f"Bearer {self.token}":
+            return httpx.Response(401, json={"error": "bad token"})
+        query = {k: int(v[0]) for k, v in parse_qs(url.query).items()}
+        path = url.path
+        if path == f"/v1/tracks/{TRACK_ID}":
+            return httpx.Response(200, json={**api_track(0), "id": TRACK_ID})
+        if path == f"/v1/albums/{ALBUM_ID}":
+            page = self._page(self.album_size, 0, 50, lambda n: api_track(n, album=None))
+            return httpx.Response(200, json={"name": "The Album", "tracks": page})
+        if path == f"/v1/albums/{ALBUM_ID}/tracks":
+            rows = self._page(self.album_size, query["offset"], 50, lambda n: api_track(n, None))
+            return httpx.Response(200, json=rows)
+        if path == f"/v1/playlists/{PLAYLIST_ID}/tracks":
+            rows = self._page(
+                self.playlist_size,
+                query["offset"],
+                query["limit"],
+                lambda n: {"track": api_track(n)},
+            )
+            return httpx.Response(200, json=rows)
+        return httpx.Response(404, json={"error": "not found"})
+
+    @staticmethod
+    def _page(size: int, offset: int, limit: int, row: Callable[[int], Any]) -> Dict[str, Any]:
+        end = min(size, offset + limit)
+        return {
+            "items": [row(n) for n in range(offset, end)],
+            "next": "https://api.spotify.com/v1/next-page-never-fetched" if end < size else None,
+            "total": size,
+        }

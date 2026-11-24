@@ -46,9 +46,14 @@ class Settings(BaseSettings):
     max_duration_drift_s: int = 4
 
     # Spotify metadata
-    # The standalone routes only (until #79). POST /v2/spotify/resolve reads no Spotify setting.
+    # SPOTIFY_CLIENT_ID is read by the standalone routes (with SPOTIFY_CLIENT_SECRET, until #79)
+    # and by POST /v2/spotify/resolve (with the secret file below, never the value).
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
+    # POST /v2/spotify/resolve (spotdown#76): a secrets file with the client secret. With it and
+    # SPOTIFY_CLIENT_ID the Web API is used; with neither, Spotify's public pages; one alone stops
+    # the start-up.
+    spotify_client_secret_file: Optional[Path] = None
 
     # Sourcing
     allow_ytdlp_sourcing: bool = False

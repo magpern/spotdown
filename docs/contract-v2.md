@@ -158,7 +158,8 @@ The matcher is the `youtube` source's (spotdown#10):
 ### `POST /v2/spotify/resolve`
 
 A Spotify track, album or playlist link to track metadata ([ADR 0005](adr/0005-two-images-backend-api-and-ui.md),
-Decision 4; spotdown#76). No audio, no search, no analysis, **no Spotify credentials**. Request:
+Decision 4; spotdown#76). No audio, no search, no analysis, and **no Spotify credentials
+needed**. Request:
 `{"url": "<link>"}`, where the link is
 `https://open.spotify.com/[intl-xx/]{track|album|playlist}/<22 base62 id>` (the scheme may be
 left out; a query and a fragment are ignored) or `spotify:{track|album|playlist}:<id>`. Anything
@@ -172,22 +173,30 @@ Response `200`:
  "listed": 1, "total": 1, "truncated": false}
 ```
 
-- **Spotify's public pages only, on `open.spotify.com`**, the only host this route calls: the
-  embed page `https://open.spotify.com/embed/{kind}/{id}` (title, artists, duration, the track
-  list) and, for a track the embed page does not give, the oEmbed endpoint (the title only). Both
-  URLs are built from (kind, id); **the caller's URL is never fetched as given**, no redirect is
-  followed, and a body over 5 MiB is refused.
-- **A page that gives less is not a failure.** A field the page does not state is `null`
-  (`album`, `duration_ms`) or `[]` (`artists`); `isrc` is always `null` (the public pages state
-  none). `listed` is how many usable tracks the page listed, `total` how many it says there are
-  (`null` when it does not say; `1` for a track), and `truncated` is true when some were left out
-  (over 500, or fewer listed than `total`: an embed page lists only the first part of a long
-  playlist). At most 500 tracks, in the page's order.
-- **Failures:** a page with no usable track at all, an error status, a timeout, a redirect or an
-  oversized body is `502 provider_error` with the fixed message `the Spotify request failed` (no
+- **Two paths. The backend's settings choose between them, never the request.**
+  - **With `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET_FILE`** (a secrets file, never logged;
+    the `SPOTIFY_CLIENT_SECRET` value is not read here): the official Web API with client
+    credentials. It calls `accounts.spotify.com` and `api.spotify.com` only, pages by offset
+    (never Spotify's `next` URL), and gives full playlists up to the cap, with the ISRC.
+  - **Without both** (the default): Spotify's public pages on `open.spotify.com` only, with no
+    call to the API hosts. These are the embed page `https://open.spotify.com/embed/{kind}/{id}`
+    (title, artists, duration, the track list) and, for a track the embed page does not give,
+    the oEmbed endpoint (the title only).
+  - **Only one of the two set,** or a secret file that is unreadable or empty, stops the start-up.
+- Every URL is built from (kind, id); **the caller's URL is never fetched as given**. No redirect
+  is followed, and any upstream body over 5 MiB is refused.
+- **A page that gives less is not a failure.** A field Spotify does not state is `null` (`album`,
+  `duration_ms`, `isrc`) or `[]` (`artists`). The public pages state no ISRC, so `isrc` is
+  always `null` on that path. `listed` is how many usable tracks the page listed, `total` how many it says there are
+  (`null` when it does not say; `1` for a track), and `truncated` is true when some were left out:
+  over 500, fewer listed than `total` (an embed page lists only the first part of a long
+  playlist), or, on the API path, rows left unread after 1000. At most 500 tracks, in Spotify's
+  order.
+- **Failures:** no usable track at all, an error status (a 404 for an unknown or private item
+  too), a timeout, a redirect or an oversized body is `502 provider_error` with the fixed message `the Spotify request failed` (no
   upstream text).
-- **Unverified assumption:** the embed page's shape is read as observed (its `__NEXT_DATA__`
-  JSON). No agent or CI fetches a real Spotify page; the owner's first live try confirms it.
+- **Unverified assumption:** the public embed page's shape is read as observed (its
+  `__NEXT_DATA__` JSON). No agent or CI fetches a real Spotify page; the owner's first live try confirms it.
 - The answer feeds `POST /v2/match`: `duration_ms / 1000` is its `duration_s`, which may be left
   out, as `artists` may be when the list is empty (see below).
 

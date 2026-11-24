@@ -12,7 +12,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app.service import spotify_page, spotify_policy
+from app.service import spotify_api, spotify_page, spotify_policy
 from app.service.spotify_policy import LinkError, parse_link
 
 from .service_helpers import AUTH, client_for, service_settings
@@ -324,28 +324,6 @@ def test_no_usable_track_is_a_fixed_502(tmp_path: Path, caplog, kind, link) -> N
         assert "upstream-secret-text" not in text
 
 
-def test_no_spotify_setting_is_read(tmp_path: Path, monkeypatch) -> None:
-    """Spotify settings set to values that would show if sent: no request carries them."""
-    settings = service_settings(
-        tmp_path, spotify_client_id="id-must-not-leak", spotify_client_secret="secret-not-sent"
-    )
-    fake = FakeSpotify()
-    client = client_for(settings)
-    client.app.state.spotify = fake.client()  # type: ignore[attr-defined]
-    assert _resolve(client, f"spotify:track:{TRACK_ID}").status_code == 200
-    for r in fake.requests:
-        text = str(r.url) + str(r.headers) + r.content.decode("latin-1")
-        assert "must-not-leak" not in text and "not-sent" not in text
-    _only_open_spotify(fake, "track", TRACK_ID)
-
-
-def test_the_app_builds_its_client_without_spotify_settings(tmp_path: Path) -> None:
-    client = client_for(service_settings(tmp_path))
-    assert client.app.state.spotify is not None  # type: ignore[attr-defined]
-    for name in ("spotify_client_secret_file",):
-        assert not hasattr(service_settings(tmp_path), name)
-
-
 def test_the_policy_builds_only_open_spotify_urls() -> None:
     assert spotify_policy.embed_url("album", ALBUM_ID) == (
         f"https://open.spotify.com/embed/album/{ALBUM_ID}"
@@ -361,7 +339,7 @@ def test_the_policy_builds_only_open_spotify_urls() -> None:
     assert str(LinkError()) == "not a Spotify track, album or playlist link"
 
 
-@pytest.mark.parametrize("module", [spotify_policy, spotify_page])
+@pytest.mark.parametrize("module", [spotify_policy, spotify_page, spotify_api])
 def test_the_parsing_modules_import_no_io(module) -> None:
     tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
     roots = set()

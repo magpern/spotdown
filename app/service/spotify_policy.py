@@ -2,8 +2,11 @@
 (ADR 0005, Decision 4; spotdown#76 as revised). No I/O.
 
 The caller's link is reduced to a (kind, id) pair and nothing else of it is kept. The only URLs
-fetched are built here from that pair, on ``open.spotify.com`` (Spotify's public oEmbed endpoint
-and embed page; no credentials, no Web API), so the caller's URL is never fetched as given.
+fetched are built here from that pair, so the caller's URL is never fetched as given:
+- with the backend's Spotify credentials, the Web API on ``accounts.spotify.com`` and
+  ``api.spotify.com`` (``API_HOSTS``);
+- without them (the default), Spotify's public oEmbed endpoint and embed page on
+  ``open.spotify.com`` (``PAGE_HOSTS``).
 """
 
 from __future__ import annotations
@@ -13,8 +16,16 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlsplit
 
 HOST = "open.spotify.com"
+PAGE_HOSTS = frozenset({HOST})
+TOKEN_URL = "https://accounts.spotify.com/api/token"
+API_BASE = "https://api.spotify.com/v1"
+API_HOSTS = frozenset({"accounts.spotify.com", "api.spotify.com"})
 MAX_TRACKS = 500
-MAX_BODY_BYTES = 5 * 1024 * 1024
+MAX_BODY_BYTES = 5 * 1024 * 1024  # every upstream response, on both paths
+# API rows read at most (some playlist rows are episodes or local files): bounds the calls.
+MAX_ROWS_SCANNED = 1000
+PLAYLIST_PAGE = 100
+ALBUM_PAGE = 50
 
 KINDS = ("track", "album", "playlist")
 ID = re.compile(r"[0-9A-Za-z]{22}")
@@ -70,20 +81,47 @@ def oembed_url(kind: str, sid: str) -> str:
     return f"https://{HOST}/oembed?url=" + quote(f"https://{HOST}/{kind}/{sid}", safe="")
 
 
-def is_allowed_url(url: str) -> bool:
-    """Only https on ``open.spotify.com`` itself: no userinfo, no port."""
+def api_first_url(kind: str, sid: str) -> str:
+    """The first Web API URL for a parsed link, on the fixed API host."""
+    _checked(kind, sid)
+    if kind == "track":
+        return f"{API_BASE}/tracks/{sid}"
+    if kind == "album":
+        return f"{API_BASE}/albums/{sid}"
+    return api_page_url(kind, sid, 0)
+
+
+def api_page_url(kind: str, sid: str, offset: int) -> str:
+    """A page of an album's or a playlist's tracks. Spotify's own ``next`` is never followed."""
+    _checked(kind, sid)
+    if kind == "track" or offset < 0:
+        raise LinkError()
+    limit = ALBUM_PAGE if kind == "album" else PLAYLIST_PAGE
+    base = "albums" if kind == "album" else "playlists"
+    return f"{API_BASE}/{base}/{sid}/tracks?limit={limit}&offset={int(offset)}"
+
+
+def is_allowed_url(url: str, hosts: frozenset = PAGE_HOSTS) -> bool:
+    """Only https on one of ``hosts`` itself: no userinfo, no port."""
     parts = urlsplit(url)
-    return parts.scheme == "https" and parts.netloc == HOST
+    return parts.scheme == "https" and parts.netloc in hosts
 
 
-def answer(tracks: List[Dict[str, Any]], total: Optional[int], kind: str) -> Dict[str, Any]:
-    """The resolve answer: at most MAX_TRACKS tracks, ``listed`` (the usable tracks the page
-    listed), ``total`` (what the page says there are, when it says) and ``truncated`` (some were
-    left out: over the cap, or fewer listed than the stated total)."""
+def answer(
+    tracks: List[Dict[str, Any]],
+    total: Optional[int],
+    kind: str,
+    more: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """The resolve answer: at most MAX_TRACKS tracks, ``listed`` (the usable tracks read),
+    ``total`` (what Spotify says there are, when it says) and ``truncated`` (some were left out:
+    over the cap, or, for a page, fewer listed than the stated total; for the API, rows left
+    unread, ``more``)."""
     listed = len(tracks)
     if kind == "track":
         total = listed
-    truncated = listed > MAX_TRACKS or (total is not None and total > listed)
+    short = (total is not None and total > listed) if more is None else more
+    truncated = listed > MAX_TRACKS or short
     return {
         "tracks": tracks[:MAX_TRACKS],
         "listed": listed,

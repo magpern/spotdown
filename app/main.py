@@ -66,7 +66,7 @@ def create_service_app(
     )
     from .service.dispatch import rq_dispatcher
     from .service.service_key import ServiceKeyMiddleware, load_service_keys
-    from .service.spotify_client import SpotifyClient
+    from .service.spotify_client import resolver_from_settings
     from .service.store import Store
     from .youtube.ytdlp_client import YtDlpClient
 
@@ -83,7 +83,10 @@ def create_service_app(
     app.state.store = Store(settings.service_db_path, settings.global_reference_ttl_s)
     app.state.dispatch = dispatch or rq_dispatcher(settings)
     app.state.youtube = YtDlpClient()  # used only when ALLOW_YTDLP_SOURCING=true
-    app.state.spotify = SpotifyClient()  # open.spotify.com public pages only, no credentials
+    # The Web API with both Spotify settings, the public pages with neither; one alone fails.
+    app.state.spotify = resolver_from_settings(
+        settings.spotify_client_id, settings.spotify_client_secret_file
+    )
     errors.install_handlers(app)
     app.get("/healthz")(_healthz)
     app.include_router(routes.router)

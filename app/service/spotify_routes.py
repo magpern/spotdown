@@ -1,9 +1,10 @@
 """``POST /v2/spotify/resolve``: a Spotify track, album or playlist link to track metadata.
 
 Behind the caller key like every ``/v2`` route. The link is parsed to (kind, id) and only the
-public pages built from it on ``open.spotify.com`` are fetched (``spotify_policy``). No Spotify
-setting or credential is read. ``502 provider_error`` when no page gives a usable track, with a
-fixed message.
+URLs built from it are fetched (``spotify_policy``): the Web API when the backend has Spotify
+credentials, else the public pages on ``open.spotify.com`` (``spotify_client``). No request
+carries credentials or chooses the path. ``502 provider_error`` when no usable track comes back,
+with a fixed message.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from . import spotify_policy
 from .deps import require_key
 from .errors import ApiError
-from .spotify_client import SpotifyClient, SpotifyFailure
+from .spotify_client import Resolver, SpotifyFailure
 
 router = APIRouter(prefix="/v2", dependencies=[Depends(require_key)])
 
@@ -34,7 +35,7 @@ def post_resolve(body: ResolveRequest, request: Request) -> JSONResponse:
         raise ApiError(
             422, "invalid_request", "url must be a Spotify track, album or playlist link"
         ) from None
-    client: SpotifyClient = request.app.state.spotify
+    client: Resolver = request.app.state.spotify
     try:
         return JSONResponse(client.resolve(kind, sid))
     except SpotifyFailure:
