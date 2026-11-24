@@ -30,7 +30,8 @@ one process, without giving up any service-mode guarantee.
      `.env.example`) never exposes anything. classbeat's internal deployment and the container image
      set neither, so they are unchanged.
    - Unset in standalone mode: `SERVE_UI` (default on), as before. `SPOTDOWN_UI` overrides it.
-   - `Settings.ui_enabled` is the one place that decides.
+   - `Settings.ui_enabled` is the one place that decides. An empty `SPOTDOWN_UI=` is not a boolean
+     and stops the app at start-up (fails closed).
 2. **In service mode the UI is static files only** (`app/service_ui.py`): `GET /` serves
    `service.html`, and `GET /{name}` serves a fixed list of that page's own files
    (`SERVICE_UI_ASSETS`; the standalone-only `ui.js` and `upload.js` are not in it). No path is built
@@ -48,7 +49,9 @@ one process, without giving up any service-mode guarantee.
    the server never sends audio).
 5. **The service key reaches the browser only because the user types it in.**
    - It is held in one JavaScript variable: never in localStorage, sessionStorage, IndexedDB, a
-     cookie, the URL, the history, the DOM (the input is cleared at once) or the console.
+     cookie, the URL, the history, the DOM (the input is cleared at once) or the console. The input
+     is `type="password"` with `autocomplete="new-password"`, which asks browsers not to offer to
+     save it; a password manager that saves it anyway keeps it outside the page's control.
    - It is sent only as `Authorization: Bearer <key>`, the header `/v2` requires, on same-origin
      requests (`mode: "same-origin"`, `credentials: "omit"`, `referrerPolicy: "no-referrer"`).
    - A 401 forgets it and shows "Service key refused"; with no key the page shows "Service key

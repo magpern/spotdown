@@ -73,6 +73,10 @@ function useKey() {
   return checkKey();
 }
 
+// One analysis at a time: the picker and the drop zone are off while one runs.
+let busy = false;
+function setBusy(on) { busy = on; fileInput.disabled = on; dropZone.className = on ? "drop busy" : "drop"; }
+
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 async function waitForJob(job) {
@@ -88,9 +92,9 @@ async function waitForJob(job) {
 }
 
 async function analyzeFile(file) {
-  if (!file) return;
+  if (!file || busy) return;
   if (!serviceKey) { setKeyState("required"); return showStatus("Service key required: enter it above first.", true); }
-  fileInput.disabled = true;
+  setBusy(true);
   showStatus('<span class="spin"></span>Uploading the file…');
   try {
     const up = await v2(`/v2/uploads?cache_scope=${UI_SCOPE}`,
@@ -108,17 +112,19 @@ async function analyzeFile(file) {
     showStatus("Analysis ready.");
   } catch (e) {
     showStatus((e instanceof KeyRequired ? "Service key required: " : "Analysis failed: ") + e.message, true);
-  } finally { fileInput.disabled = false; }
+  } finally { setBusy(false); }
 }
 
 $("useKey").addEventListener("click", useKey);
 $("forgetKey").addEventListener("click", () => { keyInput.value = ""; forgetKey("required"); });
 keyInput.addEventListener("keydown", (e) => { if (e.key === "Enter") useKey(); });
 fileInput.addEventListener("change", () => analyzeFile(fileInput.files && fileInput.files[0]));
-dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.className = "drop over"; });
-dropZone.addEventListener("dragleave", () => { dropZone.className = "drop"; });
+dropZone.addEventListener("dragover", (e) => { e.preventDefault(); if (!busy) dropZone.className = "drop over"; });
+dropZone.addEventListener("dragleave", () => { if (!busy) dropZone.className = "drop"; });
 dropZone.addEventListener("drop", (e) => {
-  e.preventDefault(); dropZone.className = "drop";
+  e.preventDefault();
+  if (busy) return;
+  dropZone.className = "drop";
   analyzeFile(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]);
 });
 setKeyState("required");

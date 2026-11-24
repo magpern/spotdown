@@ -62,7 +62,11 @@ header) and pick a local file. The page uploads it with `PUT /v2/uploads`, analy
 `POST /v2/analyses` in the scope `spotdown_ui`, and shows the analysis (explicit tag, timeline,
 waveform drawn from your own file). Everything above stays: `/v2` needs the key, no audio is ever
 served, `/files` and the standalone routes are 404, no CORS, the audio is deleted after the job.
-Turn it on only where you would expose that page; the container image leaves it off.
+Turn it on only where you would expose that page; the container image leaves it off. Leave
+`SPOTDOWN_UI` unset rather than empty: an empty value (`SPOTDOWN_UI=`, for example from
+`${SPOTDOWN_UI:-}` in a compose file) is not a boolean, and the app refuses to start. The key input
+asks browsers not to save the key (`autocomplete="new-password"`); a password manager that saves it
+anyway stores it outside the page's control.
 
 - `PUT /v2/uploads?cache_scope=…`: stream mp3, mp4 or wav bytes (`application/octet-stream`, capped
   by `MAX_UPLOAD_BYTES`, 60 MiB by default); the whole structure is checked and a malformed,

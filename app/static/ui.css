@@ -75,5 +75,6 @@
   #waveform text { font-size:10px; fill:var(--muted); font-family:inherit; }
   #waveform text.on { fill:#fff; }
   .drop { border: 1px dashed var(--line); border-radius: 8px; padding: 16px; color: var(--muted); font-size: 14px; }
+  .drop.busy { opacity: .5; cursor: progress; }
   .drop.over { border-color: var(--accent); color: var(--fg); }
   .hint.err { color: var(--err); }

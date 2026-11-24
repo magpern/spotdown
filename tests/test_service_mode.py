@@ -121,7 +121,13 @@ def test_the_service_page_loads_only_its_own_assets() -> None:
     html = (STATIC / "service.html").read_text(encoding="utf-8")
     loaded = set(re.findall(r'(?:src|href)="([^"]+)"', html))
     assert loaded == set(SERVICE_UI_ASSETS), loaded ^ set(SERVICE_UI_ASSETS)
-    assert "<script>" not in html and "on" + "click" not in html  # no inline script (CSP)
+    # No inline script (the CSP allows none): every <script> has a src and an empty body, and no
+    # element carries an event-handler attribute.
+    scripts = re.findall(r"<script\b([^>]*)>(.*?)</script>", html, re.S | re.I)
+    assert scripts and all("src=" in attrs and body == "" for attrs, body in scripts)
+    assert len(scripts) == len(re.findall(r"<script\b", html, re.I))
+    assert not re.search(r"\son[a-z]+\s*=", html, re.I)
+    assert "javascript:" not in html.lower()
 
 
 def test_the_asset_route_comes_after_every_fixed_route(tmp_path) -> None:
@@ -197,3 +203,16 @@ def test_standalone_mode_keeps_its_routes_behind_the_session(tmp_path: Path, mon
         assert client.get("/").status_code == 200
         assert client.get("/v2/jobs/job_1", headers=AUTH).status_code == 404
     assert not settings.uploads_dir.exists()
+
+
+@pytest.mark.parametrize("value,ui_on", [("on", True), ("off", False), ("true", True)])
+def test_the_switch_reads_on_and_off_from_the_environment(tmp_path, monkeypatch, value, ui_on):
+    monkeypatch.setenv("SPOTDOWN_UI", value)
+    assert service_settings(tmp_path).ui_enabled is ui_on
+
+
+def test_an_empty_switch_stops_the_app_at_start_up(tmp_path, monkeypatch) -> None:
+    """``SPOTDOWN_UI=`` is not a boolean: the settings refuse it (fails closed, never on)."""
+    monkeypatch.setenv("SPOTDOWN_UI", "")
+    with pytest.raises(ValueError):
+        service_settings(tmp_path)
