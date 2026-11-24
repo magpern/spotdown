@@ -37,7 +37,12 @@ services:
   redis:
     image: redis:7.4.12-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
     restart: unless-stopped
+    # The image's own redis user (uid 999, gid 1000), so its entrypoint neither chowns /data nor
+    # switches user, and Redis needs no capability at all. A new redis-data volume takes /data's
+    # redis ownership from the image.
+    user: "999:1000"
     read_only: true
+    cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
     volumes:

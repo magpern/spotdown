@@ -113,7 +113,10 @@ file mounted into the api only; the worker and Redis never see it.
 - `spotdown-data` (mounted at `/data`) holds the service database and the temporary audio of
   running jobs. Back it up while the stack is stopped. A takedown does not reach an earlier backup
   (contract, "Retention of global analyses").
-- `redis-data` holds the job queue. Losing it loses the jobs still waiting in the queue.
+- `redis-data` holds the job queue. Losing it loses the jobs still waiting in the queue. Redis runs
+  as the image's own `redis` user (`999:1000`) with every capability dropped and a read-only root;
+  a new volume takes that ownership from the image. A volume created earlier by a Redis started as
+  root is already owned by `redis` (that entrypoint chowns it), so it needs no change.
 
 Operator commands run in the api container, for example a takedown:
 

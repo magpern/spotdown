@@ -1,7 +1,8 @@
 # ADR 0004: the web UI is its own switch, independent of service mode
 
-**Status:** Proposed (2026-11-24), for spotdown#68 (Opus Developer, Opus Reviewer). It becomes
-Accepted when the Opus review of its PR passes.
+**Status:** Accepted (Architect, 2026-11-24), after the Opus review of PR #69 (for spotdown#68)
+passed at `eb6b202`
+([`Agent review (opus): PASS`](https://github.com/magpern/spotdown/pull/69#issuecomment-7124957143)).
 
 **Owner direction (2026-11-24):** "Lighten up: service mode cannot run UI. If I want UI I want UI.
 Backend should be able to serve even if UI exists."

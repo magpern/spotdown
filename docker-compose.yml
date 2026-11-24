@@ -39,6 +39,14 @@ services:
       SERVICE_MODE: ${SERVICE_MODE:-false}
       SERVE_UI: ${SERVE_UI:-true}
     command: rq worker -u redis://redis:6379/0 spotdown
+    # The image's HEALTHCHECK asks the api on the loopback, which the worker does not serve; the
+    # worker's check pings Redis instead (as in deploy/compose.yaml).
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.healthcheck", "worker"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
     volumes:
       - ./data:/app/data
     depends_on:

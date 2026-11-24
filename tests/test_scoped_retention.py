@@ -483,9 +483,9 @@ def test_a_failing_scoped_purge_neither_blocks_the_job_nor_keeps_expired_audio(
     store = Broken(settings.service_db_path)
     _upload(settings, store, "up_expired", 1)
     _upload_job(settings, store, write_wav(tmp_path / "a.wav", 2), "job_one")
-    with caplog.at_level("ERROR", logger="spotdown.service.worker"):
+    with caplog.at_level("ERROR", logger="spotdown.service.sweep"):
         execute_job("job_one", settings, store, analyser=_fake_ok)
-    assert "sweep failed: RuntimeError" in caplog.text
+    assert "sweep step purge_scoped failed: RuntimeError" in caplog.text
     job = store.get_job("job_one")
     assert job is not None and job["status"] == "done"
     assert store.get_upload("up_expired") is None

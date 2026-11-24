@@ -9,7 +9,8 @@ removed. The global and the scoped analyses unused for their retention period or
 analyzer version are purged (``retention_policy``), with the scoped job records not changed for
 that period, and the uploads past their TTL (``uploads``). The worker sweeps before each job;
 ``GET /v2/jobs/{id}`` expires a stale job it is asked about, so a poller is answered even when no
-other job runs.
+other job runs. Each step runs on its own: one that fails is logged and the others still run,
+so a failing purge never keeps audio or another scope's expired entries.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from __future__ import annotations
 import logging
 import shutil
 import time
-from typing import Optional
+from typing import Callable, List, Optional, Tuple
 
 from ..config import Settings
 from .analysis_doc import ANALYZER_VERSION_V2
@@ -58,11 +59,34 @@ def remove_orphan_work_dirs(settings: Settings, store: Store) -> None:
             entry.unlink(missing_ok=True)
 
 
-def sweep(settings: Settings, store: Store, now: Optional[float] = None) -> None:
-    now = now or time.time()
-    expire_stale_jobs(settings, store, now)
-    remove_orphan_work_dirs(settings, store)
-    purge_expired_uploads(settings, store, now)  # audio first: nothing below can keep it
-    store.purge_global_references(now)
-    store.purge_unused_analyses(now, ANALYZER_VERSION_V2, settings.global_analysis_ttl_s)
-    store.purge_scoped(now, ANALYZER_VERSION_V2, settings.scoped_retention_ttl_s)
+def _steps(settings: Settings, store: Store, now: float) -> List[Tuple[str, Callable[[], object]]]:
+    """The sweep's steps, in order. Audio goes first (nothing after it can keep it)."""
+    version = ANALYZER_VERSION_V2
+    return [
+        ("expire_stale_jobs", lambda: expire_stale_jobs(settings, store, now)),
+        ("remove_orphan_work_dirs", lambda: remove_orphan_work_dirs(settings, store)),
+        ("purge_expired_uploads", lambda: purge_expired_uploads(settings, store, now)),
+        ("purge_global_references", lambda: store.purge_global_references(now)),
+        (
+            "purge_unused_analyses",
+            lambda: store.purge_unused_analyses(now, version, settings.global_analysis_ttl_s),
+        ),
+        (
+            "purge_scoped",
+            lambda: store.purge_scoped(now, version, settings.scoped_retention_ttl_s),
+        ),
+    ]
+
+
+def sweep(settings: Settings, store: Store, now: Optional[float] = None) -> List[str]:
+    """Runs every step, each on its own: one that raises is logged (its exception type only,
+    never its message, which could carry a URL) and the others still run. Returns the names of
+    the steps that failed."""
+    failed: List[str] = []
+    for name, step in _steps(settings, store, now or time.time()):
+        try:
+            step()
+        except Exception as exc:  # noqa: BLE001 - one failing step never skips the others
+            log.error("sweep step %s failed: %s", name, type(exc).__name__)
+            failed.append(name)
+    return failed
