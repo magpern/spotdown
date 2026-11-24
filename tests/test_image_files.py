@@ -96,6 +96,36 @@ def test_the_build_context_is_an_allowlist() -> None:
     ]
     assert lines[0] == "*"
     assert [x for x in lines if x.startswith("!")] == ["!requirements.txt", "!app/"]
+    # ...and inside app/ nothing local or generated: every one excluded after the `!app/` that
+    # would let it in again (a later line wins).
+    after = lines[lines.index("!app/") + 1 :]
+    required = {"**/__pycache__", "**/*.pyc", "**/*.pyo", "app/**/.env*", "app/**/*.db"}
+    required |= {f"app/**/*.{ext}" for ext in AUDIO}
+    assert required <= set(after), sorted(required - set(after))
+
+
+AUDIO = ("wav", "mp3", "mp4", "m4a", "flac", "ogg", "webm")
+WORKER_CHECK = ["CMD", "python", "-m", "app.healthcheck", "worker"]
+DEV = ROOT / "docker-compose.yml"
+
+
+def test_the_worker_overrides_the_api_healthcheck_in_both_compose_files() -> None:
+    """The image's HEALTHCHECK asks the api on the loopback, which a worker never serves: each
+    worker checks Redis instead, and only the worker does."""
+    for path in (DEPLOY, DEV):
+        services = yaml.safe_load(path.read_text(encoding="utf-8"))["services"]
+        assert services["worker"]["healthcheck"]["test"] == WORKER_CHECK, path.name
+        assert "healthcheck" not in services["api"], path.name
+
+
+def test_redis_runs_unprivileged_with_no_capability() -> None:
+    """The official image's entrypoint chowns /data and switches user only when started as root;
+    started as its own redis user (999:1000) it needs no capability (checked by starting the
+    deploy file locally, spotdown PR for the #70 review)."""
+    redis = _deploy()["services"]["redis"]
+    assert redis["user"] == "999:1000"
+    assert redis["cap_drop"] == ["ALL"] and "cap_add" not in redis
+    assert "no-new-privileges:true" in redis["security_opt"]
 
 
 def test_the_deploy_file_pins_the_image_and_publishes_no_port() -> None:

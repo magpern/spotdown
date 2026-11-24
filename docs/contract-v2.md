@@ -331,7 +331,10 @@ entries have a bounded lifetime too, by the same rules as global analyses:
   sweep fails the job once its lease ends, and removes its upload then). A job that reuses a scoped
   analysis renews it when it finds it and checks it again, in the transaction that ends the job; if
   it was purged meanwhile (by a worker of a newer analyzer version) the job fails as
-  `source_unavailable` instead of ending on a missing id, and the same request analyses again.
+  `source_unavailable` instead of ending on a missing id, and the same request analyses again. A
+  request answered from the cache reads the cached analysis in the transaction that records its
+  `done` job, with or without a `reference`; if it was purged after the lookup, nothing is recorded
+  and the request is queued and analysed again (`202`) instead of answering `done` on a missing id.
 - **Where it runs, and what it never selects.** In the worker's sweep before each job, after the
   global purge, idempotent, with the same `secure_delete` and log truncation (nothing of a purged
   document is left in the database files) and no audio kept. Only rows with a non-empty scope are

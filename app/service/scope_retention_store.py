@@ -21,7 +21,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from . import idempotency_policy as idem
 from . import retention_policy as policy
-from .retention_store import RetentionStore
+from .retention_store import BASE_ID, RetentionStore
 
 
 def _unused_scoped_ids(
@@ -60,8 +60,9 @@ def _delete_scoped_entries(
             (analysis_id, scope),
         ).rowcount
         counts["alignments"] += conn.execute(
-            "DELETE FROM alignments WHERE cache_scope = ? AND (analysis_id = ?"
-            " OR json_extract(doc, '$.base_analysis_id') = ?)",
+            "DELETE FROM alignments WHERE cache_scope = ? AND (analysis_id = ? OR "
+            + BASE_ID
+            + " = ?)",
             (scope, analysis_id, analysis_id),
         ).rowcount
         counts["analyses"] += conn.execute(
@@ -72,14 +73,17 @@ def _delete_scoped_entries(
 
 def _dangling_scoped(conn: sqlite3.Connection) -> Tuple[int, int]:
     """Scoped links and scoped alignments whose analysis is gone (none is served; no code path
-    leaves one today, but none may outlive its analysis)."""
+    leaves one today, but none may outlive its analysis). A scoped alignment whose document is
+    not valid JSON can never be served (its read fails) and names no analysis, so it goes too;
+    no document is ever parsed unchecked, so one malformed row never makes the purge raise."""
     links = conn.execute(
         "DELETE FROM source_links WHERE scope_key <> '' AND analysis_id NOT IN"
         " (SELECT analysis_id FROM analyses)"
     ).rowcount
     alignments = conn.execute(
-        "DELETE FROM alignments WHERE cache_scope <> ''"
-        " AND json_extract(doc, '$.base_analysis_id') NOT IN (SELECT analysis_id FROM analyses)"
+        "DELETE FROM alignments WHERE cache_scope <> '' AND CASE WHEN json_valid(doc)"
+        " THEN json_extract(doc, '$.base_analysis_id') NOT IN (SELECT analysis_id FROM analyses)"
+        " ELSE 1 END"
     ).rowcount
     return links, alignments
 

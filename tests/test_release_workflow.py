@@ -153,3 +153,27 @@ def test_only_the_release_job_can_write_contents_and_only_image_can_push() -> No
         perms = job.get("permissions", {})
         assert (perms.get("contents") == "write") == (name == "release"), name
         assert (perms.get("packages") == "write") == (name == "image"), name
+
+
+EXPRESSION = re.compile(r"\$\{\{")
+
+
+def _run_blocks(path: Path) -> List[tuple]:
+    """``(job, step name, script)`` of every ``run:`` step of the workflow at ``path``."""
+    found = []
+    for job_name, job in _load(path)["jobs"].items():
+        for i, step in enumerate(job.get("steps", [])):
+            if "run" in step:
+                found.append((job_name, step.get("name", i), str(step["run"])))
+    return found
+
+
+def test_no_run_block_interpolates_an_expression() -> None:
+    """A ``${{ }}`` inside ``run:`` is pasted into the script before the shell sees it, so a tag
+    name or any other input could inject commands. Values reach a script through ``env:`` only.
+    Every workflow, the release one first."""
+    paths = [RELEASE] + sorted(p for p in WORKFLOW.glob("*.y*ml") if p != RELEASE)
+    assert _run_blocks(RELEASE), "release.yml has run steps to check"
+    for path in paths:
+        for job, step, script in _run_blocks(path):
+            assert not EXPRESSION.search(script), (path.name, job, step)

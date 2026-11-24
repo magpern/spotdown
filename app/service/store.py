@@ -126,21 +126,23 @@ class Store(CacheStore, AlignmentStore, MatchStore, ScopeRetentionStore, UploadS
     def add_job_done(
         self, job: Dict[str, Any], hit_id: str, hit_scope: Optional[str]
     ) -> Optional[str]:
-        """A job answered from the cache: ``done`` at once, nothing queued. With a reference
-        the job ends on the aligned analysis, made from the cached one read in the same
-        transaction (stored here unless a row already serves). Returns the analysis id the job
-        ended on, or None (nothing stored) when the cached analysis has gone meanwhile."""
+        """A job answered from the cache: ``done`` at once, nothing queued. The cached analysis
+        is read in the same transaction, with or without a reference, so a job is never done on
+        an analysis a purge removed after the lookup. With a reference the job ends on the
+        aligned analysis made from it (stored here unless a row already serves). Returns the
+        analysis id the job ended on, or None (nothing stored) when the cached analysis has
+        gone meanwhile; the caller then queues the job and the source is analysed again."""
         now = time.time()
         outcome, analysis_id = None, hit_id
         with self._conn() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            found = conn.execute(
+                "SELECT doc FROM analyses WHERE analysis_id = ?", (hit_id,)
+            ).fetchone()
+            if found is None:
+                conn.execute("ROLLBACK")
+                return None
             if job.get("reference"):
-                found = conn.execute(
-                    "SELECT doc FROM analyses WHERE analysis_id = ?", (hit_id,)
-                ).fetchone()
-                if found is None:
-                    conn.execute("ROLLBACK")
-                    return None
                 aligning = aligning_for(json.loads(found["doc"]), hit_scope, job["reference"])
                 row = store_aligned(conn, aligning, now, self.global_ttl_s)
                 analysis_id, outcome = row.analysis_id, row.outcome

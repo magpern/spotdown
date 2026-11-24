@@ -67,8 +67,10 @@ def test_api_check_is_unhealthy_when_nothing_listens() -> None:
 
 
 def test_api_check_ignores_proxy_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("HTTP_PROXY", "http_proxy", "ALL_PROXY"):
+    for name in ("HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
         monkeypatch.setenv(name, "http://proxy.invalid:3128")
+    for name in ("NO_PROXY", "no_proxy"):  # a host's NO_PROXY=127.0.0.1 would hide a proxy use
+        monkeypatch.delenv(name, raising=False)
     srv, thread = _serve(200, b'{"ok": true}')
     try:
         assert healthcheck.api_healthy(port=srv.server_address[1], timeout=2) is True

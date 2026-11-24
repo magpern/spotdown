@@ -54,6 +54,12 @@ def _unused_global_ids(
     ]
 
 
+# The base analysis an alignment names, or NULL when its document is not valid JSON: ``CASE``
+# never evaluates ``json_extract`` on a malformed document, so one bad row never makes a purge
+# raise (``OR`` and ``AND`` do not guarantee that order).
+BASE_ID = "CASE WHEN json_valid(doc) THEN json_extract(doc, '$.base_analysis_id') END"
+
+
 def _delete_entries(conn: sqlite3.Connection, ids: Iterable[str]) -> Dict[str, int]:
     """Deletes the global analyses ``ids`` with their global links and global alignments. Each
     statement carries its own global condition (link scope key '', alignment scope '', analysis
@@ -65,8 +71,9 @@ def _delete_entries(conn: sqlite3.Connection, ids: Iterable[str]) -> Dict[str, i
             (analysis_id,),
         ).rowcount
         counts["alignments"] += conn.execute(
-            "DELETE FROM alignments WHERE cache_scope = '' AND (analysis_id = ?"
-            " OR json_extract(doc, '$.base_analysis_id') = ?)",
+            "DELETE FROM alignments WHERE cache_scope = '' AND (analysis_id = ? OR "
+            + BASE_ID
+            + " = ?)",
             (analysis_id, analysis_id),
         ).rowcount
         counts["analyses"] += conn.execute(
