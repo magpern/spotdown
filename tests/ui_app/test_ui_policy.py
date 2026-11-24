@@ -78,9 +78,18 @@ def test_the_match_body_is_rebuilt_from_known_fields() -> None:
 @pytest.mark.parametrize("artists", [None, []])
 def test_a_track_without_duration_or_artists_is_passed_on_without_them(artists) -> None:
     body = policy.match_body({"tracks": [{"title": "t", "artists": artists, "duration_s": None}]})
-    assert body["tracks"] == [{"client_ref": "0", "title": "t", "artists": []}]
+    assert body["tracks"] == [{"client_ref": "0", "title": "t"}]
     assert policy.match_body({"tracks": [{"title": "t"}]})["tracks"][0] == {
-        "client_ref": "0", "title": "t", "artists": []}  # fmt: skip
+        "client_ref": "0", "title": "t"}  # fmt: skip
+
+
+def test_the_match_track_follows_the_backend_limits() -> None:
+    ok = policy.match_body({"tracks": [{"title": "t" * 300, "artists": ["a" * 200] * 10}]})
+    assert len(ok["tracks"][0]["artists"]) == 10
+    for bad in ({"title": "t" * 301}, {"title": "t", "artists": ["a"] * 11},
+                {"title": "t", "artists": ["a" * 201]}):  # fmt: skip
+        with pytest.raises(policy.Refused):
+            policy.match_body({"tracks": [bad]})
 
 
 @pytest.mark.parametrize(

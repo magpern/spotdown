@@ -42,7 +42,7 @@ def test_a_track_without_duration_or_artists_is_matched_as_it_is() -> None:
     alignment reference, and never invents a value."""
     result = _run(bare=True)
     bodies = {c["url"]: json.loads(c["body"]) for c in result["calls"] if c["method"] == "POST"}
-    assert bodies["/api/match"] == {"tracks": [{"title": "Bare", "artists": []}]}
+    assert bodies["/api/match"] == {"tracks": [{"title": "Bare"}]}
     assert "reference" not in bodies["/api/analyses"]
     assert "Audio analysis" in result["steps"]["linkAnalysis"]["analysis"]
 

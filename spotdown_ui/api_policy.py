@@ -26,6 +26,7 @@ MAX_URL = 2048
 MAX_TEXT = 512
 MAX_ARTISTS = 20
 MAX_TRACKS = 50
+MATCH_TITLE, MATCH_ARTISTS, MATCH_ARTIST = 300, 10, 200  # POST /v2/match's MatchTrack limits
 MAX_AUDIO_TEXT, MAX_AUDIO_ARTISTS = 1000, 50  # POST /v2/audio's own limits (docs/contract-v2.md)
 MAX_DURATION_S = 7200.0
 
@@ -106,14 +107,16 @@ def resolve_body(data: Dict[str, Any]) -> Dict[str, Any]:
 def _match_track(item: Any, index: int) -> Dict[str, Any]:
     if not isinstance(item, dict):
         raise _bad("each track must be an object")
-    # Spotify's public pages may give no artists or duration (#76): an empty list and an absent
-    # duration are passed on as they are, never invented.
-    artists = item.get("artists")
+    # Spotify's public pages may give no artists or duration (#76). POST /v2/match takes either
+    # left out, but refuses an empty artists list: no artists and no duration are left out, never
+    # invented. The limits are the backend's MatchTrack ones.
     out: Dict[str, Any] = {
         "client_ref": str(index),
-        "title": _text(item.get("title"), "title"),
-        "artists": _artists([] if artists is None else artists),
+        "title": _text(item.get("title"), "title", MATCH_TITLE),
     }
+    artists = _artists(item.get("artists") or [], MATCH_ARTISTS, MATCH_ARTIST)
+    if artists:
+        out["artists"] = artists
     if item.get("duration_s") is not None:
         out["duration_s"] = _duration(item["duration_s"], "duration_s")
     if item.get("isrc") is not None:

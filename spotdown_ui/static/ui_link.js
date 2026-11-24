@@ -68,7 +68,9 @@ async function pickTrack(t) {
   picked = t; match = null; audioId = null;
   showStatus('<span class="spin"></span>Matching on YouTube…');
   try {
-    const track = { title: t.title, artists: Array.isArray(t.artists) ? t.artists : [] };
+    // POST /v2/match takes no empty artists list and at most 10: none is left out, never invented.
+    const track = { title: t.title };
+    if (Array.isArray(t.artists) && t.artists.length) track.artists = t.artists.slice(0, 10);
     if (durationOf(t) !== null) track.duration_s = durationOf(t);
     if (t.isrc) track.isrc = t.isrc;
     const d = await apiJson("/api/match", { method: "POST", json: { tracks: [track] } });

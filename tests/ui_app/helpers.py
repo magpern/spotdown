@@ -97,6 +97,9 @@ class FakeBackend:
                 200, {"tracks": [track, bare], "listed": 2, "total": 2, "truncated": False}
             )
         if (method, path) == ("POST", "/v2/match"):
+            tracks = json.loads(body).get("tracks", [])
+            if any("artists" in t and not t["artists"] for t in tracks):  # PR #82's MatchTrack
+                return _json(422, {"error": {"code": "invalid_request", "message": "artists"}})
             best = {"source": f"youtube:{VIDEO}", "recording_match_confidence": 0.92,
                     "band": "confident", "duration_s": 213.8, "duration_delta_s": 0.8,
                     "duration_check": "ok"}  # fmt: skip

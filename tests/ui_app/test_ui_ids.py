@@ -84,7 +84,7 @@ def test_only_known_fields_reach_the_backend(ui) -> None:
     sent = [json.loads(s.body) for s in ui.backend.seen]
     assert sent[0] == {"cache_scope": "spotdown_ui", "upload_id": "up_1"}
     assert sent[1] == {"cache_scope": "spotdown_ui", "tracks": [{"client_ref": "0", "title": "t",
-                       "artists": [], "duration_s": 1.0}]}  # fmt: skip
+                       "duration_s": 1.0}]}  # fmt: skip
     assert sent[2] == {"url": "https://open.spotify.com/x"}
     for s in ui.backend.seen:
         assert s.host == "spotdown-api" and "evil" not in s.path + s.query

@@ -141,8 +141,10 @@ def test_a_bare_track_is_matched_without_invented_values(ui) -> None:
         assert bare["artists"] == [] and bare["duration_ms"] is None and bare["isrc"] is None
         res = client.post("/api/match", json={"tracks": [{"title": bare["title"], "artists": []}]})
         assert res.status_code == 200
-    sent = json.loads(ui.backend.seen[-1].body)["tracks"][0]
-    assert sent == {"client_ref": "0", "title": "Bare", "artists": []}
+        res = client.post("/api/match", json={"tracks": [{"title": bare["title"]}]})
+        assert res.status_code == 200
+    for seen in ui.backend.seen[-2:]:  # an empty list and no list are both left out
+        assert json.loads(seen.body)["tracks"][0] == {"client_ref": "0", "title": "Bare"}
 
 
 def test_local_file_to_analysis(ui) -> None:
