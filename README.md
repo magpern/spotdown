@@ -113,14 +113,21 @@ With Docker, both images from the checkout (the UI on `127.0.0.1:8000`):
 
 ```bash
 mkdir -p secrets && umask 077
-openssl rand -hex 32 > secrets/spotdown_service_key       # classbeat's key (any caller's)
-openssl rand -hex 32 > secrets/spotdown_ui_backend_key    # the UI's own key
+# Two different keys, owned by the images' user (uid 10001): the ui runs as that user and reads
+# its key from the bind-mounted file, which keeps the host's owner and mode.
+for name in spotdown_service_key spotdown_ui_backend_key; do   # classbeat's key, the UI's key
+  openssl rand -hex 32 > "secrets/$name.new"
+  sudo install -m 0400 -o 10001 -g 10001 "secrets/$name.new" "secrets/$name"
+  rm "secrets/$name.new"
+done
 cp .env.example .env                                      # optional
 docker compose up --build
 docker compose exec ui cat /data/ui_token                 # sign in at http://127.0.0.1:8000/login
 ```
 
-Without Docker (Python 3.11, `ffmpeg` on PATH and a running Redis):
+Without Docker (Python 3.11, `ffmpeg` on PATH and a running Redis), the processes run as you, so
+create the key files as yourself (`openssl rand -hex 32 > secrets/spotdown_service_key`) instead
+of with `install -o 10001`:
 
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate

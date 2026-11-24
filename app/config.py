@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .service.cache_policy import GLOBAL_REFERENCE_TTL_S
@@ -76,6 +76,19 @@ class Settings(BaseSettings):
     # or when the analyzer version changes; a scoped job record after this long unchanged
     # (spotdown#40: a scope that is never deleted must not keep everything). At least a day.
     scoped_retention_ttl_s: float = Field(default=ANALYSIS_UNUSED_TTL_S, ge=86400)
+
+    @field_validator(
+        "service_key_file", "ui_service_key_file", "spotify_client_secret_file", mode="before"
+    )
+    @classmethod
+    def _blank_path_is_unset(cls, value: object) -> object:
+        """An empty (or blank) path setting is unset, not ``Path(".")``: a template line such as
+        ``UI_SERVICE_KEY_FILE=`` means "none". A set path is kept as given, so an unreadable one
+        still stops the start-up, and an empty SERVICE_KEY_FILE still fails closed (it is
+        required)."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     def deprecated_set(self) -> List[str]:
         """The deprecated settings given a value (names only), in a fixed order."""

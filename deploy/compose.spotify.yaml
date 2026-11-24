@@ -4,6 +4,11 @@
 # (scripts/release-assets.sh); SHA256SUMS lists it.
 #
 #   SPOTDOWN_VERSION=1.2.3 docker compose -f compose.yaml -f compose.spotify.yaml up -d --wait
+#   SPOTDOWN_VERSION=1.2.3 docker compose -f compose.yaml -f compose.no-ui.yaml \
+#     -f compose.spotify.yaml up -d --wait
+#
+# List it AFTER compose.no-ui.yaml: that overlay replaces the api's secrets (!override), so
+# listed after this file it would drop the Spotify secret and the api would not start.
 #
 # Set SPOTIFY_CLIENT_ID in spotdown.env. The client secret is a Docker secret file, mounted into
 # the api only, never an env value. One without the other stops the api's start-up.
