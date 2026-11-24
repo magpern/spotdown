@@ -1,4 +1,4 @@
-"""Shared helpers for the service-mode tests: settings, a client, fixture audio and fakes."""
+"""Shared helpers for the backend tests: settings, a client, fixture audio and fakes."""
 
 from __future__ import annotations
 
@@ -25,7 +25,6 @@ def service_settings(tmp_path: Path, **overrides: Any) -> Settings:
     key_file = tmp_path / "service_key"
     key_file.write_text(TEST_KEY + "\n", encoding="utf-8")
     values: Dict[str, Any] = {
-        "service_mode": True,
         "service_key_file": key_file,
         "data_dir": tmp_path / "data",
         "redis_url": "redis://127.0.0.1:1/0",

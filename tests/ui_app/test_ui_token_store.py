@@ -1,6 +1,6 @@
-"""The generated standalone token (ADR 0003 item 2, spotdown#52 "Token creation"): created once,
+"""The UI image's generated token (ADR 0003 item 2, spotdown#52 "Token creation"): created once,
 never regenerated over an existing file, and every interleaving and crash point converges on one
-valid token. Workers are threads driven step by step (tests/token_race_helpers.py), or child
+valid token. Workers are threads driven step by step (tests/ui_app/token_race_helpers.py), or child
 processes killed at a step."""
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ from typing import Any
 
 import pytest
 
-from app import token_store
-from app.token_store import TokenSource, create_or_read
+from spotdown_ui import token_store
+from spotdown_ui.token_store import TokenSource, create_or_read
 
 from .token_race_helpers import OsProxy, Scheduler, install, link_unsupported, tmp_files
 
@@ -29,7 +29,7 @@ HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 
 def _final(tmp_path: Path) -> Path:
     tmp_path.mkdir(exist_ok=True)
-    return tmp_path / "standalone_token"
+    return tmp_path / "ui_token"
 
 
 def _valid(final: Path) -> str:
@@ -85,7 +85,7 @@ def test_a_symlink_at_the_temporary_path_is_not_written_through(monkeypatch, tmp
             return "ab" * n
 
     monkeypatch.setattr(token_store, "secrets", Secrets)
-    planted = final.with_name(f"standalone_token.tmp-{os.getpid()}-{'ab' * 8}")
+    planted = final.with_name(f"ui_token.tmp-{os.getpid()}-{'ab' * 8}")
     planted.symlink_to(target)
     assert create_or_read(final) is None  # the open fails: 503
     assert not target.exists() and not final.exists() and planted.is_symlink()
@@ -138,7 +138,7 @@ def test_a_bad_final_file_is_503_and_never_overwritten(monkeypatch, tmp_path, ca
 
 def test_a_foreign_temporary_file_is_left_alone(monkeypatch, tmp_path) -> None:
     final = _final(tmp_path)
-    foreign = tmp_path / "standalone_token.tmp-x"
+    foreign = tmp_path / "ui_token.tmp-x"
 
     def before(op: str, args: tuple) -> None:
         if op == "link":

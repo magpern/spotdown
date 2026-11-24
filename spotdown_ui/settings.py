@@ -32,7 +32,7 @@ _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 DEFAULT_DATA_DIR = "/data"
 DEFAULT_MAX_UPLOAD_BYTES = 60 * 1024 * 1024  # the backend's default cap (docs/contract-v2.md)
-DEFAULT_UPLOAD_READ_S = 150.0  # ADR 0002's read deadline (the backend's standalone default)
+DEFAULT_UPLOAD_READ_S = 150.0  # ADR 0002's read deadline
 DEFAULT_MAX_AUDIO_BYTES = 200 * 1024 * 1024
 DEFAULT_BACKEND_TIMEOUT_S = 30.0
 

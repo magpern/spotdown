@@ -37,7 +37,6 @@ def make_settings(data_dir: Path) -> Settings:
     data_dir.mkdir(parents=True, exist_ok=True)
     key.write_text("quality-harness-key-" + "0" * 32 + "\n", encoding="utf-8")
     return Settings(
-        service_mode=True,
         service_key_file=key,
         data_dir=data_dir / "data",
         redis_url="redis://127.0.0.1:1/0",

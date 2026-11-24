@@ -115,7 +115,7 @@ def _read_key(path: Path, setting: str) -> ServiceKey:
 
 def load_service_key(path: Optional[Path]) -> ServiceKey:
     if path is None:
-        raise ServiceKeyError("service mode needs SERVICE_KEY_FILE")
+        raise ServiceKeyError("the backend needs SERVICE_KEY_FILE")
     return _read_key(path, "SERVICE_KEY_FILE")
 
 

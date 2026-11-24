@@ -1,6 +1,6 @@
-"""The standalone UI's waveform view (spotdown#48): the pure model through tests/ui_harness.js, the
-renderer's escaping and legend, and the assets (a fixed list, absent in service mode, no network).
-No browser, no audio, no network."""
+"""The UI image's waveform view (spotdown#48; moved from the retired standalone app by spotdown#79):
+the pure model through ``ui_harness.js``, the renderer's escaping and legend, the player's
+fallbacks, and the page's self-containment. No browser, no audio, no network."""
 
 from __future__ import annotations
 
@@ -13,12 +13,11 @@ from typing import Any, Dict, List
 
 import pytest
 
-from app import standalone
 from app.service import analysis_doc
 
-from .service_helpers import AUTH, canned_core, client_for, service_settings
+from ..service_helpers import canned_core
 
-STATIC = Path(__file__).resolve().parent.parent / "app" / "static"
+STATIC = Path(__file__).resolve().parents[2] / "spotdown_ui" / "static"
 HARNESS = Path(__file__).with_name("ui_harness.js")
 WAVEFORM_FILES = ["waveform_model.js", "waveform_view.js", "waveform_player.js"]
 needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
@@ -187,30 +186,6 @@ def test_the_svg_escapes_document_text_and_the_legend_says_build_up_into_a_drop(
     assert 'id="wfHead"' in svg and "hatched = heuristic label" in svg
 
 
-def test_the_waveform_assets_are_served_only_from_the_fixed_list(
-    tmp_path: Path, monkeypatch
-) -> None:
-    from .test_ui_fields import _client
-
-    on_disk = {p.name for p in STATIC.glob("waveform_*.js")}
-    assert on_disk == set(WAVEFORM_FILES) and on_disk <= set(standalone.UI_ASSETS)
-    with _client(tmp_path, monkeypatch) as client:
-        page = client.get("/").text
-        for name in WAVEFORM_FILES:
-            assert f'src="{name}"' in page
-            res = client.get(f"/{name}")
-            assert res.status_code == 200 and res.content == (STATIC / name).read_bytes()
-        assert client.get("/waveform_other.js").status_code == 404
-        assert client.get("/..%2Fapp%2Fmain.py").status_code in (400, 404)
-
-
-def test_the_waveform_assets_are_absent_in_service_mode(tmp_path: Path) -> None:
-    client = client_for(service_settings(tmp_path))
-    for name in WAVEFORM_FILES:
-        for headers in ({}, AUTH):
-            assert client.get(f"/{name}", headers=headers).status_code == 404
-
-
 def test_the_page_stays_self_contained() -> None:
     """No external script, font or request: only the page's own files and the track's download."""
     html = (STATIC / "index.html").read_text(encoding="utf-8")
@@ -326,11 +301,3 @@ def test_peaks_are_scaled_so_the_loudest_is_one() -> None:
 )
 def test_only_a_same_origin_files_path_is_fetched_as_audio(url, origin, expected) -> None:
     assert _one("wfAudioPath", url, origin) == expected
-
-
-def test_the_audio_loader_fetches_only_the_checked_path() -> None:
-    js = (STATIC / "ui.js").read_text(encoding="utf-8")
-    body = js.split("async function loadTrackAudio")[1].split("async function analyze")[0]
-    assert "wfAudioPath(currentAudioUrl, location.origin)" in body
-    # Through the page's one same-origin request helper (ADR 0003), never a fetch of its own.
-    assert "fetch(" not in body and body.count("api(") == 1 and "await api(path)" in body

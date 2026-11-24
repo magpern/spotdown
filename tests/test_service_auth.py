@@ -126,7 +126,7 @@ def test_the_key_is_never_in_a_repr_or_an_error(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("content", [None, "", "   \n"])
-def test_service_mode_fails_closed_without_a_key(tmp_path: Path, content) -> None:
+def test_the_api_fails_closed_without_a_key(tmp_path: Path, content) -> None:
     settings = service_settings(tmp_path)
     if content is None:
         settings.service_key_file = tmp_path / "missing"

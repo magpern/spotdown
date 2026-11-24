@@ -12,7 +12,7 @@ import pytest
 
 from app.service import hostile_input
 
-from .standalone_helpers import BASE, LOGIN_HEADERS, Standalone
+from .ui_app.helpers import BASE, LOGIN_HEADERS, Ui
 
 NOT_PLAIN = ["²", "1²", "١٢", "1e3", "-1", "+1", " 1", "1 ", "", "0x10"]
 
@@ -28,11 +28,11 @@ def test_plain_digits_are_compared_with_the_cap(value: str, cap: int, over: bool
     assert hostile_input.declared_too_large(None, cap) is False
 
 
-def test_a_superscript_length_on_login_is_400_not_500(tmp_path: Path, monkeypatch) -> None:
-    sa = Standalone(tmp_path, monkeypatch)
+def test_a_superscript_length_on_the_ui_login_is_400_not_500(tmp_path: Path) -> None:
+    ui = Ui(tmp_path)
 
     async def go() -> httpx.Response:
-        transport = httpx.ASGITransport(app=sa.app)
+        transport = httpx.ASGITransport(app=ui.app)
         async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
             headers = {**LOGIN_HEADERS, "Content-Length": b"\xb2"}  # "²" in latin-1
             return await client.post("/login", headers=headers, content=b"{}")

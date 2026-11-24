@@ -1,4 +1,4 @@
-# spotdown API contract v2 (service mode)
+# spotdown API contract v2
 
 **Status: DRAFT. Authorized by the owner on 2026-11-20** (except classbeat#1297 to #1299 and
 spotdown#1; classbeat#1296 was accepted on 2026-11-20; no deploy or real provider call). Parts are built, see [integration-plan.md](integration-plan.md). It is written together with classbeat ADR 0040; where they differ, the classbeat plan
@@ -25,13 +25,12 @@ validates the examples against the schemas (`tests/test_schemas.py`).
 
 ## Authentication
 
-Service mode is off unless the operator sets a service key. Every `/v2` request carries
+The backend serves only `/v2/...` and `/healthz`; every other path is `404`, with no CORS and no
+API docs ([ADR 0005](adr/0005-two-images-backend-api-and-ui.md), Decision 2). It has no mode: the
+api does not start without a readable service key. Every `/v2` request carries
 `Authorization: Bearer <service key>`. A missing or wrong key is `401` with no detail. The key is
-never logged. The standalone UI, its routes and downloads are not served in service mode. With
-`SPOTDOWN_UI=on` (off unless set; [ADR 0004](adr/0004-ui-switch-independent-of-service-mode.md))
-the service also serves a static page at `/` and a fixed list of its assets, without a key: the
-page holds no data and calls `/v2` with the key the user types in (kept in memory only, sent as
-this same bearer header). Every rule of this contract holds unchanged with it on.
+never logged. `SERVICE_MODE`, `SERVE_UI` and `SPOTDOWN_UI` are deprecated and ignored for one
+release; nothing in this contract depends on them.
 
 **Two caller keys** ([ADR 0005](adr/0005-two-images-backend-api-and-ui.md), Decision 3):
 `SERVICE_KEY_FILE` (classbeat's, required) and, optionally, `UI_SERVICE_KEY_FILE` (the UI image's).

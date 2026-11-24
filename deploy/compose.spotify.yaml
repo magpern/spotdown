@@ -1,0 +1,21 @@
+# spotdown with Spotify credentials (docs/runbooks/docker-image.md; ADR 0005 Decision 4): an
+# overlay of compose.yaml (and of compose.no-ui.yaml). Optional: without it POST
+# /v2/spotify/resolve reads Spotify's public pages. Published as a release asset byte for byte
+# (scripts/release-assets.sh); SHA256SUMS lists it.
+#
+#   SPOTDOWN_VERSION=1.2.3 docker compose -f compose.yaml -f compose.spotify.yaml up -d --wait
+#
+# Set SPOTIFY_CLIENT_ID in spotdown.env. The client secret is a Docker secret file, mounted into
+# the api only, never an env value. One without the other stops the api's start-up.
+
+services:
+  api:
+    environment:
+      SPOTIFY_CLIENT_SECRET_FILE: /run/secrets/spotdown_spotify_client_secret
+    secrets:
+      - spotdown_spotify_client_secret
+
+secrets:
+  spotdown_spotify_client_secret:
+    # Owned by uid 10001, mode 0400. Never committed.
+    file: ${SPOTDOWN_SPOTIFY_SECRET_FILE:-./secrets/spotdown_spotify_client_secret}

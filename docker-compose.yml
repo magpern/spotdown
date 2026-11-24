@@ -1,3 +1,7 @@
+# Development only (docs/runbooks/docker-image.md is the production install): both images built
+# from this checkout (ADR 0005). The ui is published on the loopback; the api, the worker and Redis
+# publish nothing. The two keys are Docker secret files under ./secrets (README, "Local
+# development"), never env values.
 services:
   redis:
     image: redis:7-alpine
@@ -7,19 +11,20 @@ services:
   api:
     build: .
     restart: unless-stopped
-    env_file: .env
-    # Development only (docs/runbooks/docker-image.md is the production install). The image
-    # defaults to service mode as uid 10001 with its data in /data; this file keeps the standalone
-    # UI on the host's ./data bind mount, which the image's user cannot write, hence root (ADR 0003).
+    env_file:
+      - path: .env
+        required: false
+    # The image runs as uid 10001 with its data in /data; this file keeps the data on the host's
+    # ./data bind mount, which the image's user cannot write, hence root (development only).
     user: "0:0"
     environment:
       REDIS_URL: redis://redis:6379/0
       DATA_DIR: /app/data
-      SERVICE_MODE: ${SERVICE_MODE:-false}
-      SERVE_UI: ${SERVE_UI:-true}
-    # Loopback only unless SPOTDOWN_PUBLISH_HOST widens it (ADR 0003); the app never reads it.
-    ports:
-      - "${SPOTDOWN_PUBLISH_HOST:-127.0.0.1}:8000:8000"
+      SERVICE_KEY_FILE: /run/secrets/spotdown_service_key
+      UI_SERVICE_KEY_FILE: /run/secrets/spotdown_ui_backend_key
+    secrets:
+      - spotdown_service_key
+      - spotdown_ui_backend_key
     volumes:
       - ./data:/app/data
     depends_on:
@@ -28,16 +33,14 @@ services:
   worker:
     build: .
     restart: unless-stopped
-    env_file: .env
-    # Development only (docs/runbooks/docker-image.md is the production install). The image
-    # defaults to service mode as uid 10001 with its data in /data; this file keeps the standalone
-    # UI on the host's ./data bind mount, which the image's user cannot write, hence root (ADR 0003).
+    env_file:
+      - path: .env
+        required: false
+    # As the api: root for the ./data bind mount (development only). The worker needs no key.
     user: "0:0"
     environment:
       REDIS_URL: redis://redis:6379/0
       DATA_DIR: /app/data
-      SERVICE_MODE: ${SERVICE_MODE:-false}
-      SERVE_UI: ${SERVE_UI:-true}
     command: rq worker -u redis://redis:6379/0 spotdown
     # The image's HEALTHCHECK asks the api on the loopback, which the worker does not serve; the
     # worker's check pings Redis instead (as in deploy/compose.yaml).
@@ -51,3 +54,31 @@ services:
       - ./data:/app/data
     depends_on:
       - redis
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    restart: unless-stopped
+    environment:
+      SPOTDOWN_BACKEND_URL: http://api:8000
+      SPOTDOWN_BACKEND_KEY_FILE: /run/secrets/spotdown_ui_backend_key
+      UI_DATA_DIR: /data
+    secrets:
+      - spotdown_ui_backend_key
+    volumes:
+      - ui-data:/data
+    # Loopback only unless SPOTDOWN_PUBLISH_HOST widens it (ADR 0003); the app never reads it.
+    ports:
+      - "${SPOTDOWN_PUBLISH_HOST:-127.0.0.1}:8000:8000"
+    depends_on:
+      - api
+
+volumes:
+  ui-data:
+
+secrets:
+  spotdown_service_key:
+    file: ./secrets/spotdown_service_key
+  spotdown_ui_backend_key:
+    file: ./secrets/spotdown_ui_backend_key

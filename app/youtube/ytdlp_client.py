@@ -32,7 +32,7 @@ _DOWNLOAD_FORMAT = "bestaudio[ext=m4a][protocol=https]/bestaudio[ext=mp3][protoc
 
 
 def download_opts(outtmpl: str, fmt: str = "bestaudio/best") -> Dict[str, Any]:
-    """The options both the standalone app and the service use to download one item."""
+    """The options the service uses to download one item."""
     return {
         "format": fmt,
         "outtmpl": outtmpl,

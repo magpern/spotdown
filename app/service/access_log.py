@@ -1,4 +1,4 @@
-"""Keeps query strings out of uvicorn's access log in service mode.
+"""Keeps query strings out of uvicorn's access log.
 
 uvicorn logs each request line, query string included, at INFO. A query can carry a caller's
 URL (a lookup's ``source=url:...``, which may be a signed URL) or a scope, so the path is logged

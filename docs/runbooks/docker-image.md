@@ -1,39 +1,49 @@
-# Runbook: install and upgrade spotdown from its Docker image
+# Runbook: install and upgrade spotdown from its Docker images
 
-spotdown ships as a Docker image (owner, 2026-11-24): `ghcr.io/magpern/spotdown`, built for
-`linux/amd64` and `linux/arm64` by `.github/workflows/release.yml` from a version tag on `main`.
-A server needs the image, the release's `compose.yaml`, its own service key file and, optionally,
-a `spotdown.env`. It never needs a clone. Deploying stays the owner's decision (AGENTS.md, safety
-envelope).
+spotdown ships as two Docker images from one tag
+([ADR 0005](../adr/0005-two-images-backend-api-and-ui.md)):
+
+- `ghcr.io/magpern/spotdown`, the **backend** (api and worker): `/v2` behind a caller key, and
+  `/healthz`;
+- `ghcr.io/magpern/spotdown-ui`, the **UI**: the page, which calls the backend server-side with its
+  own key.
+
+`.github/workflows/release.yml` builds both for `linux/amd64` and `linux/arm64` from a version tag
+on `main`. A server needs the images, the release's `compose.yaml`, its own key files and,
+optionally, a `spotdown.env` and a `spotdown-ui.env`. It never needs a clone. Deploying stays the
+owner's decision (AGENTS.md, safety envelope).
 
 ## What a release publishes
 
 | Item | Value |
 |---|---|
-| Image | `ghcr.io/magpern/spotdown`, **private** package. Never change its visibility. |
-| Tags | `X.Y.Z`, `X.Y` (stable releases only, moves to the newest patch) and `sha-<short commit>`. There is **no `latest`**. |
-| Attestations | SLSA provenance (`mode=max`) and an SBOM in the registry; a GitHub artifact attestation of the image digest and of every release asset. |
-| Release assets | `compose.yaml` (from `deploy/compose.yaml`), `spotdown.env.example` (from `deploy/spotdown.env.example`) and `SHA256SUMS`. |
-| Release notes | Generated from the merged PRs, plus the attested image digest. A tag with a hyphen (`v1.2.3-rc.1`) is a pre-release. |
+| Images | `ghcr.io/magpern/spotdown` and `ghcr.io/magpern/spotdown-ui`, **private** packages. Never change their visibility. |
+| Tags | `X.Y.Z`, `X.Y` (stable releases only, moves to the newest patch) and `sha-<short commit>`, the same for both images. There is **no `latest`**. |
+| Attestations | SLSA provenance (`mode=max`) and an SBOM in the registry; a GitHub artifact attestation of each image digest and of every release asset. |
+| Release assets | `compose.yaml` (from `deploy/compose.yaml`), `compose.no-ui.yaml`, `compose.spotify.yaml`, `spotdown.env.example`, `spotdown-ui.env.example` (each from `deploy/`) and `SHA256SUMS`. |
+| Release notes | Generated from the merged PRs, plus both attested image digests. A tag with a hyphen (`v1.2.3-rc.1`) is a pre-release. |
 
 A tag that is not `vMAJOR.MINOR.PATCH[-prerelease]`, or whose commit is not on `main`, publishes
 nothing. Agents never push a tag on their own; the Architect cuts it after a merge
 (`git tag -a vX.Y.Z -m vX.Y.Z origin/main && git push origin vX.Y.Z`), and a pushed tag is never
 moved or deleted: fix forward with a new version.
 
-## What the image is
+## What the images are
 
-- Python 3.11 on Debian slim, base pinned by version and digest; ffmpeg and libsndfile from Debian.
-- Runs as the unprivileged user **uid 10001, gid 10001**. The code is root-owned and read-only.
-- **Service mode by default** (`SERVICE_MODE=true`, `SERVE_UI=false`): only `/v2` behind the service
-  key, and `/healthz` ([contract](../contract-v2.md)); the web UI stays off unless `SPOTDOWN_UI=on`. Without a readable key file the server does
-  not start.
-- Holds no `.env`, no audio, no data and no secret: `.dockerignore` lets only `requirements.txt` and
-  `app/` into the build, and the build takes no build arguments or secrets.
-- Writes only to `/data` (the database `service.db`, uploads and work files) and `/tmp` (numba and
-  yt-dlp caches).
-- Healthcheck: `python -m app.healthcheck api` asks `/healthz` on `127.0.0.1:8000`; the deploy file
-  gives the worker `python -m app.healthcheck worker` (a Redis ping).
+- Python 3.11 on Debian slim, base pinned by version and digest. Both run as the unprivileged user
+  **uid 10001, gid 10001**; the code is root-owned and read-only.
+- **The backend** has no mode: only `/v2` behind a caller key, and `/healthz`
+  ([contract](../contract-v2.md)); every other path is 404. Without a readable
+  `SERVICE_KEY_FILE` the api does not start; the worker needs no key. It holds ffmpeg and
+  libsndfile, and only `requirements.txt` and `app/` enter its build (no UI files). It writes only
+  to `/data` (the database `service.db`, uploads, work files and mp3s) and `/tmp` (numba and
+  yt-dlp caches). Healthcheck: `python -m app.healthcheck api` asks `/healthz` on
+  `127.0.0.1:8000`; the deploy file gives the worker `python -m app.healthcheck worker` (a Redis
+  ping).
+- **The UI** holds `spotdown_ui/` only: no `app/`, yt-dlp, librosa or ffmpeg. It calls nothing but
+  `SPOTDOWN_BACKEND_URL`, and its key never reaches a browser. It writes only its generated access
+  token to `/data`. Healthcheck: `python -m spotdown_ui.healthcheck` (never calls the backend).
+- Neither holds a `.env`, audio, data or a secret, and neither build takes arguments or secrets.
 
 ## Install
 
@@ -42,82 +52,161 @@ On the server, as the deploying user:
 ```bash
 mkdir -p /opt/spotdown && cd /opt/spotdown
 V=1.2.3                                   # the release to install
-gh release download "v$V" -R magpern/spotdown -p compose.yaml -p spotdown.env.example -p SHA256SUMS
+gh release download "v$V" -R magpern/spotdown -p compose.yaml -p compose.no-ui.yaml \
+  -p compose.spotify.yaml -p spotdown.env.example -p spotdown-ui.env.example -p SHA256SUMS
 sha256sum -c SHA256SUMS
 gh attestation verify compose.yaml -R magpern/spotdown
 
-# The private image: log in once with a token that has read:packages only.
+# The private images: log in once with a token that has read:packages only.
 docker login ghcr.io -u <github user>      # paste the token at the prompt, never on the command line
 
-# The callers' network. classbeat joins it and calls http://spotdown-api:8000.
+# The callers' network. classbeat and the ui join it and call http://spotdown-api:8000.
 docker network create --internal spotdown
 
-# The service key: at least 32 characters, one line, readable only by the image's user.
+# The keys: at least 32 characters, one line, readable only by the images' user. Two different
+# keys: classbeat's service key, and the UI's own backend key.
 mkdir -p secrets
 umask 077
-openssl rand -hex 32 > secrets/spotdown_service_key.new
-sudo install -m 0400 -o 10001 -g 10001 secrets/spotdown_service_key.new secrets/spotdown_service_key
-rm secrets/spotdown_service_key.new
-# Give the same key to the caller (classbeat) through its own secret file; never paste it into chat,
-# a URL, an environment variable or a log.
+for name in spotdown_service_key spotdown_ui_backend_key; do
+  openssl rand -hex 32 > "secrets/$name.new"
+  sudo install -m 0400 -o 10001 -g 10001 "secrets/$name.new" "secrets/$name"
+  rm "secrets/$name.new"
+done
+# Give the service key to the caller (classbeat) through its own secret file; never paste a key
+# into chat, a URL, an environment variable or a log. The UI's key stays on this host.
 
-cp spotdown.env.example spotdown.env      # optional: uncomment only what you change
+cp spotdown.env.example spotdown.env          # optional: uncomment only what you change
+cp spotdown-ui.env.example spotdown-ui.env    # optional, likewise
 SPOTDOWN_VERSION=$V docker compose up -d --wait
+
+# The UI's access token, generated once in its data volume: open the UI's /login and paste it.
+SPOTDOWN_VERSION=$V docker compose exec ui cat /data/ui_token
 ```
 
-Check the pulled image is the attested one:
+Check the pulled images are the attested ones:
 
 ```bash
-docker image inspect --format '{{index .RepoDigests 0}}' ghcr.io/magpern/spotdown:$V
-gh attestation verify oci://ghcr.io/magpern/spotdown:$V -R magpern/spotdown
+for image in spotdown spotdown-ui; do
+  docker image inspect --format '{{index .RepoDigests 0}}' "ghcr.io/magpern/$image:$V"
+  gh attestation verify "oci://ghcr.io/magpern/$image:$V" -R magpern/spotdown
+done
 ```
 
-The first digest must be the one in the release notes.
+Each digest must be the one in the release notes.
+
+### Without the UI
+
+Add the overlay `compose.no-ui.yaml` to every `docker compose` command. The ui is not started and
+the api neither mounts nor reads the UI's key, so only `secrets/spotdown_service_key` is needed
+(skip `spotdown_ui_backend_key` in the loop above). It needs Docker Compose 2.24.4 or later.
+
+```bash
+SPOTDOWN_VERSION=$V docker compose -f compose.yaml -f compose.no-ui.yaml up -d --wait
+```
+
+To turn the UI off on a running stack, run that command, then remove the old container with
+`docker compose -f compose.yaml rm -sf ui`.
+
+### With Spotify credentials (optional)
+
+Without them `POST /v2/spotify/resolve` reads Spotify's public pages. With them it uses the Web API
+(full playlists and the ISRC). Set `SPOTIFY_CLIENT_ID` in `spotdown.env`, install the client
+secret as a file, and add the overlay `compose.spotify.yaml` (after `compose.no-ui.yaml` if you
+use both). The secret is mounted into the api only, never an env value. One of the two without the
+other stops the api's start-up.
+
+```bash
+sudo install -m 0400 -o 10001 -g 10001 /path/to/client_secret secrets/spotdown_spotify_client_secret
+SPOTDOWN_VERSION=$V docker compose -f compose.yaml -f compose.spotify.yaml up -d --wait
+```
 
 ## Settings
 
-The deploy file fixes `SERVICE_MODE=true`, `SERVE_UI=false`,
-`SERVICE_KEY_FILE=/run/secrets/spotdown_service_key`, `DATA_DIR=/data` and
-`REDIS_URL=redis://redis:6379/0`. Everything else is optional in `spotdown.env`, one `NAME=value`
-per line. `spotdown.env.example` lists each setting with its default:
+The deploy file fixes these, and `spotdown.env` cannot change them:
+
+- api: `SERVICE_KEY_FILE=/run/secrets/spotdown_service_key`,
+  `UI_SERVICE_KEY_FILE=/run/secrets/spotdown_ui_backend_key`, `DATA_DIR=/data` and
+  `REDIS_URL=redis://redis:6379/0` (`compose.spotify.yaml` adds
+  `SPOTIFY_CLIENT_SECRET_FILE=/run/secrets/spotdown_spotify_client_secret`);
+- worker: `DATA_DIR` and `REDIS_URL`, with no key;
+- ui: `SPOTDOWN_BACKEND_URL=http://spotdown-api:8000`,
+  `SPOTDOWN_BACKEND_KEY_FILE=/run/secrets/spotdown_ui_backend_key` and `UI_DATA_DIR=/data`.
+
+Everything else is optional, one `NAME=value` per line. `spotdown.env` (the api and the worker)
+and `spotdown-ui.env` (the ui) list each setting with its default:
 
 - `URL_ALLOWED_HOSTS`: the hosts the `url` source may fetch from. Empty turns that source off.
 - `ALLOW_YTDLP_SOURCING`: YouTube. On by default (owner, 2026-11-24); `false` turns every YouTube
-  path off (README, "Service mode"). Turning it on accepts a terms-of-service risk and is the
+  path off (README, "The backend"). Turning it on accepts a terms-of-service risk and is the
   operator's decision. See the upgrade note below: an unset flag used to mean off.
-- `SPOTDOWN_UI`: the web UI ([ADR 0004](../adr/0004-ui-switch-independent-of-service-mode.md)).
-  Off by default, and the image and the deploy file leave it off (`SERVE_UI=false` does not
-  control it in service mode). `on` serves the static page at `/` next to `/v2` to every caller on
-  the service network; the page asks for the service key and keeps it in memory only, and `/v2`
-  still needs the key. Set `on` only where that page should be exposed. Never set it to an empty
-  value or wire it as `${SPOTDOWN_UI:-}`: an empty value is not a boolean and stops the start-up.
-- `MAX_UPLOAD_BYTES`, `UPLOAD_TTL_S`, `URL_FETCH_TIMEOUT_S`, `ANALYSIS_MAX_*`, `GLOBAL_*_TTL_S`:
-  limits and retention.
+- `SPOTIFY_CLIENT_ID`: only with `compose.spotify.yaml` (above).
+- `MAX_UPLOAD_BYTES`, `UPLOAD_TTL_S`, `AUDIO_TTL_S`, `URL_FETCH_TIMEOUT_S`, `ANALYSIS_MAX_*`,
+  `GLOBAL_*_TTL_S`, `SCOPED_RETENTION_TTL_S`: limits and retention.
+- In `spotdown-ui.env`: `UI_ALLOWED_HOSTS` and `UI_PUBLIC_ORIGIN` for a reverse proxy (below), and
+  the UI's upload and relay limits.
+
+`SERVICE_MODE`, `SERVE_UI` and `SPOTDOWN_UI` are deprecated and ignored: the api logs one warning
+that names any that are set. Remove them (see "Upgrading from a SERVICE_MODE compose file").
 
 Compose variables, read from the shell or from a `.env` file next to `compose.yaml`:
 
 | Variable | Meaning |
 |---|---|
-| `SPOTDOWN_VERSION` | **Required.** `X.Y.Z` (pinned, recommended) or `X.Y` (follows patch releases on each pull). |
-| `SPOTDOWN_SERVICE_KEY_FILE` | The key file on the host. Default `./secrets/spotdown_service_key`. |
+| `SPOTDOWN_VERSION` | **Required.** `X.Y.Z` (pinned, recommended) or `X.Y` (follows patch releases on each pull). The same for both images. |
+| `SPOTDOWN_SERVICE_KEY_FILE` | classbeat's key file on the host. Default `./secrets/spotdown_service_key`. |
+| `SPOTDOWN_UI_KEY_FILE` | The UI's key file on the host. Default `./secrets/spotdown_ui_backend_key`. |
+| `SPOTDOWN_SPOTIFY_SECRET_FILE` | With `compose.spotify.yaml`: the client secret file. Default `./secrets/spotdown_spotify_client_secret`. |
 | `SPOTDOWN_SERVICE_NETWORK` | The callers' external network. Default `spotdown`. |
+| `SPOTDOWN_PUBLISH_HOST` | The address the UI's port 8000 is published on. Default `127.0.0.1`. |
 
-Never put the service key in `spotdown.env` or in any environment variable. It is a Docker secret
-file mounted into the api only; the worker and Redis never see it.
+Never put a key or secret in `spotdown.env`, `spotdown-ui.env` or any environment variable. Each is
+a Docker secret file mounted only where it is used:
+
+| Secret file | Mounted into |
+|---|---|
+| `spotdown_service_key` | the api |
+| `spotdown_ui_backend_key` | the api and the ui |
+| `spotdown_spotify_client_secret` (optional) | the api |
+
+The worker and Redis never see a key.
 
 ## Networks, ports and volumes
 
-- **No port is published.** The api listens on port 8000 inside its networks only. A caller
-  reaches it as `http://spotdown-api:8000` on the `spotdown` network. Redis is on the `backend`
-  network (internal), which only the api and the worker share.
-- `egress` gives the api and the worker a way out, for the `url` source and, if enabled, YouTube.
-- `spotdown-data` (mounted at `/data`) holds the service database and the temporary audio of
-  running jobs. Back it up while the stack is stopped. A takedown does not reach an earlier backup
-  (contract, "Retention of global analyses").
+- **The backend publishes no port.** The api listens on port 8000 inside its networks only. A
+  caller reaches it as `http://spotdown-api:8000` on the `spotdown` network, as the ui does. Redis
+  is on the `backend` network (internal), which only the api and the worker share.
+- **The UI publishes port 8000** on `SPOTDOWN_PUBLISH_HOST`, the loopback by default, for the
+  owner's reverse proxy. The app never reads that setting. Its `ui-published` network exists only
+  for that port (an internal network cannot publish one).
+- `egress` gives the api and the worker a way out: Spotify's pages or Web API, the `url` source
+  and, when on, YouTube.
+- `spotdown-data` (mounted at `/data` in the api and the worker) holds the service database, the
+  temporary audio of running jobs and the kept mp3s. Back it up while the stack is stopped. A
+  takedown does not reach an earlier backup (contract, "Retention of global analyses").
+- `spotdown-ui-data` holds the UI's generated access token only.
 - `redis-data` holds the job queue. Losing it loses the jobs still waiting in the queue. Redis runs
   as the image's own `redis` user (`999:1000`) with every capability dropped and a read-only root;
   a new volume takes that ownership from the image. A volume created earlier by a Redis started as
   root is already owned by `redis` (that entrypoint chowns it), so it needs no change.
+
+### The UI's bind address
+
+Choosing the bind address and exposing the UI beyond the loopback is the owner's deploy step.
+
+- **Reverse proxy on the same host:** keep the default. The proxy forwards to `127.0.0.1:8000`.
+- **Reverse proxy on another host (the LAN bind):** publish on this host's own LAN address, set in
+  the deploy environment (the shell or the `.env` next to `compose.yaml`), never in the
+  repository. `<LAN address>` is a placeholder for that address, for example `192.0.2.10`:
+
+  ```bash
+  SPOTDOWN_PUBLISH_HOST=<LAN address> SPOTDOWN_VERSION=$V docker compose up -d --wait
+  ```
+
+  Never `0.0.0.0`. Restrict the port to the proxy's address in the host firewall.
+
+Behind a proxy, set the public name in `spotdown-ui.env`, for example
+`UI_ALLOWED_HOSTS=spotdown.example.org` and `UI_PUBLIC_ORIGIN=https://spotdown.example.org`. The UI
+ignores forwarded headers.
 
 Operator commands run in the api container, for example a takedown:
 
@@ -134,26 +223,54 @@ YouTube after the upgrade. Before you upgrade, set it explicitly in `spotdown.en
 
 1. Read the release notes of every version between the running one and the new one, and back up
    `spotdown-data` (stack stopped).
-2. Download that release's `compose.yaml` and `SHA256SUMS`, check them as above, and compare
-   the new `compose.yaml` with the running one (`diff`).
-3. `SPOTDOWN_VERSION=<new> docker compose pull && SPOTDOWN_VERSION=<new> docker compose up -d --wait`.
+2. Download that release's deploy files and `SHA256SUMS`, check them as above, and compare the new
+   `compose.yaml` with the running one (`diff`).
+3. `SPOTDOWN_VERSION=<new> docker compose pull && SPOTDOWN_VERSION=<new> docker compose up -d --wait`,
+   with the same `-f` overlays as the running stack.
 4. Check `docker compose ps` shows every service `healthy`.
 
-To roll back, run step 3 with the previous version and its `compose.yaml`. A newer version may
-have migrated the service database on start, so roll back only when the newer release notes say an
+To roll back, run step 3 with the previous version and its deploy files. A newer version may have
+migrated the service database on start, so roll back only when the newer release notes say an
 older version can read it; otherwise restore the backup of `spotdown-data` taken before the upgrade.
 
 Pin `X.Y.Z` in production; `X.Y` moves on every patch release and changes what a plain
 `docker compose pull` installs.
 
-## Rotating the service key
+### Upgrading from a SERVICE_MODE compose file
 
-Write a new key file as in "Install", update the caller's copy, then
-`SPOTDOWN_VERSION=$V docker compose up -d --force-recreate api`. The old key stops working when the
-api restarts.
+Before spotdown#79 one image ran as either of two apps, chosen by `SERVICE_MODE`. Now the backend
+image has no mode and no UI, and the UI is the `spotdown-ui` image.
+
+- **A compose file of your own that sets `SERVICE_MODE=true`, `SERVE_UI=false` or `SPOTDOWN_UI`**
+  (classbeat's, for example) keeps working unchanged for one release: the backend ignores those
+  settings and logs one warning naming them. Its api still needs `SERVICE_KEY_FILE`; its worker
+  needs no key, and the queue (`spotdown`) and the healthchecks are unchanged. Remove the three
+  settings before the next release, which drops them.
+- **The previous `deploy/compose.yaml`:** download the new deploy files (step 2), install the UI's
+  key (`spotdown_ui_backend_key`, as in "Install"), or add `-f compose.no-ui.yaml` to keep running
+  without a UI, then step 3. Remove `SPOTDOWN_UI` from `spotdown.env` if it is there.
+- **The old standalone app** (`SERVICE_MODE=false`): its routes, its v1 cache under `/data/files`
+  and `spotdown.db`, and its `STANDALONE_*`, `UI_ALLOWED_HOSTS`, `UI_PUBLIC_ORIGIN`,
+  `PUBLIC_BASE_URL`, `SPOTIFY_CLIENT_SECRET` and conversion settings are gone. Run the UI image
+  instead; move `UI_ALLOWED_HOSTS` and `UI_PUBLIC_ORIGIN` to `spotdown-ui.env`, and the Spotify
+  secret to a secret file (`compose.spotify.yaml`). The old files in `/data` are no longer read;
+  delete them once you no longer need them.
+
+## Rotating a key
+
+Write a new key file as in "Install", then recreate the containers that mount it:
+
+- classbeat's service key: update the caller's copy, then
+  `SPOTDOWN_VERSION=$V docker compose up -d --force-recreate api`;
+- the UI's key: `SPOTDOWN_VERSION=$V docker compose up -d --force-recreate api ui`; classbeat is
+  not touched.
+
+The old key stops working when the api restarts.
 
 ## Local development
 
-`docker-compose.yml` in the repository builds the same Dockerfile for development. It runs the
-standalone web UI (`SERVICE_MODE=false` unless set) on the host's `./data` bind mount, as root
-(ADR 0003). It is never a production install.
+`docker-compose.yml` in the repository builds both images from the checkout for development
+(README, "Local development"): redis, api, worker and ui, with the ui on the loopback, and the
+backend's data on the host's `./data` bind mount, as root. The two key files are
+`./secrets/spotdown_service_key` and `./secrets/spotdown_ui_backend_key`. It is never a production
+install.

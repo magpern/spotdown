@@ -1,0 +1,17 @@
+# spotdown without the UI (docs/runbooks/docker-image.md): an overlay of compose.yaml.
+# Published as a release asset byte for byte (scripts/release-assets.sh); SHA256SUMS lists it.
+#
+#   SPOTDOWN_VERSION=1.2.3 docker compose -f compose.yaml -f compose.no-ui.yaml up -d --wait
+#
+# The ui service is not started, and the api no longer mounts or reads the UI's key, so only
+# classbeat's service key file is needed. Needs Docker Compose 2.24.4 or later (!override, !reset).
+
+services:
+  api:
+    environment:
+      UI_SERVICE_KEY_FILE: !reset null
+    secrets: !override
+      - spotdown_service_key
+  ui:
+    # Never started: no profile named "ui-off" is ever enabled.
+    profiles: [ui-off]

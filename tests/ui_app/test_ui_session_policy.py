@@ -8,7 +8,7 @@ import hmac
 
 import pytest
 
-from app import session_policy as sp
+from spotdown_ui import session_policy as sp
 
 TOKEN = "a" * 64
 NOW = 1_800_000_000.0

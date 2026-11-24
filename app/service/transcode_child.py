@@ -3,7 +3,7 @@
 Started by ``audio_transcode.run_transcode`` through the analysis sandbox (``sandbox.run_child``:
 rlimits on memory, CPU time and file size, a short environment allowlist, a wall deadline). The
 worker never runs ffmpeg on untrusted bytes itself. The container is checked (``container_io``)
-before ffmpeg sees a byte, and ffmpeg is pinned to that container (``app.transcode.mp3_argv``); the
+before ffmpeg sees a byte, and ffmpeg is pinned to that container (``mp3_argv``); the
 check and the conversion run under a wall-time alarm. Failures are exit codes only, the same ones
 as ``sandbox_child``, so ``sandbox`` maps them to the same failure reasons.
 
@@ -20,9 +20,9 @@ import sys
 import time
 from pathlib import Path
 
-from ..transcode import TranscodeError, mp3_argv
 from . import audio_policy, container_io
 from .container_policy import InvalidMedia, too_long
+from .mp3_argv import TranscodeError, mp3_argv
 from .sandbox_child import (
     EXIT_DECODE,
     EXIT_DECODE_TIMEOUT,

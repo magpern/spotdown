@@ -1,12 +1,12 @@
-"""The settings and header rules of ADR 0003 items 5 and 6 (pure; spotdown#52 "Settings",
-"Origin shape" and "Host")."""
+"""The settings and header rules of ADR 0003 items 5 and 6 in the UI image (pure; spotdown#52
+"Settings", "Origin shape" and "Host"; moved from the retired standalone app by spotdown#79)."""
 
 from __future__ import annotations
 
 import pytest
 
-from app.config import Settings
-from app.exposure_policy import (
+from spotdown_ui.app import create_app
+from spotdown_ui.exposure_policy import (
     Origin,
     SettingsError,
     origin_matches,
@@ -14,7 +14,8 @@ from app.exposure_policy import (
     parse_host_header,
     parse_public_origin,
 )
-from app.main import create_standalone_app
+
+from .helpers import ui_env
 
 
 def test_the_default_allowed_hosts() -> None:
@@ -31,8 +32,8 @@ def test_a_bad_allowed_hosts_entry_raises_at_construction(tmp_path, value) -> No
     with pytest.raises(SettingsError):
         parse_allowed_hosts(value)
     with pytest.raises(SettingsError):
-        create_standalone_app(Settings(data_dir=tmp_path / "d", ui_allowed_hosts=value))
-    assert not (tmp_path / "d" / "standalone_token").exists()  # no app object, no token
+        create_app(ui_env(tmp_path, UI_ALLOWED_HOSTS=value))
+    assert not (tmp_path / "data" / "ui_token").exists()  # no app object, no token
 
 
 @pytest.mark.parametrize(
@@ -45,7 +46,7 @@ def test_a_public_origin_that_is_not_exact_raises_at_construction(tmp_path, valu
     with pytest.raises(SettingsError):
         parse_public_origin(value)
     with pytest.raises(SettingsError):
-        create_standalone_app(Settings(data_dir=tmp_path / "d", ui_public_origin=value))
+        create_app(ui_env(tmp_path, UI_PUBLIC_ORIGIN=value))
 
 
 def test_exact_public_origins() -> None:

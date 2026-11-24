@@ -1,12 +1,21 @@
+"""The backend (ADR 0005 Decision 2): ``/v2/...`` behind a caller key, and ``/healthz``. Every other
+path is 404. No mode, no CORS, no API docs, no static files and no token session.
+
+``uvicorn app.main:app`` builds the app on first access of ``app`` (PEP 562), so importing this
+module needs no key file; ``create_app`` fails closed without one.
+"""
+
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import logging
 from typing import Callable, Optional
 
 from fastapi import FastAPI
 
 from .config import Settings, get_settings
 from .queue import get_redis
+
+log = logging.getLogger("spotdown")
 
 
 def _healthz() -> dict:
@@ -18,43 +27,19 @@ def _healthz() -> dict:
     return {"ok": True, "redis": redis_ok}
 
 
-def create_standalone_app(settings: Settings) -> FastAPI:
-    """The web UI and the v1 API, all behind the token session (ADR 0003). Settings, the data
-    directories and the token are handled here, at construction, never in the lifespan: an app
-    run without a lifespan authenticates the same way. No CORS."""
-    from . import db, upload_route
-    from .exposure_policy import parse_allowed_hosts, parse_public_origin
-    from .standalone import router
-    from .standalone_auth import StandaloneAuth
-    from .token_store import TokenSource
-
-    allowed_hosts = parse_allowed_hosts(settings.ui_allowed_hosts)  # raises on a bad entry
-    public_origin = parse_public_origin(settings.ui_public_origin)  # raises if not exact
-    settings.ensure_dirs()
-    owner_file = settings.standalone_access_token_file
-    tokens = TokenSource(owner_file or settings.standalone_token_path, owner=owner_file is not None)
-
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        db.init_db()
-        yield
-
-    app = FastAPI(title="spotdown", version="0.1.0", lifespan=lifespan)
-    app.get("/healthz")(_healthz)
-    app.include_router(router)
-    upload_route.register(app, settings)  # local files (ADR 0002): POSIX and the UI only
-    app.add_middleware(
-        StandaloneAuth, tokens=tokens, allowed_hosts=allowed_hosts, public_origin=public_origin
-    )
-    return app
+def warn_deprecated(settings: Settings) -> None:
+    """One warning naming the deprecated settings that are set, never their values."""
+    names = settings.deprecated_set()
+    if names:
+        log.warning(
+            "deprecated settings are ignored and will be removed in the next release: %s",
+            ", ".join(names),
+        )
 
 
-def create_service_app(
-    settings: Settings, dispatch: Optional[Callable[[str], None]] = None
+def create_app(
+    settings: Optional[Settings] = None, dispatch: Optional[Callable[[str], None]] = None
 ) -> FastAPI:
-    """Service mode: ``/v2`` behind the service key, and ``/healthz``; the static UI page only with
-    ``SPOTDOWN_UI=on`` (ADR 0004). Never ``/files``, ``/api/v1``, the standalone Spotify routes,
-    CORS or API docs (Spotify links resolve through ``/v2/spotify/resolve``)."""
     from .service import (
         access_log,
         audio_routes,
@@ -71,9 +56,11 @@ def create_service_app(
     from .service.store import Store
     from .youtube.ytdlp_client import YtDlpClient
 
+    settings = settings or get_settings()
     # Fails closed without classbeat's key, and on a bad or duplicate UI key (ADR 0005).
     key = load_service_keys(settings.service_key_file, settings.ui_service_key_file)
     url_policy.parse_allowlist(settings.url_allowed_hosts)  # fails on a bad entry
+    warn_deprecated(settings)
     settings.ensure_dirs()
     access_log.install()  # no query string (a lookup's url) in the access log
     app = FastAPI(
@@ -95,21 +82,14 @@ def create_service_app(
     app.include_router(match_routes.router)
     app.include_router(spotify_routes.router)
     app.include_router(audio_routes.router)  # the one route that returns audio (ADR 0005)
-    if settings.ui_enabled:  # SPOTDOWN_UI=on only; last, after every fixed route
-        from .service_ui import router as ui_router
-
-        app.include_router(ui_router)
     app.add_middleware(ServiceKeyMiddleware, key=key)
     return app
 
 
-def create_app(
-    settings: Optional[Settings] = None, dispatch: Optional[Callable[[str], None]] = None
-) -> FastAPI:
-    settings = settings or get_settings()
-    if settings.service_mode:
-        return create_service_app(settings, dispatch)
-    return create_standalone_app(settings)
-
-
-app = create_app()
+def __getattr__(name: str) -> FastAPI:
+    """``app.main:app`` (the image's command): built once, on first access."""
+    if name != "app":
+        raise AttributeError(name)
+    built = create_app()
+    globals()["app"] = built
+    return built

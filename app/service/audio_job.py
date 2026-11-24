@@ -21,13 +21,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict
 
 from ..config import Settings
-from ..schemas import TrackMeta
-from ..transcode import tag
 from ..youtube.ytdlp_client import YtDlpClient
 from . import audio_policy, sandbox
 from . import sandbox_child as child
 from .audio_files import audio_path
 from .failure_policy import JobFailure, Reason, outcome_for
+from .mp3_tags import tag_mp3
 from .store import Store
 from .youtube_source import fetch_youtube
 
@@ -61,8 +60,7 @@ def run_transcode(src: Path, media: str, dest: Path, bitrate: int, limits: sandb
 def _tags(path: Path, request: Dict[str, Any]) -> None:
     """The ID3 title and artists, cleaned when the request was accepted. No ``cover_url``: the
     tagger fetches nothing."""
-    meta = TrackMeta(id=request["video_id"], title=request["title"], artists=request["artists"])
-    tag(path, "mp3", meta)
+    tag_mp3(path, request["title"], request["artists"])
 
 
 def execute_audio_job(
