@@ -181,3 +181,95 @@ def test_the_slot_is_free_again_after_a_refused_upload(ui) -> None:
             client.put("/api/uploads", content=b"x", headers={**OCTET, **UI_HEADERS}).status_code
             == 201
         )
+
+
+def _chunks(*parts: bytes):
+    """A receive that sends ``parts`` and then ends the body."""
+    queue = list(parts)
+
+    async def receive() -> dict:
+        body = queue.pop(0) if queue else b""
+        return {"type": "http.request", "body": body, "more_body": bool(queue)}
+
+    return receive
+
+
+def _stalled():
+    calls: List[int] = []
+
+    async def receive() -> dict:
+        calls.append(1)
+        if len(calls) > 1:
+            await asyncio.sleep(5)
+        return {"type": "http.request", "body": b"z", "more_body": True}
+
+    return receive
+
+
+async def _gone() -> dict:
+    return {"type": "http.disconnect"}
+
+
+def _backend_error(ui: Ui):
+    import httpx
+
+    ui.backend.overrides[("PUT", "/v2/uploads")] = httpx.Response(
+        415, json={"error": {"code": "unsupported_media_type", "message": "x"}}
+    )
+    return _chunks(b"abc")
+
+
+def _backend_down(ui: Ui):
+    import httpx
+
+    async def down(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused")
+
+    ui.backend.transport.handler = down  # type: ignore[attr-defined]
+    return _chunks(b"abc")
+
+
+PATHS = {
+    "success": (lambda ui: _chunks(b"abc", b"def"), 201),
+    "backend error": (_backend_error, 415),
+    "backend unreachable": (_backend_down, 502),
+    "size cap": (lambda ui: _chunks(*[b"y" * 300] * 5), 413),
+    "deadline": (lambda ui: _stalled(), 408),
+    "client disconnect": (lambda ui: _gone, 400),
+}
+
+
+@pytest.mark.parametrize("path", list(PATHS))
+def test_the_slot_is_held_for_the_upload_and_released_on_every_path(ui, path) -> None:
+    """The slot is taken before the first body byte, so a second upload during it is 429; once
+    the relayed PUT /v2/uploads has answered or failed, it is free again."""
+    make, want = PATHS[path]
+    receive = make(ui)
+    held: Dict[str, Any] = {}
+
+    async def main() -> None:
+        async def watching() -> dict:  # a second upload while the first is reading its body
+            if "second" not in held:
+                held["second"] = []
+
+                async def second_send(m: dict) -> None:
+                    held["second"].append(m)
+
+                await ui.app(_scope(ui, []), _gone, second_send)
+            return await receive()
+
+        sent: List[dict] = []
+
+        async def send(m: dict) -> None:
+            sent.append(m)
+
+        await ui.app(_scope(ui, []), watching, send)
+        held["first"] = sent
+
+    asyncio.run(main())
+    assert held["first"][0]["status"] == want, path
+    assert held["second"][0]["status"] == 429, path
+    ui.backend.transport.handler = ui.backend.handle  # type: ignore[attr-defined]
+    ui.backend.overrides.clear()
+    status, _ = _answer(_drive(ui.app, _scope(ui, []), _chunks(b"ok")))
+    assert status == 201, path  # released
