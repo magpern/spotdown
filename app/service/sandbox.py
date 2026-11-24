@@ -17,7 +17,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from . import sandbox_child as child
 from .failure_policy import JobFailure, Reason
@@ -108,6 +108,26 @@ def run_analysis(
         media,
         repr(float(limits.decode_s)),
     ]
+    returncode = run_child(cmd, work, limits, on_start)
+    if returncode != child.EXIT_OK:
+        raise JobFailure(_reason_for(returncode, _children_cpu_s() - cpu_before, limits))
+    try:
+        return json.loads(result.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise JobFailure(Reason.ANALYSIS) from None
+    finally:
+        result.unlink(missing_ok=True)
+
+
+def run_child(
+    cmd: List[str],
+    work: Path,
+    limits: Limits,
+    on_start: Optional[Callable[[subprocess.Popen], None]] = None,
+) -> int:
+    """Runs one sandbox child (``cmd``) under ``limits`` and returns its exit code; JobFailure
+    (``DEADLINE``) past ``limits.wall_s``. The child and anything it started are killed and reaped
+    before this returns, also when ``on_start`` raises."""
     proc = subprocess.Popen(
         cmd,
         cwd=str(PROJECT_ROOT),
@@ -122,20 +142,12 @@ def run_analysis(
     try:
         if on_start is not None:
             on_start(proc)
-        returncode = proc.wait(timeout=limits.wall_s)
+        return proc.wait(timeout=limits.wall_s)
     except subprocess.TimeoutExpired:
         kill_group(proc)
         raise JobFailure(Reason.DEADLINE) from None
     finally:
         kill_group(proc)
-    if returncode != child.EXIT_OK:
-        raise JobFailure(_reason_for(returncode, _children_cpu_s() - cpu_before, limits))
-    try:
-        return json.loads(result.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        raise JobFailure(Reason.ANALYSIS) from None
-    finally:
-        result.unlink(missing_ok=True)
 
 
 def kill_group(proc: subprocess.Popen) -> None:

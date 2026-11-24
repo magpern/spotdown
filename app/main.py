@@ -55,7 +55,15 @@ def create_service_app(
     """Service mode: ``/v2`` behind the service key, and ``/healthz``; the static UI page only with
     ``SPOTDOWN_UI=on`` (ADR 0004). Never ``/files``, ``/api/v1``, Spotify resolution, CORS or API
     docs."""
-    from .service import access_log, cache_routes, errors, match_routes, routes, url_policy
+    from .service import (
+        access_log,
+        audio_routes,
+        cache_routes,
+        errors,
+        match_routes,
+        routes,
+        url_policy,
+    )
     from .service.dispatch import rq_dispatcher
     from .service.service_key import ServiceKeyMiddleware, load_service_key
     from .service.store import Store
@@ -78,6 +86,7 @@ def create_service_app(
     app.include_router(routes.router)
     app.include_router(cache_routes.router)
     app.include_router(match_routes.router)
+    app.include_router(audio_routes.router)  # the one route that returns audio (ADR 0005)
     if settings.ui_enabled:  # SPOTDOWN_UI=on only; last, after every fixed route
         from .service_ui import router as ui_router
 

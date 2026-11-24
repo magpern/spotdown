@@ -31,6 +31,7 @@ from . import (
     url_policy,
 )
 from .alignment_store import Aligning, aligning_for
+from .audio_store import AUDIO_KIND
 from .failure_policy import JobFailure, Reason, outcome_for
 from .store import Store
 from .uploads import upload_path
@@ -172,6 +173,11 @@ def execute_job(
     except Exception as exc:  # noqa: BLE001 - recovery never blocks the job itself
         log.error("sweep failed: %s", type(exc).__name__)
     job = store.get_job(job_id)
+    if job is not None and job["source_kind"] == AUDIO_KIND:  # POST /v2/audio: an mp3, no analysis
+        from .audio_job import execute_audio_job
+
+        lim = limits_from(settings)
+        return execute_audio_job(job_id, settings, store, youtube or YtDlpClient(), limits=lim)
     if job is None or not store.start_job(job_id):
         return
     work = settings.work_dir / job_id
