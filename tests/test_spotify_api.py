@@ -305,3 +305,49 @@ def test_incomplete_spotify_settings_stop_the_start_up(tmp_path: Path, caplog, c
         create_app(service_settings(tmp_path, **overrides))
     for text in (str(caught.value), repr(caught.value), caplog.text):
         assert CLIENT_SECRET not in text
+
+
+@pytest.mark.parametrize(
+    "next_url",
+    [
+        "https://evil.example/v1/playlists/x/tracks?offset=100",
+        "https://api.spotify.com/v1/me/tracks?offset=100",
+        "https://api.spotify.com.evil.example/v1/playlists/x/tracks",
+    ],
+)
+def test_a_next_url_from_a_response_is_never_requested(tmp_path: Path, next_url) -> None:
+    """Pages are built from (kind, id), offset and limit; a ``next`` in a body is a flag only."""
+    fake = FakeWebApi(playlist_size=230)
+    plain = fake.__call__
+
+    def with_next(request: httpx.Request) -> Optional[httpx.Response]:
+        if "playlists" not in request.url.path:
+            return None
+        fake.override = None
+        response = plain(request)
+        fake.override = with_next
+        doc = response.json()
+        if doc.get("next"):
+            doc["next"] = next_url
+        return httpx.Response(200, json=doc)
+
+    fake.override = with_next
+    body = _resolve(_client(tmp_path, fake), f"spotify:playlist:{PLAYLIST_ID}").json()
+    assert body["listed"] == 230
+    urls = [str(r.url) for r in fake.requests]
+    assert next_url not in urls
+    assert all(
+        u == spotify_policy.TOKEN_URL
+        or u.startswith(f"https://api.spotify.com/v1/playlists/{PLAYLIST_ID}/tracks?limit=100&")
+        for u in urls
+    )
+    _only_api(fake)
+
+
+def test_an_album_over_50_tracks_is_paged_to_the_cap(tmp_path: Path) -> None:
+    fake = FakeWebApi(album_size=560)
+    body = _resolve(_client(tmp_path, fake), f"spotify:album:{ALBUM_ID}").json()
+    assert len(body["tracks"]) == 500
+    assert (body["listed"] > 500, body["total"], body["truncated"]) == (True, 560, True)
+    offsets = [r.url.params["offset"] for r in fake.requests if r.url.path.endswith("/tracks")]
+    assert offsets == [str(n) for n in range(50, 550, 50)]
