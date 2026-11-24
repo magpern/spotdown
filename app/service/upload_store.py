@@ -69,11 +69,13 @@ class UploadStore(SqliteBase):
             conn.execute("DELETE FROM uploads WHERE upload_id = ?", (upload_id,))
 
     def stale_uploads(self, now: float, grace_s: float) -> List[str]:
-        """Unused uploads past their TTL, and any upload ``grace_s`` past it (a lost job)."""
+        """Unused uploads past their TTL, and any upload ``grace_s`` past it (a lost job); never
+        the upload of a running job (the stale-job sweep removes it once the job's lease ends)."""
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT upload_id FROM uploads WHERE (consumed = 0 AND expires_at <= ?)"
-                " OR expires_at <= ?",
+                "SELECT upload_id FROM uploads WHERE ((consumed = 0 AND expires_at <= ?)"
+                " OR expires_at <= ?) AND upload_id NOT IN (SELECT upload_id FROM jobs"
+                " WHERE status = 'running' AND upload_id IS NOT NULL)",
                 (now, now - grace_s),
             ).fetchall()
         return [r["upload_id"] for r in rows]

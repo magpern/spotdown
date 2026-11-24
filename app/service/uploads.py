@@ -13,6 +13,7 @@ from __future__ import annotations
 import secrets
 import time
 from pathlib import Path
+from typing import Optional
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -31,11 +32,12 @@ def upload_path(settings: Settings, upload_id: str) -> Path:
     return settings.uploads_dir / upload_id
 
 
-def purge_expired_uploads(settings: Settings, store: Store) -> None:
+def purge_expired_uploads(settings: Settings, store: Store, now: Optional[float] = None) -> None:
     """Deletes unused uploads past their TTL, and uploads whose job was lost (TTL plus the
-    longest a job can run)."""
+    longest a job can run), never one a running job uses. Run on upload requests and by the
+    worker's sweep, so no upload outlives its TTL because no new upload arrives."""
     grace = settings.analysis_wall_timeout_s + settings.url_fetch_timeout_s
-    for upload_id in store.stale_uploads(time.time(), grace):
+    for upload_id in store.stale_uploads(now or time.time(), grace):
         upload_path(settings, upload_id).unlink(missing_ok=True)
         store.delete_upload(upload_id)
 

@@ -1,9 +1,11 @@
-"""Retention of the global (public-source, e.g. YouTube) analyses, their source links and the
-match records inside them (classbeat ADR 0040 §7). Pure: no I/O, the clock is an argument.
+"""Retention of the analyses, their source links and the match records inside them: global
+(public-source, e.g. YouTube; classbeat ADR 0040 §7) and scoped (spotdown#40). Pure: no I/O, the
+clock is an argument.
 
-A global entry holds no user data, so no scope deletion removes it; it is purged instead when it
-has not been read for ``ANALYSIS_UNUSED_TTL_S`` or when its ``analyzer_version`` is no longer the
-current one (it could never be a hit again). A read renews the entry; the renewal is written at
+No scope deletion removes a global entry, and a scope that is never deleted would keep its
+entries for ever, so both are purged when not read for ``ANALYSIS_UNUSED_TTL_S`` (each by its own
+setting, 90 days by default) or when their ``analyzer_version`` is no longer the current one (they
+could never be a hit again). A read renews the entry; the renewal is written at
 most once per ``TOUCH_INTERVAL_S``, so a hot entry is not a write on every read.
 """
 
