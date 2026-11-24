@@ -28,6 +28,9 @@ CAP_MARKER_MISMATCH = 0.5
 CAP_DURATION_REJECTED = 0.55
 CAP_ISRC_DIFFERS = 0.84
 CAP_TITLE_DIFFERS = 0.59
+# A request without a duration or without artists (a Spotify public page that did not state
+# them, spotdown#76): scored on what it has, never on the missing field, and never confident.
+CAP_INCOMPLETE = 0.84
 CAP_EXTRA_WORDS = 0.84  # a candidate title with words the requested one lacks: "Hello Goodbye"
 
 
@@ -35,7 +38,7 @@ CAP_EXTRA_WORDS = 0.84  # a candidate title with words the requested one lacks: 
 class Wanted:
     title: str
     artists: Tuple[str, ...]
-    duration_s: float
+    duration_s: Optional[float]  # None: the caller did not state one
     isrc: Optional[str] = None
 
 
@@ -55,7 +58,7 @@ class Scored:
     candidate: Candidate
     confidence: float
     band: str
-    delta_s: float
+    delta_s: Optional[float]  # None, and check "unknown", without a requested duration
     check: str
     signals: Dict[str, Any] = field(default_factory=dict)
 
@@ -150,16 +153,39 @@ def _marker_mismatch(wanted: Wanted, cand: Candidate) -> List[str]:
     return sorted(m for m in set(want) | set(have) if want.get(m, 0) != have.get(m, 0))
 
 
+def _incomplete_value(
+    wanted: Wanted, title: float, artist: float, channel: float, dur: Optional[float]
+) -> float:
+    """The weighted score over the signals the request can give, rescaled to 0..1: a missing
+    duration or missing artists take no part (they never count as a mismatch)."""
+    parts = [(0.4, title)]
+    if wanted.artists:
+        parts += [(0.25, artist), (0.2, channel)]
+    if dur is not None:
+        parts.append((0.15, dur))
+    return sum(w * v for w, v in parts) / sum(w for w, _ in parts)
+
+
 def score(wanted: Wanted, cand: Candidate) -> Scored:
-    delta = round(cand.duration_s - wanted.duration_s, 3)
-    check = duration_check(delta)
+    delta: Optional[float] = None
+    check = "unknown"
+    dur: Optional[float] = None
+    if wanted.duration_s is not None:
+        delta = round(cand.duration_s - wanted.duration_s, 3)
+        check = duration_check(delta)
+        dur = {"ok": 1.0 - 0.1 * abs(delta) / OK_S, "tolerable": 0.5, "rejected": 0.0}[check]
     want_words, have_words = _title_words(wanted, cand)
     title = _title_similarity(want_words, have_words)
     artist = _artist_score(wanted, cand)
     channel = _channel_score(wanted, cand)
-    dur = {"ok": 1.0 - 0.1 * abs(delta) / OK_S, "tolerable": 0.5, "rejected": 0.0}[check]
-    # Without a channel signal the best possible score is 0.8: a plain upload is never confident.
-    value = 0.4 * title + 0.25 * artist + 0.2 * channel + 0.15 * dur
+    complete = dur is not None and bool(wanted.artists)
+    if complete:
+        assert dur is not None
+        # Without a channel signal the best possible score is 0.8: a plain upload is never
+        # confident.
+        value = 0.4 * title + 0.25 * artist + 0.2 * channel + 0.15 * dur
+    else:
+        value = _incomplete_value(wanted, title, artist, channel, dur)
     want_isrc = norm.normal_isrc(wanted.isrc)
     isrc = None if not (want_isrc and cand.isrc) else want_isrc == cand.isrc
     mismatch = _marker_mismatch(wanted, cand)
@@ -172,6 +198,8 @@ def score(wanted: Wanted, cand: Candidate) -> Scored:
         caps.append(CAP_DURATION_REJECTED)
     if isrc is False:
         caps.append(CAP_ISRC_DIFFERS)
+    if not complete:
+        caps.append(CAP_INCOMPLETE)
     if title < 0.5:
         caps.append(CAP_TITLE_DIFFERS)
     if have_words - want_words:
@@ -194,7 +222,7 @@ def decide(wanted: Wanted, candidates: Sequence[Candidate]) -> Decision:
     Alternates are the next plausible candidates (not ``not_same``), at most two."""
     scored = sorted(
         (score(wanted, c) for c in candidates),
-        key=lambda s: (-s.confidence, abs(s.delta_s), s.candidate.rank),
+        key=lambda s: (-s.confidence, abs(s.delta_s or 0.0), s.candidate.rank),
     )
     if not scored or scored[0].band == "not_same":
         return Decision("not_found", None, [], scored)

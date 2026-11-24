@@ -53,8 +53,8 @@ def create_service_app(
     settings: Settings, dispatch: Optional[Callable[[str], None]] = None
 ) -> FastAPI:
     """Service mode: ``/v2`` behind the service key, and ``/healthz``; the static UI page only with
-    ``SPOTDOWN_UI=on`` (ADR 0004). Never ``/files``, ``/api/v1``, Spotify resolution, CORS or API
-    docs."""
+    ``SPOTDOWN_UI=on`` (ADR 0004). Never ``/files``, ``/api/v1``, the standalone Spotify routes,
+    CORS or API docs (Spotify links resolve through ``/v2/spotify/resolve``)."""
     from .service import (
         access_log,
         audio_routes,
@@ -62,14 +62,17 @@ def create_service_app(
         errors,
         match_routes,
         routes,
+        spotify_routes,
         url_policy,
     )
     from .service.dispatch import rq_dispatcher
-    from .service.service_key import ServiceKeyMiddleware, load_service_key
+    from .service.service_key import ServiceKeyMiddleware, load_service_keys
+    from .service.spotify_client import resolver_from_settings
     from .service.store import Store
     from .youtube.ytdlp_client import YtDlpClient
 
-    key = load_service_key(settings.service_key_file)  # fails closed without a key
+    # Fails closed without classbeat's key, and on a bad or duplicate UI key (ADR 0005).
+    key = load_service_keys(settings.service_key_file, settings.ui_service_key_file)
     url_policy.parse_allowlist(settings.url_allowed_hosts)  # fails on a bad entry
     settings.ensure_dirs()
     access_log.install()  # no query string (a lookup's url) in the access log
@@ -81,11 +84,16 @@ def create_service_app(
     app.state.store = Store(settings.service_db_path, settings.global_reference_ttl_s)
     app.state.dispatch = dispatch or rq_dispatcher(settings)
     app.state.youtube = YtDlpClient()  # unused with ALLOW_YTDLP_SOURCING=false
+    # The Web API with both Spotify settings, the public pages with neither; one alone fails.
+    app.state.spotify = resolver_from_settings(
+        settings.spotify_client_id, settings.spotify_client_secret_file
+    )
     errors.install_handlers(app)
     app.get("/healthz")(_healthz)
     app.include_router(routes.router)
     app.include_router(cache_routes.router)
     app.include_router(match_routes.router)
+    app.include_router(spotify_routes.router)
     app.include_router(audio_routes.router)  # the one route that returns audio (ADR 0005)
     if settings.ui_enabled:  # SPOTDOWN_UI=on only; last, after every fixed route
         from .service_ui import router as ui_router

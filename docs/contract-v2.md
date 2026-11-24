@@ -33,6 +33,12 @@ the service also serves a static page at `/` and a fixed list of its assets, wit
 page holds no data and calls `/v2` with the key the user types in (kept in memory only, sent as
 this same bearer header). Every rule of this contract holds unchanged with it on.
 
+**Two caller keys** ([ADR 0005](adr/0005-two-images-backend-api-and-ui.md), Decision 3):
+`SERVICE_KEY_FILE` (classbeat's, required) and, optionally, `UI_SERVICE_KEY_FILE` (the UI image's).
+Both are secrets files with at least 32 characters, both have the same rights on `/v2`, and every
+request is compared with each configured key in constant time. A missing, unreadable or short UI
+key file, or a UI key equal to classbeat's, stops the start-up.
+
 ## Common rules
 
 - **`Idempotency-Key`** (header): required on `POST /v2/analyses`, `POST /v2/audio` and `PUT /v2/uploads`, optional
@@ -94,7 +100,12 @@ Request:
 }
 ```
 
-`isrc` is optional; `1 <= len(tracks) <= 50`. `explicit` (optional, a JSON boolean; anything else
+`isrc` is optional; `1 <= len(tracks) <= 50`. `duration_s` and `artists` may be left out (an explicit empty `artists` is still `422`)
+(metadata from a Spotify public page, spotdown#76): the track is then scored on what it has,
+never on the missing field, and is never `confident` (at most `uncertain`, 0.84). Without a
+duration, every candidate's `duration_delta_s` is `null` and its `duration_check` is `unknown`,
+and no match record is kept for the chosen video. A request that sends every field is scored
+exactly as before. `explicit` (optional, a JSON boolean; anything else
 is `422 invalid_request`) is the caller's explicit-lyrics flag for the track: it does not change the
 search, the scores or the source-match cache, and is kept with the match record of the chosen video
 as evidence for its analysis' `content.explicit` (see "Explicit content" below). Response `200`:
@@ -147,6 +158,55 @@ The matcher is the `youtube` source's (spotdown#10):
   region-blocked or age-gated video is `source_unavailable`. yt-dlp's "Requested format is not
   available" is `provider_error`: with the https-only audio format it means the provider served
   no such format (an HLS- or SABR-only response after a client change), not that the video is gone.
+
+### `POST /v2/spotify/resolve`
+
+A Spotify track, album or playlist link to track metadata ([ADR 0005](adr/0005-two-images-backend-api-and-ui.md),
+Decision 4; spotdown#76). No audio, no search, no analysis, and **no Spotify credentials
+needed**. Request:
+`{"url": "<link>"}`, where the link is
+`https://open.spotify.com/[intl-xx/]{track|album|playlist}/<22 base62 id>` (the scheme may be
+left out; a query and a fragment are ignored) or `spotify:{track|album|playlist}:<id>`. Anything
+else (another host, a userinfo, a port, another kind) is `422 invalid_request`.
+
+Response `200`:
+
+```json
+{"tracks": [{"spotify_id": "...", "title": "...", "artists": ["..."], "album": "...",
+             "duration_ms": 213000, "isrc": null}],
+ "listed": 1, "total": 1, "truncated": false}
+```
+
+- **Two paths. The backend's settings choose between them, never the request.**
+  - **With `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET_FILE`** (a secrets file, never logged;
+    the `SPOTIFY_CLIENT_SECRET` value is not read here): the official Web API with client
+    credentials. It calls `accounts.spotify.com` and `api.spotify.com` only, pages by offset
+    (never Spotify's `next` URL), and gives full playlists up to the cap, with the ISRC.
+  - **Without both** (the default): Spotify's public pages on `open.spotify.com` only, with no
+    call to the API hosts. These are the embed page `https://open.spotify.com/embed/{kind}/{id}`
+    (title, artists, duration, the track list) and, for a track the embed page does not give,
+    the oEmbed endpoint (the title only).
+  - **Only one of the two set,** or a secret file that is unreadable or empty, stops the start-up.
+- Every URL is built from (kind, id); **the caller's URL is never fetched as given**. No redirect
+  is followed, and any upstream body over 5 MiB is refused.
+- **A page that gives less is not a failure.** A field Spotify does not state is `null` (`album`,
+  `duration_ms`, `isrc`) or `[]` (`artists`). The public pages state no ISRC, so `isrc` is
+  always `null` on that path. `listed` is how many usable tracks the page listed, `total` how many it says there are
+  (`null` when it does not say; `1` for a track). `truncated` is `true` when some were left out:
+  over 500, fewer listed than a stated `total`, or, on the API path, rows left unread after 1000.
+  It is `null` (unknown, never a guessed `false`) when a public page states no count. At most 500
+  tracks, in Spotify's order.
+- **Without credentials, a playlist or album is what the embed page shows.** The embed page lists
+  only its first part (a live check saw 50 rows) and states no count, so the answer cannot say
+  whether more exist: `total` and `truncated` are `null`. **Full playlists need the credentials
+  path.**
+- **Failures:** no usable track at all, an error status (a 404 for an unknown or private item
+  too), a timeout, a redirect or an oversized body is `502 provider_error` with the fixed message `the Spotify request failed` (no
+  upstream text).
+- **Unverified assumption:** the public embed page's shape is read as observed (its
+  `__NEXT_DATA__` JSON). No agent or CI fetches a real Spotify page; the owner's first live try confirms it.
+- The answer feeds `POST /v2/match`: `duration_ms / 1000` is its `duration_s`, which may be left
+  out, as `artists` may be when the list is empty (see below).
 
 ### `PUT /v2/uploads`
 

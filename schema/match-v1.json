@@ -138,16 +138,17 @@
           "minimum": 0
         },
         "duration_delta_s": {
-          "type": "number",
-          "description": "Candidate minus requested duration."
+          "type": ["number", "null"],
+          "description": "Candidate minus requested duration. null when the request stated no duration (duration_check unknown)."
         },
         "duration_check": {
           "enum": [
             "ok",
             "tolerable",
-            "rejected"
+            "rejected",
+            "unknown"
           ],
-          "description": "abs delta <= 2 s ok, <= 5 s tolerable, above 5 s rejected."
+          "description": "abs delta <= 2 s ok, <= 5 s tolerable, above 5 s rejected; unknown when the request stated no duration."
         },
         "cached_analysis_id": {
           "type": "string",

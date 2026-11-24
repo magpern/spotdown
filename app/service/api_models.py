@@ -58,8 +58,11 @@ class MatchTrack(BaseModel):
 
     client_ref: str = Field(min_length=1, max_length=128)
     title: str = Field(min_length=1, max_length=300)
-    artists: List[ArtistName] = Field(min_length=1, max_length=10)
-    duration_s: float = Field(gt=0, le=7200)
+    # artists and duration_s may be left out when the caller has no such metadata (a Spotify
+    # public page that did not state it, spotdown#76): never scored as a mismatch. An explicit
+    # empty list is still refused.
+    artists: Optional[List[ArtistName]] = Field(default=None, min_length=1, max_length=10)
+    duration_s: Optional[float] = Field(default=None, gt=0, le=7200)
     isrc: Optional[str] = Field(default=None, min_length=1, max_length=32)
     # Kept with the match record of the chosen video; evidence for its analysis, never a gate.
     explicit: Optional[StrictBool] = None
