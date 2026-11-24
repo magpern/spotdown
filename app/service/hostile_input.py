@@ -1,5 +1,5 @@
-"""The store-free checks every uploaded file passes, shared by ``PUT /v2/uploads`` and the
-standalone local-file route (ADR 0002, Decision 4). Each check has this one implementation.
+"""The store-free checks every file uploaded to ``PUT /v2/uploads`` passes, which is also the UI
+image's local-file path (ADR 0002 Decision 4, ADR 0005). Each check has this one implementation.
 
 - the declared ``Content-Length`` against the byte cap, before anything is read;
 - streaming the body to a given path under the cap, with its sha256 and first bytes;

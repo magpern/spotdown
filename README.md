@@ -1,80 +1,61 @@
 # spotdown
 
-A stand-alone reference backend with the same architecture the **SpotMate** Android app
-talks to: an async **"resolve metadata → source audio → transcode → serve file"** pipeline.
+spotdown is a music-analysis service: **audio in, structured analysis out** (tempo and beats,
+energy, drops and build-ups, sections, phrases, meter, an explicit tag). It is also classbeat's
+analysis service; see the frozen [integration plan](docs/integration-plan.md) (authorized
+2026-11-20 except the owner decisions it lists; no deploy and no real provider call by agents).
 
-> spotdown is also classbeat's music-analysis service. See the frozen
-> [integration plan](docs/integration-plan.md) (authorized 2026-11-20 except the owner decisions
-> classbeat#1297 to #1299 and spotdown#1 (classbeat#1296 was accepted 2026-11-20); no deploy or real provider call).
+It ships as two images from one repository and one tag
+([ADR 0005](docs/adr/0005-two-images-backend-api-and-ui.md)):
 
-It exposes the same API shape the app expects:
-
-| Endpoint | Purpose |
+| Image | What it is |
 |---|---|
-| `GET /api/Gettrack?spotify_url=…` | Resolve a Spotify track/album/playlist to metadata (no audio) |
-| `POST /api/v1/convert` | Create a conversion job → returns `task_id` (or `download_url` if cached) |
-| `GET /api/v1/tasks/{id}` | Poll job status → `download_url` when done |
-| `GET /files/{name}` | Download the finished file |
-| `GET /api/v1/analyze/{track_id}` | MIR analysis JSON (tempo, beats, energy, drops, segments) of a converted track |
+| `ghcr.io/magpern/spotdown` (`Dockerfile`, `app/`) | **The backend**, API only: `/v2/...` behind a caller key, and `/healthz`. An api process and an RQ worker. |
+| `ghcr.io/magpern/spotdown-ui` (`Dockerfile.ui`, `spotdown_ui/`) | **The UI**, optional: paste a Spotify link or pick a local file, see the YouTube match, the analysis and the mp3. It calls the backend server-side with its own key ([spotdown_ui/README.md](spotdown_ui/README.md)). |
 
 ```
-client → FastAPI ──enqueue──> Redis ──> RQ worker
-                                          1. Spotify Web API  (metadata only)
-                                          2. yt-dlp           (find + download source)   [GATED]
-                                          3. ffmpeg           (transcode mp3/m4a)
-                                          4. mutagen          (tags + cover art)
-                                          5. publish file + cache by track_id
+caller (classbeat) ─┐                          ┌─> Redis ──> RQ worker
+                    ├─ /v2 + key ─> backend api ┤               1. source: upload | url | youtube
+browser ─> UI ──────┘   (server-side)           │               2. sandboxed checks + analysis
+                                                └─ Spotify link resolution, YouTube match, mp3
 ```
 
 ## ⚠️ Legal — read this
 
-**The audio never comes from Spotify.** Spotify streams are DRM-protected, so this server
-(like SpotMate) uses Spotify **only for metadata** — title, artist, album, duration, ISRC.
-To get an actual file, it takes that metadata, **searches YouTube**, and downloads the
-matching audio with `yt-dlp`, then transcodes it. So a "Spotify download" is really:
-*use Spotify to identify the song → fetch the audio from YouTube.*
+**The audio never comes from Spotify.** Spotify is used only for metadata (title, artists,
+duration, ISRC), from its public pages or, with credentials, its Web API. To get audio, the backend
+matches that metadata on YouTube and downloads the matching audio with `yt-dlp`.
 
-**Downloading copyrighted audio you do not have the rights to infringes copyright and
-violates YouTube's and Spotify's Terms of Service.** Operating such a service publicly
-carries real legal exposure.
+**Downloading copyrighted audio you do not have the rights to infringes copyright and violates
+YouTube's and Spotify's Terms of Service.** Operating such a service publicly carries real legal
+exposure.
 
-The **YouTube-sourcing path is ON by default** (`ALLOW_YTDLP_SOURCING=true`, owner decision,
-2026-11-24). Set `ALLOW_YTDLP_SOURCING=false` to turn it off: then a Spotify link resolves metadata
-only and the convert step refuses. Turning it on is the operator's terms-of-service decision.
-**Upgrading:** an unset flag used to mean off and now means on, so set it explicitly (`true` or
-`false`) before you upgrade; `false` keeps the old behaviour. The pipeline
-is identical for lawful inputs, which you drive through the `source_url` field instead — a
-direct URL to content you own / Creative-Commons / public-domain / licensed / your own uploads
-/ podcasts with permission. `source_url` bypasses Spotify and the YouTube search entirely and
-just downloads the URL you give it. You are responsible for how you use this.
+The **YouTube path is ON by default** (`ALLOW_YTDLP_SOURCING=true`, owner decision, 2026-11-24).
+Set `ALLOW_YTDLP_SOURCING=false` to turn every YouTube path off (`422 source_disabled`). Turning it
+on is the operator's terms-of-service decision. **Upgrading:** an unset flag used to mean off and
+now means on, so set it explicitly (`true` or `false`) before you upgrade; `false` keeps the old
+behaviour. Uploads and the `url` source (content you own, Creative Commons, public domain or
+licensed) never touch YouTube. You are responsible for how you use this.
 
-## Service mode (v2 API)
+## The backend
 
-`SERVICE_MODE=true` turns spotdown into an internal analysis service ([contract](docs/contract-v2.md)):
-only `/v2` and `/healthz` are served. Every `/v2` call needs `Authorization: Bearer <service key>`,
-read from the file in `SERVICE_KEY_FILE` (the service refuses to start without it), or the UI
-image's own key from the optional `UI_SERVICE_KEY_FILE` (at least 32 characters, different from
-the first; [ADR 0005](docs/adr/0005-two-images-backend-api-and-ui.md)). `/files`, `/api/v1`, CORS
-and the API docs are off; so is the UI unless you turn it on (below). Spotify links resolve through
-`POST /v2/spotify/resolve`. It needs no Spotify credentials and then reads Spotify's public pages on
-`open.spotify.com`. With `SPOTIFY_CLIENT_ID` and the secret in the file `SPOTIFY_CLIENT_SECRET_FILE`
-it uses the official Web API instead (full playlists, ISRC). One of the two alone stops the start-up.
+The backend has no mode ([contract](docs/contract-v2.md)): it serves only `/v2/...` and
+`/healthz`; every other path is 404, with no CORS, no API docs and no static files. Every `/v2`
+call needs `Authorization: Bearer <key>`: classbeat's key from the file in `SERVICE_KEY_FILE`
+(required: the api refuses to start without it), or the UI image's own key from the optional
+`UI_SERVICE_KEY_FILE` (at least 32 characters, different from the first, the same rights). The
+worker needs no key.
 
-**The UI in service mode (`SPOTDOWN_UI=on`, [ADR 0004](docs/adr/0004-ui-switch-independent-of-service-mode.md)).**
-The UI has its own switch, independent of `SERVICE_MODE`: unset, it is off in service mode and
-follows `SERVE_UI` in standalone mode (`SERVE_UI` alone never turns it on in service mode). With
-`SPOTDOWN_UI=on` a service deployment also serves a static page at `/`: type the service key into
-it (held in the tab's memory only, never stored, put in a URL or logged; sent as the same bearer
-header) and pick a local file. The page uploads it with `PUT /v2/uploads`, analyses it with
-`POST /v2/analyses` in the scope `spotdown_ui`, and shows the analysis (explicit tag, timeline,
-waveform drawn from your own file). Everything above stays: `/v2` needs the key, no audio is ever
-served, `/files` and the standalone routes are 404, no CORS, the audio is deleted after the job.
-Turn it on only where you would expose that page; the container image leaves it off. Leave
-`SPOTDOWN_UI` unset rather than empty: an empty value (`SPOTDOWN_UI=`, for example from
-`${SPOTDOWN_UI:-}` in a compose file) is not a boolean, and the app refuses to start. The key input
-asks browsers not to save the key (`autocomplete="new-password"`); a password manager that saves it
-anyway stores it outside the page's control.
+`SERVICE_MODE`, `SERVE_UI` and `SPOTDOWN_UI` are **deprecated and ignored** for one release: an
+old compose or `.env` file still starts, nothing turns on, and the api logs one warning naming
+them (never a value). Remove them; the next release drops them.
 
+- `POST /v2/spotify/resolve`: a Spotify track, album or playlist link to its tracks. It needs no
+  Spotify credentials and then reads Spotify's public pages on `open.spotify.com`. With
+  `SPOTIFY_CLIENT_ID` and the secret in the file `SPOTIFY_CLIENT_SECRET_FILE` it uses the official
+  Web API instead (full playlists, ISRC). One of the two alone stops the start-up.
+- `POST /v2/audio` and `GET /v2/audio/{id}`: the mp3 of a matched YouTube video, by the owner's
+  direction (ADR 0005); kept `AUDIO_TTL_S`. Every other route never returns audio.
 - `PUT /v2/uploads?cache_scope=…`: stream mp3, mp4 or wav bytes (`application/octet-stream`, capped
   by `MAX_UPLOAD_BYTES`, 60 MiB by default); the whole structure is checked and a malformed,
   truncated or mixed file is refused (`415`) with nothing kept; kept for one job or `UPLOAD_TTL_S`.
@@ -108,51 +89,60 @@ anyway stores it outside the page's control.
   deliberate per-deployment decision (for classbeat: the owner's, classbeat#1296). Tests and CI never
   call YouTube: yt-dlp is faked in every test.
 
-## Backend-only (no web UI)
+## The UI
 
-Set `SERVE_UI=false` (or `SPOTDOWN_UI=off`, which wins) in `.env` to run API-only — the JSON endpoints, `/files`,
-`/healthz` and `/docs` all stay; only the HTML page at `GET /` is withheld
-(`GET /` then returns `{"service":"spotdown","ui":"disabled"}`). Useful when
-another frontend or service consumes the API.
+The UI image is a small web service of its own: the page, a token session (ADR 0003), and the
+`Host`, origin and content-type checks; it holds no `app/`, yt-dlp, librosa or ffmpeg, keeps no
+audio or analysis, and its key never reaches the browser. Analyses go to the fixed scope
+`spotdown_ui`. Its settings and routes are in [spotdown_ui/README.md](spotdown_ui/README.md).
 
-## Local files in the web UI
+## Install from the Docker images (production)
 
-On Linux and macOS (and in the container) the page also takes a local mp3, m4a or wav file (ADR
-0002). It goes through the same checks as service-mode uploads: the container is recognised by its
-bytes and checked whole, `MAX_UPLOAD_BYTES` caps it, and the analysis runs in the sandbox. One file
-is analysed at a time per installation (a second gets `429`), and reading an upload must finish
-within `STANDALONE_UPLOAD_READ_S` (150 s). Like every standalone route it needs a session and passes
-the sign-in checks ("Signing in": `Host`, `Origin`, `X-Spotdown-UI`); its one content type is
-`application/octet-stream`. No file name is
-kept, the file is deleted after the analysis, and the waveform is drawn from the file in the
-browser. The result is cached by the file's sha256 and is read again only by uploading the same
-bytes.
+Both images are private on GHCR (`linux/amd64`, `linux/arm64`; tags `X.Y.Z`, `X.Y` and
+`sha-<short>`, never `latest`). Each GitHub Release carries `compose.yaml` (both images, pinned
+through `SPOTDOWN_VERSION`), the overlays `compose.no-ui.yaml` (a deploy without the UI, which
+needs only classbeat's key) and `compose.spotify.yaml` (optional Spotify credentials), the two env
+examples and `SHA256SUMS`. The keys are Docker secret files; the backend publishes no port, and the
+UI publishes 8000 on the loopback by default.
+[docs/runbooks/docker-image.md](docs/runbooks/docker-image.md) covers install, settings, the UI's
+bind address, upgrading (also from a `SERVICE_MODE` compose file) and pinning.
 
-## Install from the Docker image (production)
+## Local development
 
-spotdown is delivered as the private image `ghcr.io/magpern/spotdown` (`linux/amd64`,
-`linux/arm64`; tags `X.Y.Z`, `X.Y` and `sha-<short>`, never `latest`). Each GitHub Release carries a
-`compose.yaml` pinned through `SPOTDOWN_VERSION`, a `spotdown.env.example` and `SHA256SUMS`. The
-image runs as uid 10001 in service mode, the service key is a Docker secret file, data lives in one
-volume, and no port is published: [docs/runbooks/docker-image.md](docs/runbooks/docker-image.md)
-covers install, settings, upgrade and pinning.
-
-## Run it (development)
+With Docker, both images from the checkout (the UI on `127.0.0.1:8000`):
 
 ```bash
-cp .env.example .env         # fill in SPOTIFY_CLIENT_ID/SECRET for full metadata (optional)
+mkdir -p secrets && umask 077
+# Two different keys, owned by the images' user (uid 10001): the ui runs as that user and reads
+# its key from the bind-mounted file, which keeps the host's owner and mode.
+for name in spotdown_service_key spotdown_ui_backend_key; do   # classbeat's key, the UI's key
+  openssl rand -hex 32 > "secrets/$name.new"
+  sudo install -m 0400 -o 10001 -g 10001 "secrets/$name.new" "secrets/$name"
+  rm "secrets/$name.new"
+done
+cp .env.example .env                                      # optional
 docker compose up --build
+docker compose exec ui cat /data/ui_token                 # sign in at http://127.0.0.1:8000/login
 ```
 
-Or locally without Docker (needs `ffmpeg` on PATH + a running Redis):
+Without Docker (Python 3.11, `ffmpeg` on PATH and a running Redis), the processes run as you, so
+create the key files as yourself (`openssl rand -hex 32 > secrets/spotdown_service_key`) instead
+of with `install -o 10001`:
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
 redis-server &                                   # or: docker run -p127.0.0.1:6379:6379 redis
-uvicorn app.main:app --host 127.0.0.1 --no-proxy-headers &   # API on 127.0.0.1:8000
-rq worker -u redis://localhost:6379/0 spotdown   # worker (separate terminal)
+export SERVICE_KEY_FILE=secrets/spotdown_service_key
+uvicorn app.main:app --host 127.0.0.1 --port 8001 --no-proxy-headers &   # the backend
+rq worker -u redis://localhost:6379/0 spotdown   # the worker (separate terminal)
 ```
+
+Then call it, for example `curl -H "Authorization: Bearer $(cat secrets/spotdown_service_key)"
+http://127.0.0.1:8001/v2/jobs/job_x` (404 `not_found`). The UI runs with
+`SPOTDOWN_BACKEND_URL=http://127.0.0.1:8001 SPOTDOWN_BACKEND_KEY_FILE=secrets/spotdown_ui_backend_key
+UI_DATA_DIR=./data-ui uvicorn --factory spotdown_ui.app:create_app --host 127.0.0.1` with
+`UI_SERVICE_KEY_FILE=secrets/spotdown_ui_backend_key` set for the backend.
 
 > **macOS note:** RQ's default worker `fork()`s a work-horse, which macOS aborts
 > (SIGABRT/signal 6) when the child touches Objective-C frameworks. Locally, run the
@@ -163,120 +153,14 @@ rq worker -u redis://localhost:6379/0 spotdown   # worker (separate terminal)
 > ```
 > The Docker/Linux worker in `docker-compose.yml` is unaffected and uses the default worker.
 
-## Signing in (standalone mode)
-
-Every standalone route (the UI, `/api/...`, `/files/...` and `/docs`) needs a session; only
-`/login` and `/healthz` are open ([ADR 0003](docs/adr/0003-standalone-exposure.md)). Compose
-publishes the app on `127.0.0.1` only; set `SPOTDOWN_PUBLISH_HOST` to widen that, and for any use
-beyond loopback serve TLS and set `UI_PUBLIC_ORIGIN=https://...`. Redis is not published
-(`docker compose exec redis redis-cli`).
-
-- **The token.** On first start spotdown generates one and prints the **path** of its file (never
-  the token): `./data/standalone_token`. Read it with
-  `docker compose exec api cat /app/data/standalone_token`. On a Linux host the container runs as
-  root, so the bind-mounted file is root-owned with mode `0600`: use `sudo cat
-  data/standalone_token` or the `docker compose exec` line. Open `http://localhost:8000/login`
-  and paste it; the session lasts 12 hours.
-- **Your own token.** Set `STANDALONE_ACCESS_TOKEN_FILE` to a file holding 32 to 512 printable
-  ASCII characters without spaces, `"` or `\`. Make one with `openssl rand -hex 32`.
-- **Rotation.** Delete `data/standalone_token` (or edit your own file) and restart. Every session
-  ends. spotdown never overwrites an existing token file: a broken one gives `503` until you
-  delete it and restart.
-- **Leftover files.** `data/standalone_token.tmp-*` files are left by a crash during start-up.
-  They are never read; delete them by hand while spotdown is stopped.
-- **Other login clients.** `POST /login` takes the body `{"token":"..."}`, which must stay under
-  1 KiB. A client whose JSON encoder escapes extra characters (PHP escapes `/` as `\/`, Go escapes
-  `<` as `\u003c`) must send the token unescaped or use a token without those characters. The
-  generated hex token needs no escaping.
-- **One worker.** The login rate limit (five wrong tokens a minute, then a minute closed) is kept
-  per process. Run standalone with one uvicorn worker, as the `Dockerfile` does: with
-  `--workers N` it allows N × 5 attempts a minute.
-- **New unsafe routes.** Every `POST`, `PUT`, `PATCH` or `DELETE` is refused with `415` unless its
-  method and path are listed with their one content type in `UNSAFE_CONTENT_TYPES`
-  (`app/session_policy.py`). The local-file route (`POST /api/v1/analyze-upload`) is listed there
-  with `application/octet-stream`.
-
-## Try it (lawful path — a direct source URL)
-
-```bash
-O='Origin: http://localhost:8000'; U='X-Spotdown-UI: 1'; J='Content-Type: application/json'
-umask 077   # the login body and the cookie file stay readable by you only
-# 0) sign in once. The token goes into a private file, never onto a command line (where other
-#    users could see it in the process list). The file is root-owned on Linux, hence `sudo`;
-#    or read it with `docker compose exec -T api cat /app/data/standalone_token`.
-{ printf '{"token":"'; sudo cat data/standalone_token | tr -d '\n'; printf '"}'; } > login.json
-curl -s -c cookies -H "$O" -H "$U" -H "$J" localhost:8000/login --data-binary @login.json
-rm login.json   # the cookie in ./cookies lasts 12 h; delete it when you are done
-
-# 1) kick off a conversion of content you have the right to download
-curl -s -b cookies -H "$O" -H "$U" -H "$J" localhost:8000/api/v1/convert \
-  -d '{"source_url":"https://example.com/my-own-audio.wav","format":"mp3","bitrate":320}'
-# -> {"status":"queued","task_id":"src_...-mp3-320", ...}
-# (source_url is an API-only path; the web UI offers the Spotify-link flow and local files.)
-
-# 2) poll until done
-curl -s -b cookies -H "$U" localhost:8000/api/v1/tasks/<task_id>
-# -> {"status":"done","download_url":"http://localhost:8000/files/src_....mp3"}
-
-# 3) download
-curl -O -J -b cookies localhost:8000/files/<name>
-```
-
-Resolving metadata from a Spotify URL always works (needs API creds for album/playlist):
-
-```bash
-curl -s -b cookies -H "$U" 'localhost:8000/api/Gettrack?spotify_url=https://open.spotify.com/track/XXXX'
-```
-
-## How it maps to what SpotMate does
-
-- The app POSTs to `/api/v1/convert`; the **server** returns `download_url` **or** a
-  `task_id` (the app's string `Convert response missing download_url/task_id`).
-- If a `task_id`, the app polls `/api/v1/tasks/{id}` until the server finishes.
-- The finished file is fetched over HTTP by the app's `background_downloader` and stored in
-  a local SQLite `downloads` table keyed by `track_id` — this server dedupes by `track_id`
-  the same way (`idx_downloads_track_id`).
-
-## Music analysis (`GET /api/v1/analyze/{track_id}`)
-
-Runs [librosa](https://librosa.org) MIR on the highest-bitrate converted file for the track
-and returns JSON you can build a cycling class (or anything beat-timed) from. Cached per
-`analyzer_version` and v1 response version (a change to this response recomputes once);
-pass `?refresh=true` to recompute. First call per process is slow
-(~10s) while numba JIT-compiles; cached calls are instant.
-
-Fields:
-- `bpm` + `bpm_candidates` — tempo, with ½/2× alternates (beat trackers octave-error).
-- `beat_grid`, `bars`, `downbeat_phase`, `meter_assumed` — the grid to snap intervals to.
-  `meter_assumed` is the estimated meter (`"3/4"` or `"4/4"`; `"4/4"` also when no meter could be
-  claimed, then `bars` is the old 4/4 grid on the strongest beat). With a claim, `bars` has one
-  entry per bar with a `confidence` (at most 0.4) and the bars restart at the start of the music
-  and at each drop, so `downbeat_phase` (the first bar's beat index modulo the meter) no longer
-  describes one grid for the whole track; use `bars[].start`.
-- `energy_curve` — per-second `full` / `percussive` / `low`-band energy (0–1). Percussive and
-  low-band expose kick/bass changes that full-band RMS misses on loud masters.
-- `drops` — energy rising-edges (breakdown → full), snapped to the beat; your sprint/accel cues.
-- `build_ups` — the climb before each drop; where to ramp effort up.
-- `segments` — beat-synchronous sections with `energy_full`, `energy_struct`, a repetition
-  `group` (repeats share an id), and a **heuristic** `label` (the document's
-  vocabulary: intro/verse/chorus/bridge/breakdown/outro, or `unlabelled`).
-  `label_method: "heuristic"` — reason from the numbers, not the label.
-
-**Timeline caveat (important):** the audio is a YouTube match, so its timeline may not equal
-Spotify's. Every timestamp is on the *analyzed file*. The result reports
-`analyzed_duration_s`, `spotify_duration_s`, `duration_delta_s`, `leading_silence_s` and
-`timeline_matches_spotify` (true when |delta| ≤ 1s). If you drive the class from Spotify
-playback and `timeline_matches_spotify` is false, the cues will be offset — prefer a
-`- Topic` source (the matcher already favors these; they align to Spotify within ~1s) or
-play the downloaded file itself.
+Checks: `ruff check . && ruff format --check . && pyright`, and `pytest` on the files you changed
+(AGENTS.md, "Developer commands"). Tests never touch the network.
 
 ## Things to harden before anything real
 
-- **Matching accuracy** (`app/sources.py`, standalone): match on duration (and ideally ISRC), not
-  just title+artist, or you get wrong/live/sped-up versions. Service mode has a scored matcher
-  (`app/youtube/match_calc.py`) with version-marker, channel, ISRC and duration signals.
-- **Caching**: already keyed by `track_id`; convert once, serve many.
-- **yt-dlp upkeep** (`app/sources.py`, `app/youtube/ytdlp_client.py`): the real operational
+- **Matching accuracy**: the scored matcher (`app/youtube/match_calc.py`) uses version-marker,
+  channel, ISRC and duration signals; a wrong match still gives the wrong audio.
+- **yt-dlp upkeep** (`app/youtube/ytdlp_client.py`): the real operational
   burden. YouTube actively fights downloaders, so expect to update `yt-dlp` constantly. Two
   failures you *will* hit:
   - **"Requested format is not available"** → yt-dlp too old to decode YouTube's current
@@ -288,26 +172,22 @@ play the downloaded file itself.
     PO token. This is inherent to sourcing from YouTube, not a one-time fix.
 - **Python**: yt-dlp has deprecated Python 3.9. The Docker image uses 3.11; if you run the
   local venv on 3.9 it still works for now but will stop — use 3.11+.
-- **Abuse/rate limiting** beyond the login limit, and **file cleanup/TTL** (expire `data/files`).
-- **Storage/CDN**: swap `app/storage.py` for S3 + pre-signed, expiring URLs.
+- **Abuse and rate limiting** of the UI beyond its login limit.
 
 ## Layout
 
 ```
-app/
-  main.py        FastAPI routes (Gettrack, convert, tasks, files)
-  config.py      env-driven settings
-  schemas.py     pydantic models
-  spotify.py     Spotify Web API metadata (+ oEmbed fallback)
-  sources.py     yt-dlp sourcing (direct URL, or gated Spotify-match search)
-  transcode.py   ffmpeg transcode + mutagen tagging
-  storage.py     publish file -> public URL
-  db.py          SQLite cache (downloads table, track_id)
-  queue.py       Redis + RQ
-  jobs.py        the worker pipeline
-  youtube/       service-mode matcher (pure scoring) and the yt-dlp driver
-  service/       service mode (/v2): routes, worker, caches, sandbox
-  healthcheck.py the container healthcheck (api /healthz, worker Redis ping)
-deploy/          the production compose file and settings example (release assets)
+app/                the backend image
+  main.py           create_app: /v2 behind the key, /healthz; nothing else
+  config.py         env-driven settings (the deprecated mode settings are ignored)
+  queue.py          Redis + RQ (queue "spotdown")
+  healthcheck.py    the container healthcheck (api /healthz, worker Redis ping)
+  core/             the core analyser (pure, on the file's own clock)
+  alignment_calc.py the alignment layer (pure)
+  youtube/          the matcher (pure scoring) and the yt-dlp driver
+  service/          /v2: routes, worker, caches, sandbox, sources, Spotify, mp3
+  quality/          the quality harness
+spotdown_ui/        the UI image
+deploy/             the production compose file, its overlays and the env examples (release assets)
 scripts/release-assets.sh  the release's asset list and SHA256SUMS
 ```

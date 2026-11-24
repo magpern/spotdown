@@ -10,8 +10,8 @@ import pytest
 
 from app.service import audio_files, sweep
 from app.service.audio_job import execute_audio_job
+from app.service.mp3_argv import mp3_argv
 from app.service.worker import execute_job, limits_from
-from app.transcode import mp3_argv
 
 from .audio_helpers import REF, VIDEO, AudioStack
 from .media_fixtures import has_ffmpeg, real_m4a, real_mp3

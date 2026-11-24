@@ -1,7 +1,8 @@
 # ADR 0005: two images, a backend that is API only and a separate UI
 
-**Status:** Proposed (Architect, 2026-11-24). It becomes Accepted when the Opus review of its PR
-passes (spotdown#75).
+**Status:** Accepted (2026-11-24). Proposed by the Architect on 2026-11-24; its PR (#80, for
+spotdown#75) passed its Opus review and was merged. *Note, 2026-11-24 (spotdown#79): only this
+status line changed; no decision below changed.*
 
 **Owner direction (2026-11-24):** "Spotdown shall have the option to paste in a Spotify link or
 playlist, just like before, then it downloads the mp3 through matching with YouTube. Then it does its

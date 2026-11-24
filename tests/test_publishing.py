@@ -39,13 +39,15 @@ def _ports(lines: List[str]) -> List[str]:
     return values
 
 
-def test_compose_publishes_the_api_on_loopback_and_redis_not_at_all() -> None:
+def test_compose_publishes_only_the_ui_on_loopback() -> None:
+    """The backend has no browser surface (ADR 0005): in the development file only the ui
+    publishes a port, on the loopback unless SPOTDOWN_PUBLISH_HOST widens it."""
     services = _services()
-    assert {"api", "redis", "worker"} <= set(services)
-    api = _ports(services["api"])
-    assert api and all(p.startswith("${SPOTDOWN_PUBLISH_HOST:-127.0.0.1}:") for p in api), api
-    assert not any(re.match(r"\s+ports:", line) for line in services["redis"])
-    assert not any(re.match(r"\s+ports:", line) for line in services["worker"])
+    assert {"api", "redis", "worker", "ui"} <= set(services)
+    ui = _ports(services["ui"])
+    assert ui and all(p.startswith("${SPOTDOWN_PUBLISH_HOST:-127.0.0.1}:") for p in ui), ui
+    for name in ("api", "redis", "worker"):
+        assert not any(re.match(r"\s+ports:", line) for line in services[name]), name
 
 
 def test_the_dockerfile_ignores_forwarded_headers() -> None:

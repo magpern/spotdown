@@ -1,4 +1,4 @@
-"""Drive token creation (app/token_store.py) step by step: every file operation it makes goes
+"""Drive token creation (spotdown_ui/token_store.py) step by step: each of its file operations goes
 through a proxy of ``os`` that can pause the calling worker before the operation, fail it, or
 record it. Workers are threads; a step boundary is forced by holding a worker at its next hook
 until the test releases it."""
@@ -11,7 +11,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from app import token_store
+from spotdown_ui import token_store
 
 HOOKED = ("open", "write", "fsync", "link", "unlink")
 
@@ -151,4 +151,4 @@ def link_unsupported(op: str, args: tuple) -> None:
 
 
 def tmp_files(directory: Path) -> List[Path]:
-    return sorted(directory.glob("standalone_token.tmp-*"))
+    return sorted(directory.glob("ui_token.tmp-*"))

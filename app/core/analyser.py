@@ -1,8 +1,8 @@
 """The core analyser: a mono signal in, features on the file's own clock out.
 
 No source, no reference clock and no consumer: every time is seconds from the start of the decoded
-signal. The standalone v1 endpoint (``app.analyze``) and the service mode (``app.service``) both
-format this result; neither feeds anything back into it.
+signal. The backend (``app.service``) formats this result and feeds nothing back into
+it.
 """
 
 from __future__ import annotations

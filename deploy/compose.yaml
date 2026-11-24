@@ -5,11 +5,17 @@
 #
 # - The image is pinned: SPOTDOWN_VERSION is required (X.Y.Z, or X.Y to follow patch releases)
 #   and there is no `latest`.
-# - No port is published. Callers (classbeat) reach http://spotdown-api:8000 by joining the
-#   external network named by SPOTDOWN_SERVICE_NETWORK; Redis is on a network only the api and
-#   the worker share.
-# - The service key is a Docker secret file, mounted into the api only, never an env value.
-# - Everything else is read-only: data lives in the `spotdown-data` volume, caches in a tmpfs.
+# - Two images (ADR 0005): the backend (api and worker) and the UI (ui), at the same version.
+# - The backend publishes no port. Callers (classbeat) reach http://spotdown-api:8000 by joining
+#   the external network named by SPOTDOWN_SERVICE_NETWORK, as the ui does; Redis is on a network
+#   only the api and the worker share.
+# - The ui publishes port 8000 for the owner's reverse proxy, on SPOTDOWN_PUBLISH_HOST (the
+#   loopback by default; the runbook shows the LAN bind). The app never reads that setting.
+# - Keys are Docker secret files, never env values: classbeat's service key into the api only, the
+#   UI's backend key into the ui and the api only.
+# - Without the UI: add `-f compose.no-ui.yaml`; then only classbeat's key file is needed. With
+#   Spotify credentials: add `-f compose.spotify.yaml` and set SPOTIFY_CLIENT_ID in spotdown.env.
+# - Everything else is read-only: data lives in volumes, caches in a tmpfs.
 
 name: spotdown
 
@@ -56,16 +62,15 @@ services:
 
   api:
     <<: *spotdown
-    # The fixed names below override spotdown.env: service mode, the key file and Redis are not
-    # tunables.
+    # The fixed names below override spotdown.env: the key files and Redis are not tunables.
     environment:
-      SERVICE_MODE: "true"
-      SERVE_UI: "false"
       SERVICE_KEY_FILE: /run/secrets/spotdown_service_key
+      UI_SERVICE_KEY_FILE: /run/secrets/spotdown_ui_backend_key
       DATA_DIR: /data
       REDIS_URL: redis://redis:6379/0
     secrets:
       - spotdown_service_key
+      - spotdown_ui_backend_key
     networks:
       backend: {}
       service:
@@ -75,8 +80,6 @@ services:
   worker:
     <<: *spotdown
     environment:
-      SERVICE_MODE: "true"
-      SERVE_UI: "false"
       DATA_DIR: /data
       REDIS_URL: redis://redis:6379/0
     command: ["rq", "worker", "--url", "redis://redis:6379/0", "spotdown"]
@@ -88,23 +91,62 @@ services:
       retries: 3
     networks: [backend, egress]
 
+  ui:
+    image: ghcr.io/magpern/spotdown-ui:${SPOTDOWN_VERSION:?set SPOTDOWN_VERSION to a released version, e.g. 1.2.3}
+    restart: unless-stopped
+    # Optional tunables (UI_ALLOWED_HOSTS, UI_PUBLIC_ORIGIN, ...): spotdown-ui.env.example lists
+    # them. It never holds a key or the access token.
+    env_file:
+      - path: ./spotdown-ui.env
+        required: false
+    # The fixed names below override spotdown-ui.env: the one backend and its key file.
+    environment:
+      SPOTDOWN_BACKEND_URL: http://spotdown-api:8000
+      SPOTDOWN_BACKEND_KEY_FILE: /run/secrets/spotdown_ui_backend_key
+      UI_DATA_DIR: /data
+    secrets:
+      - spotdown_ui_backend_key
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - spotdown-ui-data:/data
+    # Loopback by default; a LAN address for a reverse proxy on another host (runbook).
+    ports:
+      - "${SPOTDOWN_PUBLISH_HOST:-127.0.0.1}:8000:8000"
+    networks: [service, ui-published]
+    depends_on:
+      api:
+        condition: service_healthy
+
 networks:
   # Redis, the api and the worker; no route out.
   backend:
     internal: true
   # The callers' network, created by the operator (`docker network create --internal spotdown`)
-  # and joined by classbeat. Only the api is on it.
+  # and joined by classbeat. The api and the ui are on it.
   service:
     external: true
     name: ${SPOTDOWN_SERVICE_NETWORK:-spotdown}
   # Outbound for the `url` and (when the operator enables it) `youtube` sources only.
   egress: {}
+  # The ui's published port only (an internal network cannot publish one). The UI calls nothing
+  # but SPOTDOWN_BACKEND_URL (ADR 0005 Decision 7).
+  ui-published: {}
 
 volumes:
   spotdown-data:
+  spotdown-ui-data:
   redis-data:
 
 secrets:
   spotdown_service_key:
     # Owned by uid 10001, mode 0400 (the runbook's `install` line). Never committed.
     file: ${SPOTDOWN_SERVICE_KEY_FILE:-./secrets/spotdown_service_key}
+  spotdown_ui_backend_key:
+    # The UI's own caller key (ADR 0005 Decision 3), different from the one above. Owned by uid
+    # 10001, mode 0400. Never committed. Not needed with compose.no-ui.yaml.
+    file: ${SPOTDOWN_UI_KEY_FILE:-./secrets/spotdown_ui_backend_key}

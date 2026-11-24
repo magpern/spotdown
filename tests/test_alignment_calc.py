@@ -84,11 +84,6 @@ def test_equal_offsets_never_compete() -> None:
     assert result.confidence == 1.0
 
 
-def test_the_standalone_hypotheses_are_unchanged() -> None:
-    assert calc.offset_hypotheses(200.0, 1.5, 197.5, 197.5) == (True, 1.5, 0.0)
-    assert calc.offset_hypotheses(200.0, 1.5, 197.5, None) == (None, 1.5, None)
-
-
 def test_a_zero_trimmed_offset_is_never_negative_zero() -> None:
     result = calc.align(200.0, 0.0, 199.0, 199.0)
     trimmed = result.hypotheses[1]

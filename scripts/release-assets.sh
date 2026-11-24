@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The files a spotdown GitHub Release carries for an image-only install (docs/runbooks/docker-image.md):
 # the one list the release workflow and the tests read. A server needs these, the image and its own
-# secrets/ (the service key file), never a clone.
+# secrets/ (the key files), never a clone.
 #
 #   scripts/release-assets.sh list          one "<source path> <asset name>" line per asset
 #   scripts/release-assets.sh build DIR     copy the assets into a new, empty DIR and write DIR/SHA256SUMS
@@ -16,7 +16,10 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 assets=(
   "deploy/compose.yaml compose.yaml"
+  "deploy/compose.no-ui.yaml compose.no-ui.yaml"
+  "deploy/compose.spotify.yaml compose.spotify.yaml"
   "deploy/spotdown.env.example spotdown.env.example"
+  "deploy/spotdown-ui.env.example spotdown-ui.env.example"
 )
 
 case "${1:-}" in

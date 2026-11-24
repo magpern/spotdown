@@ -14,7 +14,10 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "release-assets.sh"
 EXPECTED = {
     "compose.yaml": "deploy/compose.yaml",
+    "compose.no-ui.yaml": "deploy/compose.no-ui.yaml",
+    "compose.spotify.yaml": "deploy/compose.spotify.yaml",
     "spotdown.env.example": "deploy/spotdown.env.example",
+    "spotdown-ui.env.example": "deploy/spotdown-ui.env.example",
 }
 
 

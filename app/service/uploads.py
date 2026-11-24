@@ -1,9 +1,8 @@
 """``PUT /v2/uploads``: stream audio bytes to a temporary file under a size cap.
 
 The body is read chunk by chunk and refused once it passes ``MAX_UPLOAD_BYTES``; only mp3, mp4 and
-wav are kept, recognised by their bytes and then checked whole (``hostile_input``, shared with
-the standalone local-file route: truncated, malformed or mixed files and insane streams are
-refused). No file name is kept. A refused upload
+wav are kept, recognised by their bytes and then checked whole (``hostile_input``: truncated,
+malformed or mixed files and insane streams are refused). No file name is kept. A refused upload
 leaves no file and no row. The file is deleted after the job that uses it, or once its TTL passes
 unused.
 """

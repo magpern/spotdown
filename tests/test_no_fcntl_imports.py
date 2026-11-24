@@ -1,5 +1,4 @@
-"""Every test module imports without ``fcntl`` (simulated), so the suite still loads on Windows;
-the local-file route then is not registered (ADR 0002, Decision 3, "POSIX only")."""
+"""Every test module imports without ``fcntl`` (simulated), so the suite still loads on Windows."""
 
 from __future__ import annotations
 
@@ -22,10 +21,6 @@ for path in sorted(pathlib.Path("tests").glob("test_*.py")):
         pass  # pytest.importorskip("fcntl"): the module skips, as on Windows
     except Exception as exc:
         failed.append(f"{path.name}: {type(exc).__name__}: {exc}")
-from app import upload_route, upload_slot
-from app.main import app
-assert not upload_slot.AVAILABLE
-assert upload_route.PATH not in [getattr(r, "path", "") for r in app.routes]
 print("\n".join(failed) if failed else "ok")
 """
 

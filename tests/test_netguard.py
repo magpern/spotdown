@@ -4,15 +4,7 @@ import socket
 
 import pytest
 
-from app.schemas import TrackMeta
-
 from .netguard import NetworkBlockedError
-
-
-def test_track_meta_builds() -> None:
-    meta = TrackMeta(id="t1", title="Song")
-    assert meta.id == "t1"
-    assert meta.title == "Song"
 
 
 def test_non_loopback_connect_is_blocked() -> None:
