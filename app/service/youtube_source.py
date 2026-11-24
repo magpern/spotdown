@@ -83,9 +83,7 @@ def fetch_youtube(
     choice = store.get_choice(video_id, now)
     match_explicit = None
     if choice is not None:
-        source["match"] = choice[0]
-        expected = (choice[1], "match")
-        match_explicit = store.choice_explicit(video_id, now)
+        source["match"], expected, match_explicit = choice[0], (choice[1], "match"), choice[2]
     else:
         expected = (got.metadata_duration_s, "metadata")
     fetch_s = time.monotonic() - t0

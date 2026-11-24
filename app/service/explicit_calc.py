@@ -23,6 +23,7 @@ CALLER = "caller"
 CALLER_MATCH = "caller_match"
 AGE_LIMIT = "youtube_age_limit"
 ADULT_AGE = 18
+MAX_AGE = 99  # the schema's maximum for a youtube_age_limit value
 # How far each piece of evidence is trusted, by (source, says yes). First documented estimates.
 WEIGHTS: Dict[tuple, float] = {
     (CALLER, True): 0.9,
@@ -41,7 +42,7 @@ def _flag(value: Any) -> Optional[bool]:
 def _age(value: Any) -> Optional[int]:
     if isinstance(value, bool) or not isinstance(value, int):
         return None
-    return value if value >= ADULT_AGE else None
+    return value if ADULT_AGE <= value <= MAX_AGE else None
 
 
 def gather(
