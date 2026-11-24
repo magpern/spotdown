@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 60 * 1024 * 1024
     url_fetch_timeout_s: float = 120.0
     upload_ttl_s: int = 3600
+    # POST /v2/audio (ADR 0005): an mp3 is kept this long after the last job that handed it out,
+    # then swept. At least 10 minutes, so a caller can fetch what its job made.
+    audio_ttl_s: float = Field(default=86400.0, ge=600)
     # Analysis sandbox rlimits (inside the container's own ceiling).
     analysis_max_memory_mb: int = 3072
     analysis_max_cpu_s: int = 600
@@ -136,6 +139,11 @@ class Settings(BaseSettings):
         return self.data_dir / "work"
 
     @property
+    def audio_dir(self) -> Path:
+        """The mp3 files of ``POST /v2/audio``, kept ``audio_ttl_s``."""
+        return self.data_dir / "audio"
+
+    @property
     def standalone_uploads_dir(self) -> Path:
         """The standalone local-file route's one slot: its lock file, the upload in transit and
         the sandbox's work directory (ADR 0002, Decision 4)."""
@@ -147,6 +155,7 @@ class Settings(BaseSettings):
         if self.service_mode:
             self.uploads_dir.mkdir(parents=True, exist_ok=True)
             self.work_dir.mkdir(parents=True, exist_ok=True)
+            self.audio_dir.mkdir(parents=True, exist_ok=True)
         elif self.ui_enabled:
             self.standalone_uploads_dir.mkdir(parents=True, exist_ok=True)
 

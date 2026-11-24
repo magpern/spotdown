@@ -1,5 +1,8 @@
 # ADR 0003: standalone exposure: a token always, plus same-origin requests and loopback defaults
 
+**Superseded in part by [ADR 0005](0005-two-images-backend-api-and-ui.md) (owner, 2026-11-24):** these
+protections now guard the separate UI image; the backend is API only and has no browser surface.
+
 **Status:** Accepted (2026-11-21), after the Opus review of PR #53 passed at `1024de3`
 ([`Agent review (opus): PASS`](https://github.com/magpern/spotdown/pull/53#issuecomment-7064851523)). The follow-up PR (spotdown#57, for issue #54) folded in that review's
 non-blocking findings: the assumptions and named outcomes that #52 implements, the lifespan

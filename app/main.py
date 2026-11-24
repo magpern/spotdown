@@ -57,6 +57,7 @@ def create_service_app(
     CORS or API docs (Spotify links resolve through ``/v2/spotify/resolve``)."""
     from .service import (
         access_log,
+        audio_routes,
         cache_routes,
         errors,
         match_routes,
@@ -93,6 +94,7 @@ def create_service_app(
     app.include_router(cache_routes.router)
     app.include_router(match_routes.router)
     app.include_router(spotify_routes.router)
+    app.include_router(audio_routes.router)  # the one route that returns audio (ADR 0005)
     if settings.ui_enabled:  # SPOTDOWN_UI=on only; last, after every fixed route
         from .service_ui import router as ui_router
 

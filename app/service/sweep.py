@@ -7,7 +7,8 @@ margin) is failed as ``processing_failed`` / ``timeout`` (the caller may retry a
 ``fetch_url`` is cleared and its upload removed. Work directories of jobs that are not running are
 removed. The global and the scoped analyses unused for their retention period or of an old
 analyzer version are purged (``retention_policy``), with the scoped job records not changed for
-that period, and the uploads past their TTL (``uploads``). The worker sweeps before each job;
+that period, the uploads past their TTL (``uploads``) and the mp3 files of ``POST /v2/audio``
+past theirs (``audio_files``). The worker sweeps before each job;
 ``GET /v2/jobs/{id}`` expires a stale job it is asked about, so a poller is answered even when no
 other job runs. Each step runs on its own: one that fails is logged and the others still run,
 so a failing purge never keeps audio or another scope's expired entries.
@@ -22,6 +23,7 @@ from typing import Callable, List, Optional, Tuple
 
 from ..config import Settings
 from .analysis_doc import ANALYZER_VERSION_V2
+from .audio_files import purge_expired_audio
 from .dispatch import job_lease_s
 from .failure_policy import Reason, outcome_for
 from .store import Store
@@ -66,6 +68,7 @@ def _steps(settings: Settings, store: Store, now: float) -> List[Tuple[str, Call
         ("expire_stale_jobs", lambda: expire_stale_jobs(settings, store, now)),
         ("remove_orphan_work_dirs", lambda: remove_orphan_work_dirs(settings, store)),
         ("purge_expired_uploads", lambda: purge_expired_uploads(settings, store, now)),
+        ("purge_expired_audio", lambda: purge_expired_audio(settings, store, now)),
         ("purge_global_references", lambda: store.purge_global_references(now)),
         (
             "purge_unused_analyses",

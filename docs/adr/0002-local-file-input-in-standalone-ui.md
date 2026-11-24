@@ -1,5 +1,9 @@
 # ADR 0002: local-file input is in the standalone UI, through the hostile-input checks
 
+**Superseded in part by [ADR 0005](0005-two-images-backend-api-and-ui.md) (owner, 2026-11-24):** the
+local file now enters through the separate UI image, which streams it to `PUT /v2/uploads`; this
+ADR's other decisions apply there.
+
 **Amended by [ADR 0004](0004-ui-switch-independent-of-service-mode.md) (owner, 2026-11-24):** the UI
 is no longer always off in service mode, and the service key reaches a browser when a user types it
 into the service page. The standalone route below is unchanged.
