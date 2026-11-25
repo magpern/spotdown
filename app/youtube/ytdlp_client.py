@@ -7,9 +7,11 @@ on the downloaded bytes (outside the analysis sandbox): no post-processors, no f
 default would run ``FFmpegFixupM4a`` on YouTube's DASH m4a), no hooks, no merge, and only plain
 https formats, so no ffmpeg downloader for HLS or DASH manifests either. The duration and
 live-stream checks use the metadata before any byte is fetched; the size cap is yt-dlp's
-``max_filesize`` (plus the metadata size when it is known), checked again on the file. yt-dlp's
-own messages go to a quiet logger and are only classified (``error_policy``), never logged: they
-can quote URLs.
+``max_filesize`` (plus the metadata size when it is known), checked again on the file. YouTube's
+JavaScript challenges are solved by the pinned ``yt-dlp-ejs`` scripts in deno, the only JS runtime
+allowed, with no remote components (ADR 0006): deno runs YouTube's player code, never the audio.
+yt-dlp's own messages go to a quiet logger and are only classified (``error_policy``), never
+logged: they can quote URLs.
 
 Tests inject a fake ``factory`` in place of ``yt_dlp.YoutubeDL``; nothing here is ever run against
 YouTube by an agent or by CI.
@@ -41,10 +43,8 @@ def download_opts(outtmpl: str, fmt: str = "bestaudio/best") -> Dict[str, Any]:
         "noplaylist": True,
         "nocheckcertificate": False,
         "retries": 3,
-        # YouTube challenges the default "web" client ("page needs to be reloaded").
-        # The android/tv clients skip that challenge without cookies or a PO token.
-        # This is brittle by nature — YouTube changes it often (see README).
-        "extractor_args": {"youtube": {"player_client": ["android", "tv", "web"]}},
+        # yt-dlp's own default clients (no override): they track YouTube, which needs its
+        # JavaScript challenges solved (spotdown#109). Brittle by nature; see README.
     }
 
 
@@ -88,6 +88,11 @@ def _hardened(opts: Dict[str, Any], extractors: List[str]) -> Dict[str, Any]:
         "writeautomaticsub": False,
         "writeinfojson": False,
         "keepvideo": False,
+        # YouTube's player challenges are solved by the pinned yt-dlp-ejs scripts in deno, the
+        # only JS runtime allowed (ADR 0006). Nothing is fetched to solve them: no remote
+        # components. deno sees YouTube's player code, never the downloaded bytes.
+        "js_runtimes": {"deno": {}},
+        "remote_components": [],
     }
 
 

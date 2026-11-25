@@ -163,13 +163,15 @@ Checks: `ruff check . && ruff format --check . && pyright`, and `pytest` on the 
 - **yt-dlp upkeep** (`app/youtube/ytdlp_client.py`): the real operational
   burden. YouTube actively fights downloaders, so expect to update `yt-dlp` constantly. Two
   failures you *will* hit:
-  - **"Requested format is not available"** → yt-dlp too old to decode YouTube's current
-    signatures. Fix: `pip install -U yt-dlp` (and bump the pin in `requirements.txt`).
-  - **"The page needs to be reloaded" / "Sign in to confirm you're not a bot"** → YouTube's
-    bot challenge on the default `web` client. We pass
-    `extractor_args={"youtube": {"player_client": ["android", "tv", "web"]}}` to skip it.
-    From datacenter IPs you may *still* be blocked and need cookies (`cookiefile`) or a
-    PO token. This is inherent to sourcing from YouTube, not a one-time fix.
+  - **"Requested format is not available"** → yt-dlp too old for YouTube's current player, or
+    its JavaScript challenges went unsolved. yt-dlp needs a JS runtime and its solver scripts:
+    the image pins `yt-dlp`, `yt-dlp-ejs` and `deno` together in `requirements.txt` (ADR 0006).
+    Fix: bump **all three** to the versions the new yt-dlp pins for itself (its `default` and
+    `pin-deno` extras, `pip show yt-dlp` or PyPI), never one alone.
+  - **"Sign in to confirm you're not a bot"** / a PO-token warning → YouTube's bot measures.
+    spotdown uses yt-dlp's default clients (it forces none). From datacenter IPs you may *still*
+    be blocked and need cookies (`cookiefile`) or a PO token. This is inherent to sourcing from
+    YouTube, not a one-time fix.
 - **Python**: yt-dlp has deprecated Python 3.9. The Docker image uses 3.11; if you run the
   local venv on 3.9 it still works for now but will stop — use 3.11+.
 - **Abuse and rate limiting** of the UI beyond its login limit.

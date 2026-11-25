@@ -5,6 +5,10 @@ pydantic-settings==2.6.1
 httpx==0.28.1
 redis==5.2.1
 rq==2.0.0
-yt-dlp==2025.10.14
+# yt-dlp, its challenge solver scripts and the JS runtime that runs them move together: the
+# versions yt-dlp pins for itself (its `default` and `pin-deno` extras). See README, yt-dlp upkeep.
+yt-dlp==2026.11.23
+yt-dlp-ejs==0.8.0
+deno==2.9.8
 mutagen==1.47.0
 librosa==0.10.2.post1

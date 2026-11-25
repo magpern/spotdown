@@ -64,6 +64,23 @@ def assert_runs_no_program(opts) -> None:
         assert key not in opts
 
 
+def assert_solves_challenges_only_with_the_pinned_scripts_in_deno(opts) -> None:
+    """spotdown#109, ADR 0006: deno is the only JS runtime, nothing is fetched to solve YouTube's
+    challenges, and yt-dlp chooses its own clients (no forced ``player_client``)."""
+    assert opts["js_runtimes"] == {"deno": {}}
+    assert opts["remote_components"] == []
+    assert "player_client" not in (opts.get("extractor_args") or {}).get("youtube", {})
+
+
+def test_search_and_download_use_deno_and_no_remote_components(tmp_path: Path) -> None:
+    world = FakeWorld()
+    world.client().search("q", 5)
+    world.client().download(VID, tmp_path / "yt", max_bytes=10_000, max_duration_s=600)
+    assert len(world.opened) == 2
+    for opts in world.opened:
+        assert_solves_challenges_only_with_the_pinned_scripts_in_deno(opts)
+
+
 def test_search_options_run_no_program() -> None:
     world = FakeWorld()
     world.client().search("q", 5)
