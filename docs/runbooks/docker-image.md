@@ -210,6 +210,19 @@ Behind a proxy, set the public name in `spotdown-ui.env`, for example
 `UI_ALLOWED_HOSTS=spotdown.example.org` and `UI_PUBLIC_ORIGIN=https://spotdown.example.org`. The UI
 ignores forwarded headers.
 
+To serve the same UI under two public names through the same proxy (for example when a web filter
+blocks one of them), list both, comma separated with no spaces:
+
+```bash
+UI_ALLOWED_HOSTS=spotdown.example.org,spotdown.example.net
+UI_PUBLIC_ORIGIN=https://spotdown.example.org,https://spotdown.example.net
+```
+
+Each origin is accepted only from its own `Host`, so the proxy must pass the browser's `Host`
+through unchanged. Every listed host must be in `UI_ALLOWED_HOSTS` and every origin must use the
+same scheme, or the UI does not start. A login on one name does not sign in the other; the token is
+the same (ADR 0003, amendment of 2026-11-25).
+
 Operator commands run in the api container, for example a takedown:
 
 ```bash

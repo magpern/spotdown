@@ -58,7 +58,7 @@ def build_app(
         UiAuth,
         tokens=tokens,
         allowed_hosts=settings.allowed_hosts,
-        public_origin=settings.public_origin,
+        public_origins=settings.public_origins,
     )
     app.add_middleware(SecurityHeaders)
     return app

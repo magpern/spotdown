@@ -61,7 +61,7 @@ caching). `/healthz` is open and never calls the backend.
 | `UI_ACCESS_TOKEN_FILE` | unset | An owner-supplied access token (32 to 512 characters). Unset: a token is generated once in `UI_DATA_DIR/ui_token`. |
 | `UI_DATA_DIR` | `/data` | Where the generated token lives. |
 | `UI_ALLOWED_HOSTS` | `localhost,127.0.0.1,[::1]` | The `Host` allowlist (names or IP literals, no port). |
-| `UI_PUBLIC_ORIGIN` | unset | The exact `http(s)://host[:port]` the browser uses, behind a reverse proxy. |
+| `UI_PUBLIC_ORIGIN` | unset | The exact `http(s)://host[:port]` the browser uses, behind a reverse proxy; or a comma-separated list (no spaces, one scheme, each host in `UI_ALLOWED_HOSTS`), each origin accepted only from its own `Host`. |
 | `MAX_UPLOAD_BYTES` | 62914560 (60 MiB) | The largest local file. A larger one stops at the cap with `413`. |
 | `UI_UPLOAD_READ_S` | 150 | The read deadline for a whole upload (`408` past it). |
 | `UI_MAX_AUDIO_BYTES` | 209715200 (200 MiB) | The largest mp3 relayed. |
@@ -71,7 +71,7 @@ The app fails to start if any of these is wrong:
 
 - the key file is missing, unreadable or too short;
 - `SPOTDOWN_BACKEND_URL` is missing or not exact;
-- a host entry or the public origin is malformed.
+- a host entry or a public origin is malformed, or a list of public origins breaks its rules.
 
 An error names the setting, never the key.
 

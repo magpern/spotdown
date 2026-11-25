@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Awaitable, Callable, FrozenSet, MutableMapping, Optional
+from typing import Any, Awaitable, Callable, FrozenSet, MutableMapping, Optional, Tuple
 
 from . import login_page
 from .exposure_policy import HostHeader, Origin, expected_origin, origin_matches, parse_host_header
@@ -95,13 +95,14 @@ class UiAuth:
         *,
         tokens: TokenSource,
         allowed_hosts: FrozenSet[str],
-        public_origin: Optional[Origin],
+        public_origins: Tuple[Origin, ...],
     ) -> None:
         self.app = app
         self.tokens = tokens
         self.allowed_hosts = allowed_hosts
-        self.public_origin = public_origin
-        self.https = public_origin is not None and public_origin.scheme == "https"
+        self.public_origins = public_origins
+        # One scheme for every listed origin (parse_public_origins), so one cookie choice.
+        self.https = bool(public_origins) and public_origins[0].scheme == "https"
         self.cookie = cookie_name(self.https)
         self.limit = LoginRateLimit()
 
@@ -153,8 +154,8 @@ class UiAuth:
             return await self._logout(scope, receive, send)
         await self.app(scope, receive, send)
 
-    def _expected(self, host: HostHeader) -> Origin:
-        return expected_origin(self.public_origin, host)
+    def _expected(self, host: HostHeader) -> Optional[Origin]:
+        return expected_origin(self.public_origins, host)
 
     def _unsafe_problem(self, scope: Scope, method: str, path: str, host: HostHeader) -> int:
         if not origin_matches(_header(scope, b"origin"), self._expected(host)):
