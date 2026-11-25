@@ -320,3 +320,22 @@ def test_the_dev_compose_file_runs_both_images_with_the_ui_on_loopback() -> None
     for name in ("redis", "api", "worker"):
         assert "ports" not in services[name], name
     assert _mounts(services) == {s: set(where) for s, where in SECRETS.items()}
+
+
+def _pins() -> Dict[str, str]:
+    pins: Dict[str, str] = {}
+    for line in (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if "==" in line:
+            name, version = line.split("==", 1)
+            pins[name.strip().lower()] = version.strip()
+    return pins
+
+
+def test_yt_dlp_its_solver_scripts_and_deno_are_pinned_together() -> None:
+    """spotdown#109, ADR 0006: YouTube downloads need yt-dlp's challenge solver (yt-dlp-ejs) and
+    a JS runtime (deno, from its official Python wheel, so it is on PATH for every architecture
+    the release builds). All three are exact pins; a bump moves them together (README)."""
+    pins = _pins()
+    for name in ("yt-dlp", "yt-dlp-ejs", "deno"):
+        assert re.fullmatch(r"\d+(\.\d+)+", pins.get(name, "")), name
