@@ -110,12 +110,20 @@ def _section(heading: str) -> str:
     return RUNBOOK[start:end]
 
 
+_FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})[^\n]*\n(.*?)^[ \t]*\1[ \t]*$", re.S | re.M)
+
+
 def _blocks(note: str) -> List[str]:
-    return re.findall(r"^```bash\n(.*?)^```", note, re.S | re.M)
+    """The body of every fenced block, whatever its fence (``` or ~~~), info string or indent."""
+    return [m.group(2) for m in _FENCE.finditer(note)]
 
 
-# An iptables or ip6tables command anywhere in a shell block: with or without sudo, indented or not.
-_TABLES = re.compile(r"\bip6?tables\s+(-\w|--[a-z-]+)")
+# A firewall command (iptables, ip6tables, their -restore/-nft/-legacy variants, nft) and its first
+# argument. _CMD finds one anywhere in a fenced block; _LINE finds one that starts a line outside
+# the blocks, after an optional sudo. A mention inside a prose line is neither.
+_TOOL = r"(ip6?tables(?:-[\w-]+)?|nft)\b[ \t]*(\S*)"
+_CMD = re.compile(r"\b" + _TOOL)
+_LINE = re.compile(r"^[ \t]*(?:sudo[ \t]+)?" + _TOOL, re.M)
 _RULE = re.compile(r"^\s*(?:sudo\s+)?(ip6?tables)\s+(-\w)\s+(.*?)(?:\s*&&)?\s*$", re.M)
 
 
@@ -134,14 +142,15 @@ def test_the_ui_egress_note_names_the_one_backend_and_a_rule_that_cannot_lock_ou
         assert topic in note, topic
 
     shell = "\n".join(_blocks(note))
-    # spotdown#101 N3: never -P, -F, -X, -A or -D (or a long form), in any iptables or ip6tables
-    # command of a shell block, with or without sudo.
-    flags = _TABLES.findall(shell)
-    assert flags, "no iptables command"
-    for flag in flags:
-        assert flag in ("-I", "-S", "-C"), flag
-    rules = _RULE.findall(shell)
-    assert len(rules) == len(flags), (rules, flags)  # every command is parsed below
+    prose = _FENCE.sub("", note)  # the note outside its fenced blocks
+    # spotdown#101 N3: never -P, -F, -X, -A or -D (or a long form), never a ruleset load (-restore,
+    # nft), in any firewall command of any fenced block, or on any line that starts with one.
+    commands = _CMD.findall(shell) + _LINE.findall(prose)
+    assert commands, "no iptables command"
+    for tool, flag in commands:
+        assert tool in ("iptables", "ip6tables") and flag in ("-I", "-S", "-C"), (tool, flag)
+    rules = _RULE.findall(shell) + _RULE.findall(prose)  # an unfenced command is checked too
+    assert len(rules) == len(commands), (rules, commands)  # every command is parsed below
     chains: Dict[Tuple[str, str], List[str]] = {}
     for tool, flag, rest in rules:
         if flag in ("-S", "-C"):  # read-only
@@ -188,6 +197,9 @@ case "$1 $2" in
     [[ " $STUB_NETS " == *" $5 "* ]] || exit 1
     case "$4" in
       '{{.Internal}}') [[ " $STUB_INTERNAL " == *" $5 "* ]] && echo true || echo false ;;
+      '{{.EnableIPv6}}')
+        [ "$STUB_IPV6" = unknown ] && exit 1
+        [[ " $STUB_IPV6 " == *" $5 "* ]] && echo true || echo false ;;
       '{{.Id}}') echo "${STUB_ID}0123456789" ;;
       *) exit 1 ;;
     esac ;;
@@ -216,6 +228,7 @@ _OK = {
     "STUB_ID": "0123456789ab",
     "STUB_BRIDGE": "br-0123456789ab",
     "STUB_SUDO_FAIL": "",
+    "STUB_IPV6": "",
 }
 _INSERTS = [
     "-I DOCKER-USER 1 -i br-0123456789ab -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN",
@@ -282,8 +295,23 @@ def test_the_egress_block_finds_the_network_of_another_project_name(tmp_path: Pa
         {"V": None},  # V unset: Compose refuses
         {"STUB_NETS": "spotdown"},  # no ui-published network
         {"STUB_BRIDGE": "br-ffffffffffff"},  # the bridge is not named as expected (N4)
+        {"STUB_IPV6": "spotdown_ui-published"},  # IPv6 on ui-published: not closed by iptables
+        {"STUB_IPV6": "unknown"},  # the IPv6 setting cannot be read: not taken as off
+        {"STUB_NETS": "spotdown spotdown_ui-published other_ui-published"},  # two, one left open
+        {"STUB_NETS": "spotdown_ui-published bridge"},  # an open network after ui-published
     ],
-    ids=["service-not-internal", "open-network", "no-ui", "no-version", "no-network", "no-bridge"],
+    ids=[
+        "service-not-internal",
+        "open-network",
+        "no-ui",
+        "no-version",
+        "no-network",
+        "no-bridge",
+        "ipv6",
+        "ipv6-unknown",
+        "two-ui-published",
+        "open-network-last",
+    ],
 )
 def test_the_egress_block_stops_loudly_and_inserts_nothing_when_a_check_fails(
     tmp_path: Path, stub: Dict[str, Optional[str]]
@@ -291,9 +319,9 @@ def test_the_egress_block_stops_loudly_and_inserts_nothing_when_a_check_fails(
     """spotdown#101 N1 and N4: pasted whole, a failed check never yields rules that match nothing,
     or rules that leave a second route open, without saying so."""
     main, _ = _egress_blocks()
-    inserts, err = _run_block(tmp_path, main, **stub)
+    inserts, err = _run_block(tmp_path, main + '\necho "UI_BR=[$UI_BR]" >&2', **stub)
     assert inserts == [], inserts
-    assert "STOP:" in err, err
+    assert "STOP:" in err and "UI_BR=[]" in err, err  # and the LAN rule's -C finds nothing
 
 
 def test_the_egress_block_stops_after_a_failed_insert(tmp_path: Path) -> None:

@@ -244,8 +244,7 @@ docker network inspect -f '{{.Internal}}' "${SPOTDOWN_SERVICE_NETWORK:-spotdown}
 If it prints `false`, or the network does not exist, these rules are not enough: create an internal
 network (`docker network create --internal <name>`), connect the callers to it, set
 `SPOTDOWN_SERVICE_NETWORK` to it and run `SPOTDOWN_VERSION=$V docker compose up -d --wait` again,
-then run the check
-again. The block below runs the same check on every network of the running ui and changes nothing
+then run the check again. The block below runs the same check on every network of the running ui and changes nothing
 if one fails.
 
 Run the block where `compose.yaml` is, as the deploying user, with `V` set as for `up`. It is safe
@@ -257,22 +256,28 @@ inserts no rule. It is the same for the loopback bind and the LAN bind. If you s
 `COMPOSE_PROJECT_NAME` set as for `up`. If it finds no ui, it stops.
 
 ```bash
-# The ui's networks: each must be internal except ui-published, whose bridge Docker names
-# br-<first 12 characters of the network ID>. Sets UI_BR, or prints STOP and returns 1.
+# The ui's networks: each must be internal except one ui-published network without IPv6, whose
+# bridge Docker names br-<first 12 characters of the network ID>. Sets UI_BR only if every check
+# passes; otherwise prints STOP and returns 1.
 ui_bridge() {
   UI_BR=
-  local ct n id
+  local ct n id br=
   ct=$(SPOTDOWN_VERSION=$V docker compose ps -q ui)
   [ -n "$ct" ] || { echo "STOP: no running ui container here" >&2; return 1; }
   for n in $(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$ct"); do
     [ "$(docker network inspect -f '{{.Internal}}' "$n")" = true ] && continue
     case "$n" in
-      *_ui-published) id=$(docker network inspect -f '{{.Id}}' "$n") && UI_BR="br-${id:0:12}" ;;
+      *_ui-published)
+        [ -z "$br" ] || { echo "STOP: the ui is on more than one ui-published network" >&2; return 1; }
+        [ "$(docker network inspect -f '{{.EnableIPv6}}' "$n")" = false ] ||
+          { echo "STOP: $n has IPv6, which these rules do not close (see IPv6 below)" >&2; return 1; }
+        id=$(docker network inspect -f '{{.Id}}' "$n") && br="br-${id:0:12}" ;;
       *) echo "STOP: the ui's network $n is not internal (see the precondition)" >&2; return 1 ;;
     esac
   done
-  [ -n "$UI_BR" ] && ip link show "$UI_BR" >/dev/null ||
-    { echo "STOP: no ui-published bridge found" >&2; UI_BR=; return 1; }
+  [ -n "$br" ] && ip link show "$br" >/dev/null ||
+    { echo "STOP: no ui-published bridge found" >&2; return 1; }
+  UI_BR=$br
 }
 
 if ui_bridge; then
@@ -319,8 +324,10 @@ What it does not cover:
   when the network is recreated (`docker compose down` removes it): the old rules then match
   nothing, so the UI is open again but nothing breaks. Run the block again after every `down`, and
   remove the stale rules (`sudo iptables -D DOCKER-USER ...` with the old name).
-- **IPv6.** The deploy file enables no IPv6 on its networks. If your daemon gives containers IPv6,
-  repeat the rules with `ip6tables`.
+- **IPv6.** The deploy file enables no IPv6 on its networks, and the block stops if `ui-published`
+  has IPv6 enabled, because these rules close only IPv4. If you enabled it, either turn it off
+  for that network, or close it yourself with the same rules in `ip6tables`: this example does
+  not do that.
 - **nftables hosts.** On a host whose Docker uses its nftables firewall backend, or whose firewall
   is managed natively in nftables or by firewalld, there is no `DOCKER-USER` chain to use. Write the
   same two rules (replies accepted, then new connections from the UI's bridge dropped) in that
