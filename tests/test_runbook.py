@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
-from typing import Dict, Set
+from typing import Dict, List, Set
 
 import yaml
 
@@ -101,3 +101,43 @@ def test_the_overlays_and_the_bind_address_are_documented() -> None:
     assert "### Upgrading from a SERVICE_MODE compose file" in RUNBOOK
     # The LAN address is a placeholder: no private address is written down as the owner's.
     assert not re.search(r"\b(10|192\.168|172\.(1[6-9]|2\d|3[01]))\.\d+\.\d+", RUNBOOK)
+
+
+def _section(heading: str) -> str:
+    start = RUNBOOK.index(heading)
+    end = RUNBOOK.find("\n## ", start)
+    return RUNBOOK[start:end]
+
+
+def test_the_ui_egress_note_names_the_one_backend_and_a_rule_that_cannot_lock_out() -> None:
+    """spotdown#96: the UI's only destination is the backend's origin, and the firewall example
+    matches only the UI's bridge, lets replies pass before it drops, and changes no policy."""
+    note = _section("### The UI's outbound access")
+    doc = yaml.safe_load((ROOT / "deploy" / "compose.yaml").read_text(encoding="utf-8"))
+    ui = doc["services"]["ui"]
+    assert f"`{ui['environment']['SPOTDOWN_BACKEND_URL']}`" in note
+    assert "ui-published" in ui["networks"] and "ui-published" in doc["networks"]
+    assert f"{doc['name']}_ui-published" in note  # the network's name as Compose creates it
+    assert "the operator's choice" in note
+    for topic in ("SPOTDOWN_PUBLISH_HOST", "ip6tables", "nftables"):
+        assert topic in note, topic
+
+    rules = re.findall(r"^sudo iptables (-\w) (.*)$", note, re.M)
+    assert rules, "no iptables rule"
+    chains: Dict[str, List[str]] = {}
+    for flag, rest in rules:
+        assert flag in ("-I", "-S"), (flag, rest)  # never -P, -F, -X, -A or -D in the block
+        if flag == "-S":
+            continue
+        chain, pos, rule = rest.split(" ", 2)
+        assert re.search(r'-[io] "\$UI_BR"', rule), rule  # only the UI's bridge is matched
+        assert "ACCEPT" not in rule, rule
+        chain_rules = chains.setdefault(chain, [])
+        assert 1 <= int(pos) <= len(chain_rules) + 1, rest  # inserted in the order shown
+        chain_rules.insert(int(pos) - 1, rule)
+    user = chains["DOCKER-USER"]
+    replies = [i for i, r in enumerate(user) if "ESTABLISHED,RELATED -j RETURN" in r]
+    drops = [i for i, r in enumerate(user) if r.startswith('-i "$UI_BR"') and "-j DROP" in r]
+    assert replies and drops and max(replies) < min(drops), user
+    for rule in chains.get("INPUT", []):
+        assert "--ctstate NEW" in rule, rule  # replies to the published port still reach it
