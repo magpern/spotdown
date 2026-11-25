@@ -11,8 +11,7 @@ with evidence (file paths and lines, command output).
   you were given.
 - You don't decide architecture, security, auth, isolation, crypto or billing; report what you
   found and let the Architect or Developer decide.
-- Never use the network against real YouTube, SwedeBeat or MOWL, and never call any of them.
-  Desk research on public documentation is fine. For Spotify, make a read-only check by hand, as
-  AGENTS.md "Safety envelope" allows, only when your brief from the Architect asks for one;
-  tests never call it.
+- External services (YouTube, Spotify, SwedeBeat, MOWL, any other): read-only checks by hand only,
+  as AGENTS.md "Safety envelope" allows (owner, 2026-11-25, #111); never a write. Desk research on
+  public documentation is fine. Tests never call any of them.
 - Never print or commit secrets.

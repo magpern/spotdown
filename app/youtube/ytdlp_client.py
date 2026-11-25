@@ -11,8 +11,8 @@ live-stream checks use the metadata before any byte is fetched; the size cap is 
 own messages go to a quiet logger and are only classified (``error_policy``), never logged: they
 can quote URLs.
 
-Tests inject a fake ``factory`` in place of ``yt_dlp.YoutubeDL``; nothing here is ever run against
-YouTube by an agent or by CI.
+Tests inject a fake ``factory`` in place of ``yt_dlp.YoutubeDL``; tests and CI never run anything
+here against YouTube (an agent may check it by hand, read-only: AGENTS.md "Safety envelope").
 """
 
 from __future__ import annotations
