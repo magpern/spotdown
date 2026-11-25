@@ -72,6 +72,26 @@ def normalise_host(text: str) -> Optional[str]:
     return None
 
 
+def browser_ipv6(address: ipaddress.IPv6Address) -> str:
+    """``address`` as a browser writes it in an ``Origin`` (the WHATWG URL IPv6 serializer):
+    eight lowercase hex groups without leading zeros, the first longest run of two or more zero
+    groups written ``::``, and never a dotted IPv4 tail. ``ipaddress``'s ``compressed`` differs for
+    IPv4-mapped addresses (``::ffff:127.0.0.1``), so it is not used here."""
+    groups = [int.from_bytes(address.packed[i : i + 2], "big") for i in range(0, 16, 2)]
+    start, length, i = -1, 1, 0
+    while i < 8:
+        j = i
+        while j < 8 and groups[j] == 0:
+            j += 1
+        if j - i > length:
+            start, length = i, j - i
+        i = max(j, i + 1)
+    text = [f"{g:x}" for g in groups]
+    if start < 0:
+        return ":".join(text)
+    return ":".join(text[:start]) + "::" + ":".join(text[start + length :])
+
+
 def parse_allowed_hosts(value: str) -> FrozenSet[str]:
     """``UI_ALLOWED_HOSTS``: comma-separated DNS names (RFC 1123 labels), IPv4 literals or
     bracketed IPv6 literals. An empty entry, ``*``, a port, a scheme, a path or whitespace
@@ -104,7 +124,9 @@ def parse_origin(value: str) -> Optional[Origin]:
 
 def parse_public_origin(value: str) -> Optional[Origin]:
     """``UI_PUBLIC_ORIGIN``: empty (unset), or an exact ``http(s)://host[:port]``. Anything else,
-    an explicit default port included, raises."""
+    an explicit default port included, raises. An IPv6 host must be written as a browser writes it
+    (``browser_ipv6``, spotdown#107): the comparison is exact, so any other spelling (``[0:0::1]``
+    for ``[::1]``) could never match a browser's ``Origin``."""
     if value == "":
         return None
     origin = parse_origin(value)
@@ -116,6 +138,10 @@ def parse_public_origin(value: str) -> Optional[Origin]:
         raise SettingsError("UI_PUBLIC_ORIGIN has an invalid port")
     if origin.port == _DEFAULT_PORTS[origin.scheme]:
         raise SettingsError("UI_PUBLIC_ORIGIN must not spell out the default port")
+    if origin.host.startswith("["):
+        canonical = "[" + browser_ipv6(ipaddress.IPv6Address(origin.host[1:-1])) + "]"
+        if origin.host != canonical:
+            raise SettingsError(f"UI_PUBLIC_ORIGIN: write the IPv6 host as {canonical}")
     return origin
 
 
