@@ -229,32 +229,84 @@ host where Docker manages iptables (the default). It drops every connection the 
 `ui-published`; replies on connections made *to* the UI still pass, so the published port keeps
 working.
 
+**Precondition: every other network the UI is on is internal.** The rules below close only the
+`ui-published` bridge. The UI is also on the callers' network, `SPOTDOWN_SERVICE_NETWORK` (default
+`spotdown`), and that network gives no route out only because it was created `--internal`
+(`docker network create --internal spotdown` above). If that setting names a network that is not
+internal, for example a caller's own bridge, the UI has a second route out that these rules do not
+see. Check it (if you set `SPOTDOWN_SERVICE_NETWORK` in the `.env` rather than the shell, put that
+name in place of the variable):
+
 ```bash
-# The ui-published bridge: Docker names it br-<first 12 characters of the network ID>.
-UI_NET=$(docker network inspect -f '{{.Id}}' spotdown_ui-published)
-UI_BR="br-${UI_NET:0:12}"
-ip link show "$UI_BR"                       # must exist; stop here if it does not
-
-# Forwarded traffic (DOCKER-USER runs before Docker's own rules): replies pass, new connections
-# from the UI to anywhere off its bridge are dropped. Inserted at 1 and 2, in this order.
-sudo iptables -I DOCKER-USER 1 -i "$UI_BR" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
-sudo iptables -I DOCKER-USER 2 -i "$UI_BR" ! -o "$UI_BR" -j DROP
-
-# Optional: the host's own services (sshd, a database on the host) are reached through INPUT,
-# which DOCKER-USER does not see. Drop new connections the UI starts to the host.
-sudo iptables -I INPUT 1 -i "$UI_BR" -m conntrack --ctstate NEW -j DROP
-
-sudo iptables -S DOCKER-USER | grep -- "$UI_BR"   # check: the two rules, RETURN first
+docker network inspect -f '{{.Internal}}' "${SPOTDOWN_SERVICE_NETWORK:-spotdown}"   # must print true
 ```
+
+If it prints `false`, or the network does not exist, these rules are not enough: create an internal
+network (`docker network create --internal <name>`), connect the callers to it, set
+`SPOTDOWN_SERVICE_NETWORK` to it and run `SPOTDOWN_VERSION=$V docker compose up -d --wait` again,
+then run the check again. The block below runs the same check on every network of the running ui and changes nothing
+if one fails.
+
+Run the block where `compose.yaml` is, as the deploying user, with `V` set as for `up`. It is safe
+to paste whole: it checks everything first, and if a check fails it prints `STOP` and why, and
+inserts no rule. It is the same for the loopback bind and the LAN bind. If you start the stack with
+`-p <project>` or `COMPOSE_PROJECT_NAME`, Compose names the network `<project>_ui-published`, not
+`spotdown_ui-published`. The block finds it by its `_ui-published` suffix, but its
+`docker compose ps` line must see the same project: add the same `-p <project>` to it, or keep
+`COMPOSE_PROJECT_NAME` set as for `up`. If it finds no ui, it stops.
+
+```bash
+# The ui's networks: each must be internal except one ui-published network without IPv6, whose
+# bridge Docker names br-<first 12 characters of the network ID>. Sets UI_BR only if every check
+# passes; otherwise prints STOP and returns 1.
+ui_bridge() {
+  UI_BR=
+  local ct n id br=
+  ct=$(SPOTDOWN_VERSION=$V docker compose ps -q ui)
+  [ -n "$ct" ] || { echo "STOP: no running ui container here" >&2; return 1; }
+  for n in $(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$ct"); do
+    [ "$(docker network inspect -f '{{.Internal}}' "$n")" = true ] && continue
+    case "$n" in
+      *_ui-published)
+        [ -z "$br" ] || { echo "STOP: the ui is on more than one ui-published network" >&2; return 1; }
+        [ "$(docker network inspect -f '{{.EnableIPv6}}' "$n")" = false ] ||
+          { echo "STOP: $n has IPv6, which these rules do not close (see IPv6 below)" >&2; return 1; }
+        id=$(docker network inspect -f '{{.Id}}' "$n") && br="br-${id:0:12}" ;;
+      *) echo "STOP: the ui's network $n is not internal (see the precondition)" >&2; return 1 ;;
+    esac
+  done
+  [ -n "$br" ] && ip link show "$br" >/dev/null ||
+    { echo "STOP: no ui-published bridge found" >&2; return 1; }
+  UI_BR=$br
+}
+
+if ui_bridge; then
+  # Forwarded traffic (DOCKER-USER runs before Docker's own rules): replies pass, new connections
+  # from the UI to anywhere off its bridge are dropped. Inserted at 1 and 2, in this order.
+  sudo iptables -I DOCKER-USER 1 -i "$UI_BR" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN &&
+  sudo iptables -I DOCKER-USER 2 -i "$UI_BR" ! -o "$UI_BR" -j DROP &&
+  # The host's own services (sshd, a database on the host) are reached through INPUT, which
+  # DOCKER-USER does not see. Drop new connections the UI starts to the host.
+  sudo iptables -I INPUT 1 -i "$UI_BR" -m conntrack --ctstate NEW -j DROP &&
+  sudo iptables -S DOCKER-USER | grep -- "$UI_BR"   # check: the two rules, RETURN first
+fi
+```
+
+The rules are joined by `&&`, so if one fails (a mistyped `sudo` password, for example) the rest are
+not inserted out of order; read the error, remove what was inserted (`sudo iptables -S` shows it)
+and run the block again. Run it once per bridge: a second run inserts the rules twice.
 
 Why this is enough, and safe:
 
-- **The backend still works.** The UI reaches the api over the `spotdown` network's bridge, not
+- **The UI has no other route out**, as long as the precondition above holds: its only other
+  network, the callers' network, is internal. The block checks that before it inserts anything.
+- **The backend still works.** The UI reaches the api over the callers' network's bridge, not
   over `ui-published`, so no rule above matches that traffic.
 - **The published port still works.** A request to the port arrives from outside the bridge (from
   the LAN interface, or from Docker's port proxy on the host for the loopback bind); the UI's
   answers belong to that connection and pass as `ESTABLISHED`. `RELATED` keeps the ICMP errors
-  that belong to it.
+  that belong to it. The `INPUT` rule drops only `NEW` connections, so the UI's answers to the port
+  proxy still reach it.
 - **It cannot lock you out.** Every rule matches only packets that enter from the UI's bridge
   (`-i "$UI_BR"`). Your SSH session, the api's and the worker's `egress` and other containers are
   never matched. No rule changes a policy or flushes a chain.
@@ -264,25 +316,32 @@ Why this is enough, and safe:
 
 What it does not cover:
 
-- **Persistence.** The rules are lost on reboot: run the block again once Docker has started (for
-  example from a systemd unit ordered `After=docker.service`). The bridge name changes when the network is recreated
-  (`docker compose down` removes it): the old rules then match nothing, so the UI is open again but
-  nothing breaks. Run the block again after every `down`, and remove the stale rules
-  (`sudo iptables -D DOCKER-USER ...` with the old name).
-- **IPv6.** The deploy file enables no IPv6 on its networks. If your daemon gives containers IPv6,
-  repeat the rules with `ip6tables`.
+- **Persistence.** The rules are lost on reboot, and also on a firewall reload that rewrites the
+  ruleset: `firewall-cmd --reload` on a host running firewalld, and an iptables-persistent (or
+  `netfilter-persistent`) reload or restore of a saved ruleset that does not contain them. Run the
+  block again after each of these once Docker has started (for example from a systemd unit ordered
+  `After=docker.service`), and check with `sudo iptables -S DOCKER-USER`. The bridge name changes
+  when the network is recreated (`docker compose down` removes it): the old rules then match
+  nothing, so the UI is open again but nothing breaks. Run the block again after every `down`, and
+  remove the stale rules (`sudo iptables -D DOCKER-USER ...` with the old name).
+- **IPv6.** The deploy file enables no IPv6 on its networks, and the block stops if `ui-published`
+  has IPv6 enabled, because these rules close only IPv4. If you enabled it, either turn it off
+  for that network, or close it yourself with the same rules in `ip6tables`: this example does
+  not do that.
 - **nftables hosts.** On a host whose Docker uses its nftables firewall backend, or whose firewall
   is managed natively in nftables or by firewalld, there is no `DOCKER-USER` chain to use. Write the
   same two rules (replies accepted, then new connections from the UI's bridge dropped) in that
-  firewall.
+  firewall. The precondition holds there too.
 
 **The LAN bind.** With `SPOTDOWN_PUBLISH_HOST` set to a LAN address, the rules above are unchanged:
 the UI still reaches only the backend. To let only your reverse proxy reach the port, also drop new
 connections into the UI's bridge that do not come from the proxy (`<proxy address>` is a
-placeholder, for example `192.0.2.20`):
+placeholder, for example `192.0.2.20`). Run it in the same shell, after the block above: it inserts
+nothing unless that block's `DROP` rule is in place for `$UI_BR`.
 
 ```bash
-sudo iptables -I DOCKER-USER 3 -o "$UI_BR" -m conntrack --ctstate NEW ! -s <proxy address> -j DROP
+sudo iptables -C DOCKER-USER -i "$UI_BR" ! -o "$UI_BR" -j DROP &&
+  sudo iptables -I DOCKER-USER 3 -o "$UI_BR" -m conntrack --ctstate NEW ! -s <proxy address> -j DROP
 ```
 
 It matches only connections into the UI's bridge, so the api's and the worker's outbound traffic
