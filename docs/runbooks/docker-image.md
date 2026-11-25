@@ -177,7 +177,8 @@ The worker and Redis never see a key.
   is on the `backend` network (internal), which only the api and the worker share.
 - **The UI publishes port 8000** on `SPOTDOWN_PUBLISH_HOST`, the loopback by default, for the
   owner's reverse proxy. The app never reads that setting. Its `ui-published` network exists only
-  for that port (an internal network cannot publish one).
+  for that port (an internal network cannot publish one), and it gives the UI a route out: see
+  "The UI's outbound access" to close it.
 - `egress` gives the api and the worker a way out: Spotify's pages or Web API, the `url` source
   and, when on, YouTube.
 - `spotdown-data` (mounted at `/data` in the api and the worker) holds the service database, the
@@ -202,7 +203,8 @@ Choosing the bind address and exposing the UI beyond the loopback is the owner's
   SPOTDOWN_PUBLISH_HOST=<LAN address> SPOTDOWN_VERSION=$V docker compose up -d --wait
   ```
 
-  Never `0.0.0.0`. Restrict the port to the proxy's address in the host firewall.
+  Never `0.0.0.0`. Restrict the port to the proxy's address in the host firewall (an example
+  is under "The UI's outbound access", "The LAN bind").
 
 Behind a proxy, set the public name in `spotdown-ui.env`, for example
 `UI_ALLOWED_HOSTS=spotdown.example.org` and `UI_PUBLIC_ORIGIN=https://spotdown.example.org`. The UI
@@ -213,6 +215,79 @@ Operator commands run in the api container, for example a takedown:
 ```bash
 SPOTDOWN_VERSION=$V docker compose exec api python -m app.service.takedown youtube:<video id>
 ```
+
+### The UI's outbound access
+
+The UI needs to reach exactly one destination: **the backend's internal origin,
+`http://spotdown-api:8000`** (the fixed `SPOTDOWN_BACKEND_URL`), on the `spotdown` network. It needs
+nothing on the internet, on the LAN or on the host. Its code calls nothing else (ADR 0005
+Decision 7), but its container is not locked in: the `ui-published` network, which exists only for
+its published port, is a plain bridge, and so gives it a route out.
+
+Limiting that route is **the operator's choice**, made in the host firewall. Below is one way, for a
+host where Docker manages iptables (the default). It drops every connection the UI starts through
+`ui-published`; replies on connections made *to* the UI still pass, so the published port keeps
+working.
+
+```bash
+# The ui-published bridge: Docker names it br-<first 12 characters of the network ID>.
+UI_NET=$(docker network inspect -f '{{.Id}}' spotdown_ui-published)
+UI_BR="br-${UI_NET:0:12}"
+ip link show "$UI_BR"                       # must exist; stop here if it does not
+
+# Forwarded traffic (DOCKER-USER runs before Docker's own rules): replies pass, new connections
+# from the UI to anywhere off its bridge are dropped. Inserted at 1 and 2, in this order.
+sudo iptables -I DOCKER-USER 1 -i "$UI_BR" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+sudo iptables -I DOCKER-USER 2 -i "$UI_BR" ! -o "$UI_BR" -j DROP
+
+# Optional: the host's own services (sshd, a database on the host) are reached through INPUT,
+# which DOCKER-USER does not see. Drop new connections the UI starts to the host.
+sudo iptables -I INPUT 1 -i "$UI_BR" -m conntrack --ctstate NEW -j DROP
+
+sudo iptables -S DOCKER-USER | grep -- "$UI_BR"   # check: the two rules, RETURN first
+```
+
+Why this is enough, and safe:
+
+- **The backend still works.** The UI reaches the api over the `spotdown` network's bridge, not
+  over `ui-published`, so no rule above matches that traffic.
+- **The published port still works.** A request to the port arrives from outside the bridge (from
+  the LAN interface, or from Docker's port proxy on the host for the loopback bind); the UI's
+  answers belong to that connection and pass as `ESTABLISHED`. `RELATED` keeps the ICMP errors
+  that belong to it.
+- **It cannot lock you out.** Every rule matches only packets that enter from the UI's bridge
+  (`-i "$UI_BR"`). Your SSH session, the api's and the worker's `egress` and other containers are
+  never matched. No rule changes a policy or flushes a chain.
+- **No DNS exception is needed.** The only name the UI resolves, `spotdown-api`, is answered by
+  Docker's embedded DNS server inside the container (`127.0.0.11`). A DNS exception would be needed
+  only for a backend origin that is a public name, and the deploy file does not allow one.
+
+What it does not cover:
+
+- **Persistence.** The rules are lost on reboot: run the block again once Docker has started (for
+  example from a systemd unit ordered `After=docker.service`). The bridge name changes when the network is recreated
+  (`docker compose down` removes it): the old rules then match nothing, so the UI is open again but
+  nothing breaks. Run the block again after every `down`, and remove the stale rules
+  (`sudo iptables -D DOCKER-USER ...` with the old name).
+- **IPv6.** The deploy file enables no IPv6 on its networks. If your daemon gives containers IPv6,
+  repeat the rules with `ip6tables`.
+- **nftables hosts.** On a host whose Docker uses its nftables firewall backend, or whose firewall
+  is managed natively in nftables or by firewalld, there is no `DOCKER-USER` chain to use. Write the
+  same two rules (replies accepted, then new connections from the UI's bridge dropped) in that
+  firewall.
+
+**The LAN bind.** With `SPOTDOWN_PUBLISH_HOST` set to a LAN address, the rules above are unchanged:
+the UI still reaches only the backend. To let only your reverse proxy reach the port, also drop new
+connections into the UI's bridge that do not come from the proxy (`<proxy address>` is a
+placeholder, for example `192.0.2.20`):
+
+```bash
+sudo iptables -I DOCKER-USER 3 -o "$UI_BR" -m conntrack --ctstate NEW ! -s <proxy address> -j DROP
+```
+
+It matches only connections into the UI's bridge, so the api's and the worker's outbound traffic
+and its replies are untouched. Do not use a rule on the LAN interface itself (for example `-i eth0 ! -s ...`):
+it would also drop the replies to the backend's outbound calls.
 
 ## Upgrade, pin and roll back
 
