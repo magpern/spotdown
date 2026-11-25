@@ -19,7 +19,7 @@ deleted; option 1 decided 2026-11-24: the same 90-days-unused and version-change
 analyses, with their job and idempotency records; PR #67) and the follow-ups of the 2026-11-21 real-music trial, #46 to #49, #52 and #54, are merged too (below).
 Merged so far: #43 (PR #50); #44 (PR #51: ADR 0001 and ADR 0002, Accepted); ADR 0003 (PR #53, for
 #52); and #45 (PR #55, one label vocabulary and the v1 response version in the cache key). All the
-ADRs are in `docs/adr/`. Open: #6's real-music runs and the follow-ups #92, #94 (this table) and #96 (see the table). ADR 0005 (owner, 2026-11-24) splits spotdown into two images, a backend that is API only and a separate UI; the classbeat plan's layer table and its "never returns audio" line need a matching amendment from the owner. ADR 0005 is implemented (#75 to #79, PRs #80, #82, #83, #84 and #91): the backend is API only and the standalone app is retired, so the standalone-UI follow-ups #48, #49 and #52 are superseded by ADR 0005 (#79); the milestone's agent-rule and config issues #85 to #88 are merged (PRs #89, #87 and #90). classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
+ADRs are in `docs/adr/`. Open: #6's real-music runs and the follow-ups #92, #101 and #102 (see the table); the plan-table update #94 (PR #98) and the UI egress note #96 (PR #100) are merged. ADR 0005 (owner, 2026-11-24) splits spotdown into two images, a backend that is API only and a separate UI; the classbeat plan's layer table and its "never returns audio" line need a matching amendment from the owner (open: #81). ADR 0005 is implemented (#75 to #79, PRs #80, #82, #83, #84 and #91): the backend is API only and the standalone app is retired, so the standalone-UI follow-ups #48, #49 and #52 are superseded by ADR 0005 (#79); the milestone's agent-rule and config issues #85, #86 and #88 are merged (PRs #89, #87 and #90 in that order; #87 is a PR, not an issue). classbeat#1296 accepted means YouTube sourcing is the owner's deployment choice:
 `ALLOW_YTDLP_SOURCING` is on by default in code by the owner's direction (2026-11-24, spotdown#86; the classbeat plan needs the matching amendment) and `false` turns it off. Quality gates file `quality/quality_gates.json` is at v6 (v6 added the reported segments-per-truth-section metric, spotdown#46); the document version is 8.5 (core 8, mapping 5; mapping 5 added the chorus margin, spotdown#47; mapping 4 added the reported `content.explicit`
 signal, spotdown#36)
 and the core analyzer version is 8 (running version `8.5`: over-fine segments are merged before labelling, spotdown#46; steady-energy tracks are split by timbre novelty and a chorus needs an energy margin, spotdown#47). The quality thresholds are set by the amendment in classbeat
@@ -108,8 +108,10 @@ pending) and `false` turns it off.
 | owner, 2026-11-24 | #86 `ALLOW_YTDLP_SOURCING` on by default | merged (PR #87) | – |
 | owner, 2026-11-24 | #88 harden Spotify response parsing (recursion, regex, netrc) | merged (PR #90) | – |
 | follow-up | #92 drop the unused `python-multipart` dependency | open | #79 |
-| follow-up | #94 this table brought up to date | open (this PR) | #79 |
-| follow-up | #96 document limiting the UI container's outbound access | open | #79 |
+| follow-up | #94 this table brought up to date | merged (PR #98) | #79 |
+| follow-up | #96 document limiting the UI container's outbound access | merged (PR #100) | #79 |
+| follow-up | #101 harden the UI egress note (internal-network precondition, stricter runbook tests) | open | #96 |
+| follow-up | #102 status paragraph and follow-up table updated after #98 and #100 | open (this PR) | #94, #96 |
 
 The classbeat issues SD-P4 to SD-P7 (classbeat#1301 to #1306) depend on #3, #4, #5, #6, #10 and #11;
 all but the real-music runs of #6 are merged, and classbeat#1296 is accepted, so SD-P6 is unblocked.
