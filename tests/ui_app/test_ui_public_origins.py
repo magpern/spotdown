@@ -5,13 +5,17 @@ requests."""
 
 from __future__ import annotations
 
+import ipaddress
+
 import pytest
 
 from spotdown_ui.app import create_app
 from spotdown_ui.exposure_policy import (
     Origin,
     SettingsError,
+    browser_ipv6,
     expected_origin,
+    origin_matches,
     parse_allowed_hosts,
     parse_host_header,
     parse_public_origins,
@@ -67,10 +71,70 @@ def test_one_value_and_unset_are_unchanged() -> None:
 
 def test_listed_ports_match_the_host_port() -> None:
     allowed = parse_allowed_hosts("a.example.org,[::1]")
-    public = parse_public_origins("http://a.example.org:8080,http://[0:0::1]:9000", allowed)
+    public = parse_public_origins("http://a.example.org:8080,http://[::1]:9000", allowed)
     assert expected_origin(public, _host("a.example.org:8080")) == public[0]
     assert expected_origin(public, _host("a.example.org")) is None
     assert expected_origin(public, _host("[::1]:9000")) == public[1]
+    assert origin_matches("http://[::1]:9000", expected_origin(public, _host("[::1]:9000")))
+
+
+# --- spotdown#107: an IPv6 origin must be written as a browser writes it --------------------------
+
+
+@pytest.mark.parametrize(
+    "text,browser",
+    [("::1", "::1"), ("0:0::1", "::1"), ("::", "::"), ("::0001", "::1"),
+     ("2001:DB8:0:1:1:1:1:1", "2001:db8:0:1:1:1:1:1"),  # one zero group is not compressed
+     ("2001:db8::1:1:1:1:1", "2001:db8:0:1:1:1:1:1"),
+     ("1:0:0:2:0:0:0:3", "1:0:0:2::3"),  # the longest run
+     ("1:0:0:2:0:0:3:4", "1::2:0:0:3:4"),  # the first of two equal runs
+     ("::ffff:127.0.0.1", "::ffff:7f00:1"),  # never a dotted IPv4 tail
+     ("::127.0.0.1", "::7f00:1"), ("fe80::", "fe80::"), ("1:2:3:4:5:6:7:8", "1:2:3:4:5:6:7:8")],
+)  # fmt: skip
+def test_browser_ipv6_is_the_whatwg_serialisation(text, browser) -> None:
+    assert browser_ipv6(ipaddress.IPv6Address(text)) == browser
+
+
+NON_CANONICAL_IPV6 = ["http://[0:0::1]:9000", "http://[::0001]", "http://[::ffff:127.0.0.1]",
+                      "http://[2001:db8::1:1:1:1:1]", "http://[1::2:0:0:0:3]"]  # fmt: skip
+
+
+@pytest.mark.parametrize("value", NON_CANONICAL_IPV6)
+@pytest.mark.parametrize("shape", ["{v}", "http://a.example.org,{v}", "{v},http://a.example.org"])
+def test_a_non_canonical_ipv6_origin_stops_the_app_at_start_up(tmp_path, value, shape) -> None:
+    value = shape.format(v=value)  # one value (stated in the PR: it never matched) and in a list
+    hosts = "a.example.org,[::1],[::ffff:7f00:1],[2001:db8:0:1:1:1:1:1],[1:0:0:2::3]"
+    with pytest.raises(SettingsError, match="write the IPv6 host as"):
+        parse_public_origins(value, parse_allowed_hosts(hosts))
+    with pytest.raises(SettingsError):
+        parse_settings(ui_env(tmp_path, UI_ALLOWED_HOSTS=hosts, UI_PUBLIC_ORIGIN=value))
+    with pytest.raises(SettingsError):
+        create_app(ui_env(tmp_path, UI_ALLOWED_HOSTS=hosts, UI_PUBLIC_ORIGIN=value))
+    assert not (tmp_path / "data" / "ui_token").exists()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://[::1]:9000",
+        "http://[::ffff:7f00:1]",
+        "http://[2001:db8:0:1:1:1:1:1]",
+        "http://[1:0:0:2::3]",
+        "http://[::A]",
+    ],  # fmt: skip
+)
+def test_a_canonical_ipv6_origin_is_accepted(value) -> None:
+    assert len(parse_public_origins(value, frozenset())) == 1
+
+
+def test_a_browser_signs_in_on_a_listed_ipv6_origin(tmp_path) -> None:
+    ui = Ui(tmp_path, UI_ALLOWED_HOSTS="a.example.org,[::1]",
+            UI_PUBLIC_ORIGIN="http://a.example.org:8080,http://[::1]:9000")  # fmt: skip
+    client = ui.anon()  # the test client cannot take an IPv6 base URL: send the Host header
+    for origin, status in (("http://[::1]:9000", 204), ("http://[0:0::1]:9000", 403)):
+        headers = {"Host": "[::1]:9000", "X-Spotdown-UI": "1", "Origin": origin, **JSON}
+        res = client.post("/login", json={"token": ui.token}, headers=headers)
+        assert res.status_code == status
 
 
 # --- AC 1: one value ------------------------------------------------------------------------------
@@ -122,6 +186,21 @@ def test_forwarded_headers_do_not_pick_the_origin(two) -> None:
     headers = {"X-Spotdown-UI": "1", "Origin": A, "X-Forwarded-Host": "a.example.org",
                "Forwarded": "host=a.example.org;proto=https", **JSON}  # fmt: skip
     assert client.post("/login", json={"token": two.token}, headers=headers).status_code == 403
+
+
+@pytest.mark.parametrize(
+    "forwarded",
+    [{"X-Forwarded-Host": "b.example.net"}, {"Forwarded": "host=b.example.net"},
+     {"X-Forwarded-Host": "b.example.net", "Forwarded": "host=b.example.net;proto=https"}],
+)  # fmt: skip
+def test_forwarded_headers_do_not_pick_another_listed_origin(two, forwarded) -> None:
+    """spotdown#107: ``Host: a`` with a forwarded ``b`` and ``b``'s origin is 403; the same
+    request with ``a``'s origin signs in, so only the selection refuses it."""
+    client = two.anon(base_url="http://a.example.org")
+    for origin, status in ((B, 403), (A, 204)):
+        headers = {"X-Spotdown-UI": "1", "Origin": origin, **forwarded, **JSON}
+        res = client.post("/login", json={"token": two.token}, headers=headers)
+        assert res.status_code == status
 
 
 # --- AC 4: an allowed Host with no listed origin --------------------------------------------------

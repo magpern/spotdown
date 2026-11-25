@@ -20,6 +20,11 @@ can be served under two public names. Items 5 and 6 change only as follows:
   rule stays exact, and forwarded headers stay ignored.
 - **Sessions stay per host:** the `__Host-` cookie has no `Domain`, so a login on one name is not
   a login on the other (the access token is the same). The login rate limit stays process-wide.
+- **IPv6 entries (spotdown#107):** an IPv6 host in `UI_PUBLIC_ORIGIN`, one value or a list, must
+  be written as a browser writes it in `Origin` (the WHATWG URL serialization, for example `[::1]`,
+  `[::ffff:7f00:1]`); any other spelling raises at start-up. It is refused rather than rewritten,
+  because such an entry could never match (the comparison stays exact), and refusing it accepts no
+  request that was refused before.
 - Out of scope: wildcards or patterns, and mixed schemes.
 
 **Status:** Accepted (2026-11-21), after the Opus review of PR #53 passed at `1024de3`

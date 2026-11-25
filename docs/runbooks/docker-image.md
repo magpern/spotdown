@@ -219,7 +219,10 @@ UI_PUBLIC_ORIGIN=https://spotdown.example.org,https://spotdown.example.net
 ```
 
 Each origin is accepted only from its own `Host`, so the proxy must pass the browser's `Host`
-through unchanged. Every listed host must be in `UI_ALLOWED_HOSTS` and every origin must use the
+through unchanged, with exactly the listed port: none for a default port (`Host:
+spotdown.example.org` for `https://spotdown.example.org`; `Host: spotdown.example.org:443` is
+refused with `403`). Write an IPv6 host as a browser writes it (`[::1]`, not `[0:0::1]`), or the UI
+does not start. Every listed host must be in `UI_ALLOWED_HOSTS` and every origin must use the
 same scheme, or the UI does not start. A login on one name does not sign in the other; the token is
 the same (ADR 0003, amendment of 2026-11-25).
 
