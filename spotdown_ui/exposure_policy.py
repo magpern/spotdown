@@ -1,7 +1,8 @@
 """Pure rules for the UI's exposure checks (ADR 0003 items 5 and 6, carried over by ADR 0005).
 
-Parses and validates the ``UI_ALLOWED_HOSTS`` and ``UI_PUBLIC_ORIGIN`` settings, a request's
-``Host`` header and its ``Origin`` header, and compares origins by the one rule ADR 0002 shares.
+Parses and validates the ``UI_ALLOWED_HOSTS`` and ``UI_PUBLIC_ORIGIN`` settings (one origin or a
+list, spotdown#105), a request's ``Host`` header and its ``Origin`` header, picks the expected
+origin by ``Host``, and compares origins by the one rule ADR 0002 shares.
 No I/O.
 """
 
@@ -9,7 +10,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from typing import FrozenSet, NamedTuple, Optional
+from typing import FrozenSet, NamedTuple, Optional, Tuple
 
 _LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z")
 _PORT = r"[0-9]{1,5}"
@@ -118,6 +119,37 @@ def parse_public_origin(value: str) -> Optional[Origin]:
     return origin
 
 
+def parse_public_origins(value: str, allowed_hosts: FrozenSet[str]) -> Tuple[Origin, ...]:
+    """``UI_PUBLIC_ORIGIN``: empty (unset, ``()``), one origin (exactly as before), or a
+    comma-separated list of origins (spotdown#105). Each entry is checked by
+    ``parse_public_origin``. Whitespace is rejected, never trimmed, as in ``UI_ALLOWED_HOSTS``.
+
+    A list of two or more must also have no duplicate host and port, one scheme for every entry
+    (so the cookie choice stays fixed), and every host in ``UI_ALLOWED_HOSTS``. A single value is
+    not checked against the allowlist: it is the expected origin for every allowed ``Host``, as
+    before, so a proxy that rewrites ``Host`` keeps working."""
+    if value == "":
+        return ()
+    origins = []
+    for entry in value.split(","):
+        if not entry or re.search(r"\s", entry):
+            raise SettingsError("UI_PUBLIC_ORIGIN: an entry is empty or has whitespace")
+        origin = parse_public_origin(entry)
+        if origin is None:  # unreachable: only "" parses to None
+            raise SettingsError("UI_PUBLIC_ORIGIN: an entry is empty")
+        origins.append(origin)
+    if len(origins) == 1:
+        return (origins[0],)
+    keys = {(normalise_host(o.host), o.port) for o in origins}
+    if len(keys) != len(origins):
+        raise SettingsError("UI_PUBLIC_ORIGIN: two entries have the same host and port")
+    if len({o.scheme for o in origins}) != 1:
+        raise SettingsError("UI_PUBLIC_ORIGIN: every entry must use the same scheme")
+    if any(normalise_host(o.host) not in allowed_hosts for o in origins):
+        raise SettingsError("UI_PUBLIC_ORIGIN: every entry's host must be in UI_ALLOWED_HOSTS")
+    return tuple(origins)
+
+
 class HostHeader(NamedTuple):
     host: str  # canonical (normalise_host): what the allowlist is checked against
     port: str  # as written, empty when absent
@@ -136,14 +168,24 @@ def parse_host_header(value: str) -> Optional[HostHeader]:
     return HostHeader(host, port, match.group(1).lower())
 
 
-def expected_origin(public: Optional[Origin], host: HostHeader) -> Origin:
-    """``UI_PUBLIC_ORIGIN`` if set, else ``http://`` plus the request's (allowed) ``Host``. Never
-    the scheme the server sees, never a forwarded header."""
-    return public if public is not None else Origin("http", host.raw_host, host.port)
+def expected_origin(public: Tuple[Origin, ...], host: HostHeader) -> Optional[Origin]:
+    """The origin an unsafe request from the (allowed) ``Host`` must carry. No public origin:
+    ``http://`` plus that ``Host``. One: that origin, for every allowed ``Host``. A list: the entry
+    whose host and port equal the ``Host``'s, or ``None`` (nothing matches) when no entry does.
+    Never the scheme the server sees, never a forwarded header."""
+    if not public:
+        return Origin("http", host.raw_host, host.port)
+    if len(public) == 1:
+        return public[0]
+    for origin in public:
+        if normalise_host(origin.host) == host.host and origin.port == host.port:
+            return origin
+    return None
 
 
-def origin_matches(header: Optional[str], expected: Origin) -> bool:
-    """The one comparison rule (ADR 0003 item 6, shared with ADR 0002)."""
-    if header is None:
+def origin_matches(header: Optional[str], expected: Optional[Origin]) -> bool:
+    """The one comparison rule (ADR 0003 item 6, shared with ADR 0002). No expected origin
+    matches nothing."""
+    if header is None or expected is None:
         return False
     return parse_origin(header) == expected

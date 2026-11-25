@@ -7,7 +7,7 @@ passes the environment in; nothing here reads a file or opens a connection.
 - ``SPOTDOWN_BACKEND_KEY_FILE`` (required): the secret file with the UI's caller key
   (``backend_key`` reads it).
 - ``UI_ACCESS_TOKEN_FILE`` (optional) or a token generated once in ``UI_DATA_DIR``; the ``Host``
-  allowlist ``UI_ALLOWED_HOSTS`` and ``UI_PUBLIC_ORIGIN`` (ADR 0003).
+  allowlist ``UI_ALLOWED_HOSTS`` and ``UI_PUBLIC_ORIGIN``, one origin or a list (ADR 0003).
 - ``MAX_UPLOAD_BYTES`` and ``UI_UPLOAD_READ_S`` (ADR 0002's cap and read deadline),
   ``UI_MAX_AUDIO_BYTES`` (the largest mp3 relayed) and ``UI_BACKEND_TIMEOUT_S``.
 """
@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Callable, FrozenSet, Mapping, NamedTuple, Optional, TypeVar
+from typing import Callable, FrozenSet, Mapping, NamedTuple, Optional, Tuple, TypeVar
 
 from .exposure_policy import (
     DEFAULT_ALLOWED_HOSTS,
@@ -24,7 +24,7 @@ from .exposure_policy import (
     SettingsError,
     normalise_host,
     parse_allowed_hosts,
-    parse_public_origin,
+    parse_public_origins,
 )
 
 _BACKEND = re.compile(r"(https?)://(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)(?::([0-9]{1,5}))?/?\Z")
@@ -57,7 +57,7 @@ class UiSettings(NamedTuple):
     data_dir: Path
     access_token_file: Optional[Path]
     allowed_hosts: FrozenSet[str]
-    public_origin: Optional[Origin]
+    public_origins: Tuple[Origin, ...]  # empty when unset; one scheme for all
     max_upload_bytes: int
     upload_read_s: float
     max_audio_bytes: int
@@ -108,13 +108,14 @@ def parse_settings(env: Mapping[str, str]) -> UiSettings:
     key_file = _path(env, "SPOTDOWN_BACKEND_KEY_FILE")
     if key_file is None:
         raise SettingsError("SPOTDOWN_BACKEND_KEY_FILE is required")
+    allowed_hosts = parse_allowed_hosts(env.get("UI_ALLOWED_HOSTS", DEFAULT_ALLOWED_HOSTS))
     return UiSettings(
         backend=parse_backend_url(raw_backend),
         backend_key_file=key_file,
         data_dir=Path(env.get("UI_DATA_DIR") or DEFAULT_DATA_DIR),
         access_token_file=_path(env, "UI_ACCESS_TOKEN_FILE"),
-        allowed_hosts=parse_allowed_hosts(env.get("UI_ALLOWED_HOSTS", DEFAULT_ALLOWED_HOSTS)),
-        public_origin=parse_public_origin(env.get("UI_PUBLIC_ORIGIN", "")),
+        allowed_hosts=allowed_hosts,
+        public_origins=parse_public_origins(env.get("UI_PUBLIC_ORIGIN", ""), allowed_hosts),
         max_upload_bytes=_number(env, "MAX_UPLOAD_BYTES", DEFAULT_MAX_UPLOAD_BYTES, int),
         upload_read_s=_number(env, "UI_UPLOAD_READ_S", DEFAULT_UPLOAD_READ_S, float),
         max_audio_bytes=_number(env, "UI_MAX_AUDIO_BYTES", DEFAULT_MAX_AUDIO_BYTES, int),

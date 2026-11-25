@@ -3,6 +3,25 @@
 **Superseded in part by [ADR 0005](0005-two-images-backend-api-and-ui.md) (owner, 2026-11-24):** these
 protections now guard the separate UI image; the backend is API only and has no browser surface.
 
+**Amendment (2026-11-25, spotdown#105): a list of public origins, matched by `Host`.** In the UI
+image, `UI_PUBLIC_ORIGIN` (this ADR's `ui_public_origin`) may be a comma-separated list, so one UI
+can be served under two public names. Items 5 and 6 change only as follows:
+
+- **One value behaves exactly as before:** it is the expected origin for every allowed `Host`, and
+  it is not checked against `UI_ALLOWED_HOSTS` (a proxy may rewrite `Host`).
+- **Start-up, fail closed.** Each entry obeys item 5's rule for `ui_public_origin`. An empty entry
+  or any whitespace raises: whitespace is **rejected, not trimmed**, as in `UI_ALLOWED_HOSTS`. A
+  list of two or more also raises on two entries with the same host and port (duplicates
+  included), on mixed `http` and `https` (so the cookie name and `Secure` of item 4 stay one choice
+  for the process), and on an entry whose host is not in `UI_ALLOWED_HOSTS`.
+- **The expected origin (item 6)** for a list is the entry whose host and port equal the request's
+  `Host` (which has passed the allowlist). If none does, nothing matches: every unsafe request and
+  `POST /login` from that `Host` gets `403`, while `GET` pages behave as before. The comparison
+  rule stays exact, and forwarded headers stay ignored.
+- **Sessions stay per host:** the `__Host-` cookie has no `Domain`, so a login on one name is not
+  a login on the other (the access token is the same). The login rate limit stays process-wide.
+- Out of scope: wildcards or patterns, and mixed schemes.
+
 **Status:** Accepted (2026-11-21), after the Opus review of PR #53 passed at `1024de3`
 ([`Agent review (opus): PASS`](https://github.com/magpern/spotdown/pull/53#issuecomment-7064851523)). The follow-up PR (spotdown#57, for issue #54) folded in that review's
 non-blocking findings: the assumptions and named outcomes that #52 implements, the lifespan
