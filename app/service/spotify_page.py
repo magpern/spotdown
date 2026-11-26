@@ -1,8 +1,9 @@
 """Track metadata from Spotify's public pages: the embed page's embedded JSON and the oEmbed
 JSON (spotdown#76 as revised). No I/O.
 
-**An unverified assumption until the owner tries it live.** No agent or CI fetches a real Spotify
-page, so the shape read here is the one observed and documented for the embed page (a Next.js
+**An unverified assumption until checked live.** CI never fetches a real Spotify page; a read-only
+check by hand (an agent's, AGENTS.md "Safety envelope", or the owner's live try) confirms it. The
+shape read here is the one observed and documented for the embed page (a Next.js
 ``__NEXT_DATA__`` script whose ``props.pageProps.state.data.entity`` holds ``name``/``title``,
 ``artists``, ``duration`` and a ``trackList`` of ``{uri, title, subtitle, duration}``). Everything
 is optional: a missing field is ``None`` or ``[]``, never an error. Only a page with no usable

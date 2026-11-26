@@ -192,7 +192,7 @@ Routine technical decisions never go to the owner. When a fact is unknown, the A
 safest reversible default, isolates it behind an interface or setting, and records it in
 `docs/adr/NNNN-title.md`. Escalate to the owner only for external permissions or agreements,
 credentials agents cannot provision safely, product decisions, authorizing a phase of the plan,
-and live-account tests.
+and live-account tests that write (read-only checks follow the Safety envelope).
 
 ## Developer commands
 
