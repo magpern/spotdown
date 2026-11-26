@@ -164,8 +164,14 @@ a client-credentials token), SwedeBeat, MOWL and any other service.
   create apps, accounts or keys on a provider.
 - These are manual checks by an agent, never part of the automated suite: tests and CI never touch
   the network (Security rules), and tests fake every provider.
+- Spotify specifics carry over from #85: the Web API only with owner-provided credentials, only
+  `GET` requests to `api.spotify.com` with a client-credentials token (plus that token's one
+  `POST accounts.spotify.com/api/token`), never user-authorized OAuth scopes.
 - Fetched media is kept only for the check and deleted after it. No credentials, tokens or cookies
   are printed, logged or committed.
+- On this point the owner's direction (2026-11-25, #111) applies in place of the classbeat plan's
+  wording ("no ... real YouTube, SwedeBeat, MOWL or Spotify call by any agent", its §6 "agents and
+  CI never call YouTube"); the matching classbeat plan amendment is the owner's and still pending.
 
 **Only with the owner's authorization for that specific action:** deploying,
 DNS and TLS, paid services, provider dashboards, emails to real people, anything that writes to a

@@ -2,10 +2,10 @@
 
 **Status: FROZEN, 2026-11-20. AUTHORIZED by the owner on 2026-11-20.** classbeat#1296 (YouTube
 terms of service) was **accepted by the owner on 2026-11-20**, so SD-P6 is unblocked. The owner
-decisions classbeat#1297 to #1299 and spotdown#1 are still the owner's. No deploy and no write to a real account or provider
-by any agent or CI job unless the owner asks for that specific action. Agents may make read-only
-calls to the providers (YouTube, Spotify, SwedeBeat, MOWL) by hand, as AGENTS.md "Safety envelope"
-allows (owner, 2026-11-25, #111; widens #85); CI and tests never call any of them.
+decisions classbeat#1297 to #1299 and spotdown#1 are still the owner's. No deploy by any agent unless the owner asks for it, and
+no agent writes to a real account or provider unless the owner asks for that specific write. Agents
+may make read-only calls to the providers (YouTube, Spotify, SwedeBeat, MOWL) by hand, as AGENTS.md
+"Safety envelope" allows (owner, 2026-11-25, #111; widens #85); CI and tests never call any of them.
 
 **Merged state (2026-11-20).** P0, P1, P3 and P2+ are merged, and P2 is merged except #6's real-music
 runs. Issues #2 to #5, #7 to #11 and #20 are closed: governance and the v2 contract (#2, #3), service
