@@ -13,8 +13,8 @@ allowed, with no remote components (ADR 0006): deno runs YouTube's player code, 
 yt-dlp's own messages go to a quiet logger and are only classified (``error_policy``), never
 logged: they can quote URLs.
 
-Tests inject a fake ``factory`` in place of ``yt_dlp.YoutubeDL``; nothing here is ever run against
-YouTube by an agent or by CI.
+Tests inject a fake ``factory`` in place of ``yt_dlp.YoutubeDL``; tests and CI never run anything
+here against YouTube (an agent may check it by hand, read-only: AGENTS.md "Safety envelope").
 """
 
 from __future__ import annotations

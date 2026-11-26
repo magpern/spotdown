@@ -151,29 +151,27 @@ only) is set by the owner; agents never change rulesets.
 **Agents may, without asking:** create branches, PRs and issues in this repository; review and
 merge per the gate; run local checks and tests.
 
-**No agent and no CI job makes a real call** to YouTube (through yt-dlp or otherwise), SwedeBeat
-or MOWL: not to test, not to check, not to "just try". Live checks of those are the owner's. No CI
-job calls Spotify either. Tests fake all four, Spotify included.
+**Read-only calls to external services (owner, 2026-11-25, [#111](https://github.com/magpern/spotdown/issues/111);
+widens [#85](https://github.com/magpern/spotdown/issues/85)).** The owner: "Change repo rules. You
+can call read-only. Agent can do stuff read-only on external servers, unless explicitly told to do
+write". So an agent may make live **read-only** requests to external services by hand, to check
+behaviour against real data: YouTube through yt-dlp (metadata, search, and fetching media to check
+a download), Spotify (public pages and, with owner-provided credentials, the read-only Web API with
+a client-credentials token), SwedeBeat, MOWL and any other service.
 
-**Read-only Spotify checks (the one exception; owner, 2026-11-24, [#85](https://github.com/magpern/spotdown/issues/85)).**
-The owner: "Agents aren't allowed to call Spotify — of course they are. They can read." and, on
-#85: "I confirm the read-only spotify rule. I allow read only agent tests against spotify". So an
-agent may make live **read-only** requests to Spotify by hand, to check parsing against real data:
-
-- the public pages on `open.spotify.com` (oEmbed and embed);
-- the read-only Web API, when the owner provides credentials: only `GET` requests to
-  `api.spotify.com` with an app (client-credentials) token, and no user-authorized OAuth scopes.
-  The one client-credentials token request those GETs need (`POST accounts.spotify.com/api/token`)
-  is in scope, because it writes nothing and uses only owner-provided credentials. Nothing else on
-  `accounts.spotify.com` is in scope. Agents never create a Spotify app and never obtain keys
-  themselves.
-
-These are manual checks by an agent, never part of the automated suite: the test suite and CI
-never touch the network (Security rules), and tests fake Spotify. Nothing writes to a Spotify
-account. No credentials, tokens or cookies are printed, logged or committed. Anything wider than
-this is a question for the owner. On this point the owner's direction (2026-11-24, #85) applies in
-place of the classbeat plan's wording; the matching classbeat plan amendment is the owner's and
-still pending.
+- **Writes need the owner's explicit request for that specific write**: anything that creates,
+  changes or deletes data on an account or service, uploads, posts or publishes. Agents never
+  create apps, accounts or keys on a provider.
+- These are manual checks by an agent, never part of the automated suite: tests and CI never touch
+  the network (Security rules), and tests fake every provider.
+- Spotify specifics carry over from #85: the Web API only with owner-provided credentials, only
+  `GET` requests to `api.spotify.com` with a client-credentials token (plus that token's one
+  `POST accounts.spotify.com/api/token`), never user-authorized OAuth scopes.
+- Fetched media is kept only for the check and deleted after it. No credentials, tokens or cookies
+  are printed, logged or committed.
+- On this point the owner's direction (2026-11-25, #111) applies in place of the classbeat plan's
+  wording ("no ... real YouTube, SwedeBeat, MOWL or Spotify call by any agent", its §6 "agents and
+  CI never call YouTube"); the matching classbeat plan amendment is the owner's and still pending.
 
 **Only with the owner's authorization for that specific action:** deploying,
 DNS and TLS, paid services, provider dashboards, emails to real people, anything that writes to a
@@ -194,7 +192,7 @@ Routine technical decisions never go to the owner. When a fact is unknown, the A
 safest reversible default, isolates it behind an interface or setting, and records it in
 `docs/adr/NNNN-title.md`. Escalate to the owner only for external permissions or agreements,
 credentials agents cannot provision safely, product decisions, authorizing a phase of the plan,
-and live-account tests.
+and live-account tests that write (read-only checks follow the Safety envelope).
 
 ## Developer commands
 

@@ -1,7 +1,7 @@
 # spotdown API contract v2
 
 **Status: DRAFT. Authorized by the owner on 2026-11-20** (except classbeat#1297 to #1299 and
-spotdown#1; classbeat#1296 was accepted on 2026-11-20; no deploy or real provider call). Parts are built, see [integration-plan.md](integration-plan.md). It is written together with classbeat ADR 0040; where they differ, the classbeat plan
+spotdown#1; classbeat#1296 was accepted on 2026-11-20; no deploy, and real provider calls by agents only read-only, AGENTS.md "Safety envelope"). Parts are built, see [integration-plan.md](integration-plan.md). It is written together with classbeat ADR 0040; where they differ, the classbeat plan
 ([docs/plans/spotdown-integration.md](https://github.com/magpern/classbeat/blob/main/docs/plans/spotdown-integration.md),
 §3 to §6) wins and this file is corrected. Summary of the plan: [integration-plan.md](integration-plan.md).
 
@@ -203,7 +203,7 @@ Response `200`:
   too), a timeout, a redirect or an oversized body is `502 provider_error` with the fixed message `the Spotify request failed` (no
   upstream text).
 - **Unverified assumption:** the public embed page's shape is read as observed (its
-  `__NEXT_DATA__` JSON). No agent or CI fetches a real Spotify page; the owner's first live try confirms it.
+  `__NEXT_DATA__` JSON). CI never fetches a real Spotify page; a read-only check by hand (an agent's, AGENTS.md "Safety envelope", or the owner's live try) confirms it.
 - The answer feeds `POST /v2/match`: `duration_ms / 1000` is its `duration_s`, which may be left
   out, as `artists` may be when the list is empty (see below).
 

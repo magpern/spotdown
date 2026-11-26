@@ -3,7 +3,8 @@
 spotdown is a music-analysis service: **audio in, structured analysis out** (tempo and beats,
 energy, drops and build-ups, sections, phrases, meter, an explicit tag). It is also classbeat's
 analysis service; see the frozen [integration plan](docs/integration-plan.md) (authorized
-2026-11-20 except the owner decisions it lists; no deploy and no real provider call by agents).
+2026-11-20 except the owner decisions it lists; no deploy by agents, and real provider calls by
+agents only read-only, as AGENTS.md "Safety envelope" allows).
 
 It ships as two images from one repository and one tag
 ([ADR 0005](docs/adr/0005-two-images-backend-api-and-ui.md)):
